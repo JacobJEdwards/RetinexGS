@@ -21,6 +21,8 @@ from datasets.traj import (
     generate_interpolated_path,
     generate_spiral_path,
 )
+from examples.retinex_loss import fixed_retinex_decomposition, RetinexLossMSR
+from retinex_loss import RetinexLoss
 from fused_ssim import fused_ssim
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -74,7 +76,7 @@ class Config:
     save_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
     save_ply: bool = True
     ply_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
-    disable_video: bool = False
+    disable_video: bool = True
 
     init_type: str = "sfm"
     init_num_pts: int = 100_000
@@ -137,6 +139,13 @@ class Config:
     enable_clipiqa_loss: bool = True
     clipiqa_lambda: float = 0.1
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
+
+    enable_retinex_loss: bool = True
+    retinex_model_type: Literal["msr", "standard"] = "msr"
+    retinex_lambda: float = 0.1
+    retinex_alpha: float = 1.0
+    retinex_beta: float = 0.1
+    retinex_gamma: float = 0.1
 
     eval_niqe: bool = True
 
@@ -225,7 +234,6 @@ def create_splats_with_optimizers(
 
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
     BS = batch_size * world_size
-    optimizer_class = None
     if sparse_grad:
         optimizer_class = torch.optim.SparseAdam
     elif visible_adam:
@@ -240,6 +248,7 @@ def create_splats_with_optimizers(
         )
         for name, _, lr in params
     }
+
     return splats, optimizers
 
 
@@ -413,6 +422,26 @@ class Runner:
             print("CLIPIQA loss enabled in config, but 'piq' library is not available. Skipping CLIPIQA.")
             cfg.enable_clipiqa_loss = False
 
+        self.retinex_loss = None
+        if cfg.enable_retinex_loss:
+            if cfg.retinex_model_type == "standard":
+                try:
+                    self.retinex_loss = RetinexLoss(
+                        alpha=cfg.retinex_alpha,
+                        beta=cfg.retinex_beta,
+                        gamma=cfg.retinex_gamma,
+                    ).to(self.device)
+                    print("Retinex loss initialized for training.")
+                except Exception as e:
+                    print(f"Error initializing Retinex loss: {e}. Retinex loss will be skipped.")
+                    cfg.enable_retinex_loss = False
+            elif cfg.retinex_model_type == "msr":
+                try:
+                    self.retinex_loss = RetinexLossMSR().to(self.device)
+                    print("MSR Retinex loss initialized for training.")
+                except Exception as e:
+                    print(f"Error initializing MSR Retinex loss: {e}. MSR Retinex loss will be skipped.")
+                    cfg.enable_retinex_loss = False
 
         self.niqe_metric = None
         if cfg.eval_niqe and PIQ_AVAILABLE:
@@ -639,12 +668,34 @@ class Runner:
 
             clipiqa_loss_value = torch.tensor(0.0, device=device)
             clipiqa_score_value = torch.tensor(0.0, device=device)
+
             if cfg.enable_clipiqa_loss and self.clipiqa_metric is not None:
                 colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
                 current_clipiqa_score = self.clipiqa_metric(colors_nchw)
                 clipiqa_score_value = current_clipiqa_score.mean()
                 clipiqa_loss_value = -clipiqa_score_value
                 loss = loss + cfg.clipiqa_lambda * clipiqa_loss_value
+
+            retinex_loss_value = torch.tensor(0.0, device=device)
+
+            if cfg.enable_retinex_loss and self.retinex_loss is not None:
+                processed_colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
+                
+                if cfg.retinex_model_type == "standard":
+                    R, L = fixed_retinex_decomposition(processed_colors_nchw)
+                    retinex_loss_value = self.retinex_loss(
+                        R=R,
+                        L=L,
+                        target=processed_colors_nchw,
+                    )
+                elif cfg.retinex_model_type == "msr":
+                    retinex_loss_value = self.retinex_loss(
+                        processed_colors_nchw,
+                    )
+                else:
+                    raise ValueError(f"Unknown Retinex model type: {cfg.retinex_model_type}")
+
+                loss += cfg.retinex_lambda * retinex_loss_value
 
             depthloss_value = torch.tensor(0.0, device=device)
             if cfg.depth_loss and depths_map is not None:
@@ -681,6 +732,8 @@ class Runner:
             desc_parts = [f"loss={loss.item():.3f}"]
             if cfg.enable_clipiqa_loss and self.clipiqa_metric is not None:
                 desc_parts.append(f"clipiqa={clipiqa_score_value.item():.3f}")
+            if cfg.enable_retinex_loss and self.retinex_loss is not None:
+                desc_parts.append(f"retinex={retinex_loss_value.item():.3f}")
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
             if cfg.depth_loss and depths_map is not None:
                 desc_parts.append(f"depth_l={depthloss_value.item():.6f}")
@@ -702,6 +755,8 @@ class Runner:
                 if cfg.enable_clipiqa_loss and self.clipiqa_metric is not None:
                     self.writer.add_scalar("train/clipiqa_score", clipiqa_score_value.item(), step)
                     self.writer.add_scalar("train/clipiqa_loss", clipiqa_loss_value.item(), step)
+                if cfg.enable_retinex_loss and self.retinex_loss is not None:
+                    self.writer.add_scalar("train/retinex_loss", retinex_loss_value.item(), step)
                 if cfg.depth_loss and depths_map is not None:
                     self.writer.add_scalar("train/depthloss", depthloss_value.item(), step)
                 if cfg.use_bilateral_grid:
@@ -733,7 +788,6 @@ class Runner:
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
                 )
             if (step in [i - 1 for i in cfg.ply_steps] or step == max_steps - 1) and cfg.save_ply:
-                rgb_export = None
                 if self.cfg.app_opt:
                     rgb_export_feat = self.app_module(
                         features=self.splats["features"],
