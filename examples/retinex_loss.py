@@ -46,7 +46,7 @@ class RetinexLossMSR(nn.Module):
         self.detail_weight = detail_weight
         self.illum_weight = illum_weight
 
-    def forward(self, input_img: torch.Tensor) -> tuple[torch.Tensor, dict]:
+    def forward(self, input_img: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         reflectance = multi_scale_retinex_loss(input_img, self.sigma_list)
 
         grad_x = reflectance[:, :, :, :-1] - reflectance[:, :, :, 1:]
@@ -61,8 +61,8 @@ class RetinexLossMSR(nn.Module):
         loss = (self.detail_weight * loss_detail + 
                 self.illum_weight * loss_smooth_illum)
         return loss, {
-            'detail_loss': loss_detail.item(),
-            'illumination_loss': loss_smooth_illum.item()
+            'detail_loss': loss_detail,
+            'illumination_loss': loss_smooth_illum
         }
         
 
@@ -99,7 +99,8 @@ class RetinexLoss(nn.Module):
         self.beta = beta  
         self.gamma = gamma
 
-    def forward(self, input_image: torch.Tensor, reflect: torch.Tensor, illum: torch.Tensor) -> tuple[torch.Tensor, dict]:
+    def forward(self, input_image: torch.Tensor, reflect: torch.Tensor, illum: torch.Tensor) -> tuple[torch.Tensor, 
+                                                                                                dict[str, torch.Tensor]]:
         loss_recon = reconstruction_loss(input_image, reflect, illum)
         loss_illum_smooth = illumination_smoothness_loss(illum, input_image)
         loss_reflect_smooth = reflectance_smoothness_loss(reflect)
@@ -109,9 +110,9 @@ class RetinexLoss(nn.Module):
                 self.gamma * loss_reflect_smooth)
 
         return loss, {
-            'recon': loss_recon.item(),
-            'illumination_loss': loss_illum_smooth.item(),
-            'detail_loss': loss_reflect_smooth.item()
+            'recon': loss_recon,
+            'illumination_loss': loss_illum_smooth,
+            'detail_loss': loss_reflect_smooth
         }
 
 def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tuple[torch.Tensor, torch.Tensor]:

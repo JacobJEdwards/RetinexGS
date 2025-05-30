@@ -51,7 +51,7 @@ except ImportError:
 
 @dataclass
 class Config:
-    disable_viewer: bool = True
+    disable_viewer: bool = False
     ckpt: Optional[List[str]] = None
     compression: Optional[Literal["png"]] = None
     render_traj_path: str = "interp"
@@ -71,11 +71,11 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 30_000
-    eval_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
-    save_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
+    eval_steps: list[int] = field(default_factory=lambda: [7_000, 30_000])
+    save_steps: list[int] = field(default_factory=lambda: [7_000, 30_000])
     save_ply: bool = True
-    ply_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
-    disable_video: bool = True
+    ply_steps: list[int] = field(default_factory=lambda: [7_000, 30_000])
+    disable_video: bool = False
 
     init_type: str = "sfm"
     init_num_pts: int = 100_000
@@ -135,13 +135,13 @@ class Config:
 
     use_fused_bilagrid: bool = False
 
-    enable_clipiqa_loss: bool = True
+    enable_clipiqa_loss: bool = False
     clipiqa_lambda: float = 0.1
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
 
     enable_retinex_loss: bool = True
     retinex_model_type: Literal["msr", "standard"] = "standard"
-    retinex_lambda: float = 0.25
+    retinex_lambda: float = 1.0
     retinex_alpha: float = 1.0
     retinex_beta: float = 1.0
     retinex_gamma: float = 1.0
