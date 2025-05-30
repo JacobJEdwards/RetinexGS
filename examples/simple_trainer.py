@@ -50,7 +50,7 @@ except ImportError:
 
 @dataclass
 class Config:
-    disable_viewer: bool = False
+    disable_viewer: bool = True
     ckpt: Optional[List[str]] = None
     compression: Optional[Literal["png"]] = None
     render_traj_path: str = "interp"
@@ -93,7 +93,7 @@ class Config:
     )
     packed: bool = False
     sparse_grad: bool = False
-    visible_adam: bool = False
+    visible_adam: bool = True
     antialiased: bool = False
 
     random_bkgd: bool = False
@@ -113,7 +113,7 @@ class Config:
     pose_opt_reg: float = 1e-6
     pose_noise: float = 0.0
 
-    app_opt: bool = False
+    app_opt: bool = True
     app_embed_dim: int = 16
     app_opt_lr: float = 1e-3
     app_opt_reg: float = 1e-6
@@ -121,7 +121,7 @@ class Config:
     use_bilateral_grid: bool = False
     bilateral_grid_shape: Tuple[int, int, int] = (16, 16, 8)
 
-    depth_loss: bool = False
+    depth_loss: bool = True
     depth_lambda: float = 1e-2
 
     tb_every: int = 100
@@ -915,7 +915,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        camtoworlds_all_np = self.parser.camtoworlds_all
+        camtoworlds_all_np = self.parser.camtoworlds
         if not len(camtoworlds_all_np):
             print("No camera poses found for trajectory rendering. Skipping.")
             return
