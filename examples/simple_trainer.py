@@ -685,9 +685,9 @@ class Runner:
                 if cfg.retinex_model_type == "standard":
                     R, L = fixed_retinex_decomposition(processed_colors_nchw)
                     retinex_loss_value, retinex_info = self.retinex_loss(
-                        R=R,
-                        L=L,
-                        target=processed_colors_nchw,
+                        processed_colors_nchw,
+                        R,
+                        L,
                     )
                     retinex_detail_value = retinex_info.get("detail_loss", torch.tensor(0.0, device=device))
                     retinex_illumination_value = retinex_info.get("illumination_loss", torch.tensor(0.0, device=device))

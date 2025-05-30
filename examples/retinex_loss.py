@@ -122,7 +122,7 @@ def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tupl
     blurred = gaussian_blur(renders_clamped, sigma)
 
 
-    # approximately the illumination as the blurred image
+    # approximate the illumination as the blurred image
     illum = blurred
     reflect = log_renders - illum
 
