@@ -44,7 +44,7 @@ try:
     PIQ_AVAILABLE = True
 except ImportError:
     PIQ_AVAILABLE = False
-    print("Warning: 'piq' library not found. NR-IQA functionalities (CLIPIQA, NIQE) will be disabled.")
+    print("Warning: 'piq' library not found. NR-IQA functionalities (CLIPIQA, BRISQUE) will be disabled.")
     print("Please install it using: pip install piq clip-anytorch")
 
 
@@ -403,7 +403,7 @@ class Runner:
         self.clipiqa_metric = None
         if cfg.enable_clipiqa_loss and PIQ_AVAILABLE:
             try:
-                self.clipiqa_metric = piq.CLIPIQA(data_range=1., model_type=cfg.clipiqa_model_type)
+                self.clipiqa_metric = piq.CLIPIQA(data_range=1.)
                 self.clipiqa_metric = self.clipiqa_metric.to(self.device)
                 print(f"CLIPIQA metric ({cfg.clipiqa_model_type}) initialized for training loss.")
             except Exception as e:
@@ -417,14 +417,14 @@ class Runner:
         self.niqe_metric = None
         if cfg.eval_niqe and PIQ_AVAILABLE:
             try:
-                self.niqe_metric = piq.NIQE(data_range=1.0, reduction='mean')
+                self.niqe_metric = piq.BRISQUELoss(data_range=1.0, reduction='mean')
                 self.niqe_metric = self.niqe_metric.to(self.device)
-                print("NIQE metric initialized for evaluation.")
+                print("BRISQUE metric initialized for evaluation.")
             except Exception as e:
-                print(f"Error initializing NIQE: {e}. NIQE evaluation will be skipped.")
+                print(f"Error initializing BRISQUE: {e}. BRISQUE evaluation will be skipped.")
                 cfg.eval_niqe = False
         elif cfg.eval_niqe and not PIQ_AVAILABLE:
-            print("NIQE evaluation enabled in config, but 'piq' library is not available. Skipping NIQE.")
+            print("BRISQUE evaluation enabled in config, but 'piq' library is not available. Skipping BRISQUE.")
             cfg.eval_niqe = False
 
 
@@ -887,7 +887,7 @@ class Runner:
                 f"LPIPS: {stats_eval.get('lpips', 0):.3f}",
             ]
             if cfg.eval_niqe and self.niqe_metric is not None and 'niqe' in stats_eval:
-                print_parts_eval.append(f"NIQE: {stats_eval.get('niqe',0):.3f} (lower is better)")
+                print_parts_eval.append(f"BRISQUE: {stats_eval.get('niqe',0):.3f} (lower is better)")
             if cfg.use_bilateral_grid:
                 print_parts_eval.extend([
                     f"CC_PSNR: {stats_eval.get('cc_psnr',0):.3f}",
@@ -983,7 +983,7 @@ class Runner:
 
         if cfg.eval_niqe and self.niqe_metric is not None and all_frame_niqe_scores:
             avg_traj_niqe = sum(all_frame_niqe_scores) / len(all_frame_niqe_scores)
-            print(f"Average NIQE for trajectory video (step {step}): {avg_traj_niqe:.3f} (Lower is better)")
+            print(f"Average BRISQUE for trajectory video (step {step}): {avg_traj_niqe:.3f} (Lower is better)")
             self.writer.add_scalar(f"render_traj/avg_niqe_step_{step}", avg_traj_niqe, step)
         self.writer.flush()
 
