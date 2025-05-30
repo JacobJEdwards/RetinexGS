@@ -377,43 +377,43 @@ class Runner:
                 self.app_module = DDP(self.app_module)
 
         self.nrqm_optimizers = []
-        if cfg.enable_clipiqa_loss:
-            if cfg.clipiqa_model_type == "clipiqa":
-                self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
-                self.nrqm_optimizers = [
-                    torch.optim.Adam(
-                        self.clipiqa_model.parameters(),
-                        lr=1e-3 * math.sqrt(cfg.batch_size),
-                        eps=1e-15,
-                    ),
-                ]
-            else:
-                raise ValueError(f"Unknown CLIPIQA model type: {cfg.clipiqa_model_type}")
+        # if cfg.enable_clipiqa_loss:
+        #     if cfg.clipiqa_model_type == "clipiqa":
+        #         self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
+        #         self.nrqm_optimizers = [
+        #             torch.optim.Adam(
+        #                 self.clipiqa_model.parameters(),
+        #                 lr=1e-3 * math.sqrt(cfg.batch_size),
+        #                 eps=1e-15,
+        #             ),
+        #         ]
+        #     else:
+        #         raise ValueError(f"Unknown CLIPIQA model type: {cfg.clipiqa_model_type}")
 
         self.retinex_optimizers = []
 
-        if cfg.enable_retinex_loss and cfg.retinex_model_type == "standard":
-            self.retinex_loss = RetinexLoss(
-                alpha=cfg.retinex_alpha,
-                beta=cfg.retinex_beta,
-                gamma=cfg.retinex_gamma,
-            ).to(self.device)
-            self.retinex_optimizers = [
-                torch.optim.Adam(
-                    self.retinex_loss.parameters(),
-                    lr=1e-3 * math.sqrt(cfg.batch_size),
-                    eps=1e-15,
-                ),
-            ]
-        elif cfg.enable_retinex_loss and cfg.retinex_model_type == "msr":
-            self.retinex_loss = RetinexLossMSR().to(self.device)
-            self.retinex_optimizers = [
-                torch.optim.Adam(
-                    self.retinex_loss.parameters(),
-                    lr=1e-3 * math.sqrt(cfg.batch_size),
-                    eps=1e-15,
-                ),
-            ]
+        # if cfg.enable_retinex_loss and cfg.retinex_model_type == "standard":
+        #     self.retinex_loss = RetinexLoss(
+        #         alpha=cfg.retinex_alpha,
+        #         beta=cfg.retinex_beta,
+        #         gamma=cfg.retinex_gamma,
+        #     ).to(self.device)
+        #     self.retinex_optimizers = [
+        #         torch.optim.Adam(
+        #             self.retinex_loss.parameters(),
+        #             lr=1e-3 * math.sqrt(cfg.batch_size),
+        #             eps=1e-15,
+        #         ),
+        #     ]
+        # elif cfg.enable_retinex_loss and cfg.retinex_model_type == "msr":
+        #     self.retinex_loss = RetinexLossMSR().to(self.device)
+        #     self.retinex_optimizers = [
+        #         torch.optim.Adam(
+        #             self.retinex_loss.parameters(),
+        #             lr=1e-3 * math.sqrt(cfg.batch_size),
+        #             eps=1e-15,
+        #         ),
+        #     ]
 
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
@@ -572,20 +572,20 @@ class Runner:
                 )
             )
 
-        if cfg.enable_clipiqa_loss:
-            if self.clipiqa_metric is not None:
-                schedulers.append(
-                    torch.optim.lr_scheduler.ExponentialLR(
-                        self.nrqm_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
-                    )
-                )
-
-        if cfg.enable_retinex_loss and self.retinex_loss is not None:
-            schedulers.append(
-                torch.optim.lr_scheduler.ExponentialLR(
-                    self.retinex_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
-                )
-            )
+        # if cfg.enable_clipiqa_loss:
+        #     if self.clipiqa_metric is not None:
+        #         schedulers.append(
+        #             torch.optim.lr_scheduler.ExponentialLR(
+        #                 self.nrqm_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
+        #             )
+        #         )
+        # 
+        # if cfg.enable_retinex_loss and self.retinex_loss is not None:
+        #     schedulers.append(
+        #         torch.optim.lr_scheduler.ExponentialLR(
+        #             self.retinex_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
+        #         )
+        #     )
 
 
         trainloader = torch.utils.data.DataLoader(
