@@ -135,7 +135,7 @@ class Config:
     use_fused_bilagrid: bool = False
 
     enable_clipiqa_loss: bool = True
-    clipiqa_lambda: float = 0.01
+    clipiqa_lambda: float = 0.1
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
 
     eval_niqe: bool = True
