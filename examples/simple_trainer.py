@@ -376,6 +376,45 @@ class Runner:
             if world_size > 1:
                 self.app_module = DDP(self.app_module)
 
+        self.nrqm_optimizers = []
+        if cfg.enable_clipiqa_loss:
+            if cfg.clipiqa_model_type == "clipiqa":
+                self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
+                self.nrqm_optimizers = [
+                    torch.optim.Adam(
+                        self.clipiqa_model.parameters(),
+                        lr=1e-3 * math.sqrt(cfg.batch_size),
+                        eps=1e-15,
+                    ),
+                ]
+            else:
+                raise ValueError(f"Unknown CLIPIQA model type: {cfg.clipiqa_model_type}")
+
+        self.retinex_optimizers = []
+
+        if cfg.enable_retinex_loss and cfg.retinex_model_type == "standard":
+            self.retinex_loss = RetinexLoss(
+                alpha=cfg.retinex_alpha,
+                beta=cfg.retinex_beta,
+                gamma=cfg.retinex_gamma,
+            ).to(self.device)
+            self.retinex_optimizers = [
+                torch.optim.Adam(
+                    self.retinex_loss.parameters(),
+                    lr=1e-3 * math.sqrt(cfg.batch_size),
+                    eps=1e-15,
+                ),
+            ]
+        elif cfg.enable_retinex_loss and cfg.retinex_model_type == "msr":
+            self.retinex_loss = RetinexLossMSR().to(self.device)
+            self.retinex_optimizers = [
+                torch.optim.Adam(
+                    self.retinex_loss.parameters(),
+                    lr=1e-3 * math.sqrt(cfg.batch_size),
+                    eps=1e-15,
+                ),
+            ]
+
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
             global BilateralGrid
@@ -407,40 +446,6 @@ class Runner:
             ).to(self.device)
         else:
             raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
-
-        self.clipiqa_metric = None
-        if cfg.enable_clipiqa_loss and PIQ_AVAILABLE:
-            try:
-                self.clipiqa_metric = piq.CLIPIQA(data_range=1.)
-                self.clipiqa_metric = self.clipiqa_metric.to(self.device)
-                print(f"CLIPIQA metric ({cfg.clipiqa_model_type}) initialized for training loss.")
-            except Exception as e:
-                print(f"Error initializing CLIPIQA: {e}. CLIPIQA loss will be skipped.")
-                cfg.enable_clipiqa_loss = False
-        elif cfg.enable_clipiqa_loss and not PIQ_AVAILABLE:
-            print("CLIPIQA loss enabled in config, but 'piq' library is not available. Skipping CLIPIQA.")
-            cfg.enable_clipiqa_loss = False
-
-        self.retinex_loss = None
-        if cfg.enable_retinex_loss:
-            if cfg.retinex_model_type == "standard":
-                try:
-                    self.retinex_loss = RetinexLoss(
-                        alpha=cfg.retinex_alpha,
-                        beta=cfg.retinex_beta,
-                        gamma=cfg.retinex_gamma,
-                    ).to(self.device)
-                    print("Retinex loss initialized for training.")
-                except Exception as e:
-                    print(f"Error initializing Retinex loss: {e}. Retinex loss will be skipped.")
-                    cfg.enable_retinex_loss = False
-            elif cfg.retinex_model_type == "msr":
-                try:
-                    self.retinex_loss = RetinexLossMSR().to(self.device)
-                    print("MSR Retinex loss initialized for training.")
-                except Exception as e:
-                    print(f"Error initializing MSR Retinex loss: {e}. MSR Retinex loss will be skipped.")
-                    cfg.enable_retinex_loss = False
 
         self.niqe_metric = None
         if cfg.eval_niqe and PIQ_AVAILABLE:
@@ -564,6 +569,21 @@ class Runner:
                             self.bil_grid_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
                         ),
                     ]
+                )
+            )
+
+        if cfg.enable_clipiqa_loss:
+            if self.clipiqa_metric is not None:
+                schedulers.append(
+                    torch.optim.lr_scheduler.ExponentialLR(
+                        self.nrqm_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
+                    )
+                )
+
+        if cfg.enable_retinex_loss and self.retinex_loss is not None:
+            schedulers.append(
+                torch.optim.lr_scheduler.ExponentialLR(
+                    self.retinex_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
                 )
             )
 
@@ -844,6 +864,8 @@ class Runner:
             for optimizer in self.pose_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
             for optimizer in self.app_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
             for optimizer in self.bil_grid_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
+            for optimizer in self.nrqm_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
+            for optimizer in self.retinex_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
             for scheduler in schedulers: scheduler.step()
 
             if isinstance(self.cfg.strategy, DefaultStrategy):

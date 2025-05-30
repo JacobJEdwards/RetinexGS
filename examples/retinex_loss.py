@@ -1,23 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import kornia.filters as K
 
-def gaussian_blur(img: torch.Tensor, sigma: float=1.0) -> torch.Tensor:
-    channels = img.shape[1]
-    size = int(2 * round(3 * sigma) + 1)
-    padding = size // 2
+def gaussian_blur(img: torch.Tensor, sigma: float) -> torch.Tensor:
+    kernel_size = int(2 * round(3 * sigma) + 1)
+    return K.gaussian_blur2d(img, (kernel_size, kernel_size), (sigma, sigma))
 
-    grid = torch.arange(size, dtype=torch.float32, device=img.device) - size // 2
-    kernel = torch.exp(-0.5 * (grid / sigma) ** 2)
-    kernel /= kernel.sum()
-
-    kernel_x = kernel.view(1, 1, 1, -1).repeat(channels, 1, 1, 1)
-    kernel_y = kernel.view(1, 1, -1, 1).repeat(channels, 1, 1, 1)
-
-    blurred = F.pad(img, (padding, padding, padding, padding), mode="reflect")
-    blurred = F.conv2d(blurred, kernel_x, groups=channels)
-    blurred = F.conv2d(blurred, kernel_y, groups=channels)
-    return blurred
 
 def multi_scale_retinex_loss(input_img: torch.Tensor, sigma_list=None) -> torch.Tensor:
     if sigma_list is None:
@@ -37,7 +26,7 @@ def multi_scale_retinex_loss(input_img: torch.Tensor, sigma_list=None) -> torch.
     return torch.mean(torch.stack(retinex_components), dim=0)
 
 class RetinexLossMSR(nn.Module):
-    def __init__(self, sigma_list: list[float] | None=None, detail_weight: float=1.0, illum_weight: float=0.5):
+    def __init__(self, sigma_list: list[float] | None=None, detail_weight: float=1.0, illum_weight: float=1.0):
         super().__init__()
         if sigma_list is None:
             sigma_list = [15, 80, 250]
@@ -116,17 +105,11 @@ class RetinexLoss(nn.Module):
         }
 
 def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tuple[torch.Tensor, torch.Tensor]:
-    renders_clamped = torch.clamp(renders, min=1e-3)
-    log_renders = torch.log(renders_clamped)
+    s_linear = torch.clamp(renders, min=1e-6, max=1.0) 
 
-    blurred = gaussian_blur(renders_clamped, sigma)
+    l_linear_approx = gaussian_blur(s_linear, sigma)
+    l_linear_final = torch.clamp(l_linear_approx, min=1e-6, max=1.0)
 
+    r_linear_final = torch.clamp(s_linear / (l_linear_final + 1e-6), min=0.0, max=1.0)
 
-    # approximate the illumination as the blurred image
-    illum = blurred
-    reflect = log_renders - illum
-
-    R = torch.exp(reflect)
-    L = torch.exp(illum)
-
-    return R.clamp(0, 1), L.clamp(0, 1)
+    return r_linear_final, l_linear_final
