@@ -72,7 +72,7 @@ class Config:
     max_steps: int = 30_000
     eval_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
     save_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
-    save_ply: bool = False
+    save_ply: bool = True
     ply_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
     disable_video: bool = False
 
@@ -96,7 +96,7 @@ class Config:
     visible_adam: bool = True
     antialiased: bool = False
 
-    random_bkgd: bool = False
+    random_bkgd: bool = True
 
     means_lr: float = 1.6e-4
     scales_lr: float = 5e-3
@@ -108,7 +108,7 @@ class Config:
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 
-    pose_opt: bool = False
+    pose_opt: bool = True
     pose_opt_lr: float = 1e-5
     pose_opt_reg: float = 1e-6
     pose_noise: float = 0.0
