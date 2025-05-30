@@ -65,7 +65,7 @@ class Config:
     normalize_world_space: bool = True
     camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
 
-    port: int = 8080
+    port: int = 4000
 
     batch_size: int = 1
     steps_scaler: float = 1.0
