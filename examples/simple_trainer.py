@@ -141,7 +141,7 @@ class Config:
 
     enable_retinex_loss: bool = True
     retinex_model_type: Literal["msr", "standard"] = "standard"
-    retinex_lambda: float = 0.1
+    retinex_lambda: float = 0.25
     retinex_alpha: float = 1.0
     retinex_beta: float = 1.0
     retinex_gamma: float = 1.0
