@@ -37,14 +37,16 @@ def multi_scale_retinex_loss(input_img: torch.Tensor, sigma_list=None) -> torch.
     return torch.mean(torch.stack(retinex_components), dim=0)
 
 class RetinexLossMSR(nn.Module):
-    def __init__(self, sigma_list: list[float] | None=None):
+    def __init__(self, sigma_list: list[float] | None=None, detail_weight: float=1.0, illum_weight: float=0.5):
         super().__init__()
         if sigma_list is None:
             sigma_list = [15, 80, 250]
             
         self.sigma_list = sigma_list
+        self.detail_weight = detail_weight
+        self.illum_weight = illum_weight
 
-    def forward(self, input_img):
+    def forward(self, input_img: torch.Tensor) -> tuple[torch.Tensor, dict]:
         reflectance = multi_scale_retinex_loss(input_img, self.sigma_list)
 
         grad_x = reflectance[:, :, :, :-1] - reflectance[:, :, :, 1:]
@@ -56,7 +58,13 @@ class RetinexLossMSR(nn.Module):
         illum_grad_y = illumination[:, :, :-1, :] - illumination[:, :, 1:, :]
         loss_smooth_illum = (illum_grad_x.abs().mean() + illum_grad_y.abs().mean())
 
-        return loss_detail + 0.5 * loss_smooth_illum
+        loss = (self.detail_weight * loss_detail + 
+                self.illum_weight * loss_smooth_illum)
+        return loss, {
+            'detail_loss': loss_detail.item(),
+            'illumination_loss': loss_smooth_illum.item()
+        }
+        
 
 def gradient(img: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     grad_x = img[:, :, :, :-1] - img[:, :, :, 1:]
@@ -102,17 +110,18 @@ class RetinexLoss(nn.Module):
 
         return loss, {
             'recon': loss_recon.item(),
-            'illum_smooth': loss_illum_smooth.item(),
-            'reflect_smooth': loss_reflect_smooth.item()
+            'illumination_loss': loss_illum_smooth.item(),
+            'detail_loss': loss_reflect_smooth.item()
         }
 
-def fixed_retinex_decomposition(renders, sigma=3):
+def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tuple[torch.Tensor, torch.Tensor]:
     renders_clamped = torch.clamp(renders, min=1e-3)
     log_renders = torch.log(renders_clamped)
 
-    kernel_size = int(2 * sigma + 1)
-    blurred = F.avg_pool2d(log_renders, kernel_size, stride=1, padding=sigma)
+    blurred = gaussian_blur(renders_clamped, sigma)
 
+
+    # approximately the illumination as the blurred image
     illum = blurred
     reflect = log_renders - illum
 

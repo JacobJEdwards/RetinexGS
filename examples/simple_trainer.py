@@ -21,8 +21,7 @@ from datasets.traj import (
     generate_interpolated_path,
     generate_spiral_path,
 )
-from examples.retinex_loss import fixed_retinex_decomposition, RetinexLossMSR
-from retinex_loss import RetinexLoss
+from retinex_loss import fixed_retinex_decomposition, RetinexLossMSR, RetinexLoss
 from fused_ssim import fused_ssim
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -144,8 +143,8 @@ class Config:
     retinex_model_type: Literal["msr", "standard"] = "msr"
     retinex_lambda: float = 0.1
     retinex_alpha: float = 1.0
-    retinex_beta: float = 0.1
-    retinex_gamma: float = 0.1
+    retinex_beta: float = 1.0
+    retinex_gamma: float = 1.0
 
     eval_niqe: bool = True
 
@@ -650,7 +649,7 @@ class Runner:
 
             if cfg.random_bkgd:
                 bkgd = torch.rand(1, 3, device=device)
-                colors = colors + bkgd * (1.0 - alphas)
+                colors += bkgd * (1.0 - alphas)
 
             self.cfg.strategy.step_pre_backward(
                 params=self.splats,
@@ -677,21 +676,30 @@ class Runner:
                 loss = loss + cfg.clipiqa_lambda * clipiqa_loss_value
 
             retinex_loss_value = torch.tensor(0.0, device=device)
+            retinex_detail_value = torch.tensor(0.0, device=device)
+            retinex_illumination_value = torch.tensor(0.0, device=device)
 
             if cfg.enable_retinex_loss and self.retinex_loss is not None:
                 processed_colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
-                
+
                 if cfg.retinex_model_type == "standard":
                     R, L = fixed_retinex_decomposition(processed_colors_nchw)
-                    retinex_loss_value = self.retinex_loss(
+                    retinex_loss_value, retinex_info = self.retinex_loss(
                         R=R,
                         L=L,
                         target=processed_colors_nchw,
                     )
+                    retinex_detail_value = retinex_info.get("detail_loss", torch.tensor(0.0, device=device))
+                    retinex_illumination_value = retinex_info.get("illumination_loss", torch.tensor(0.0, device=device))
+
                 elif cfg.retinex_model_type == "msr":
-                    retinex_loss_value = self.retinex_loss(
+                    retinex_loss_value, retinex_info = self.retinex_loss(
                         processed_colors_nchw,
                     )
+
+                    retinex_detail_value = retinex_info.get("detail_loss", torch.tensor(0.0, device=device))
+                    retinex_illumination_value = retinex_info.get("illumination_loss", torch.tensor(0.0, device=device))
+
                 else:
                     raise ValueError(f"Unknown Retinex model type: {cfg.retinex_model_type}")
 
@@ -757,6 +765,8 @@ class Runner:
                     self.writer.add_scalar("train/clipiqa_loss", clipiqa_loss_value.item(), step)
                 if cfg.enable_retinex_loss and self.retinex_loss is not None:
                     self.writer.add_scalar("train/retinex_loss", retinex_loss_value.item(), step)
+                    self.writer.add_scalar("train/retinex_detail", retinex_detail_value.item(), step)
+                    self.writer.add_scalar("train/retinex_illumination", retinex_illumination_value.item(), step)
                 if cfg.depth_loss and depths_map is not None:
                     self.writer.add_scalar("train/depthloss", depthloss_value.item(), step)
                 if cfg.use_bilateral_grid:
