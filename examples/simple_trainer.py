@@ -55,9 +55,9 @@ class Config:
     compression: Optional[Literal["png"]] = None
     render_traj_path: str = "interp"
 
-    data_dir: str = "data/360_v2/garden"
-    data_factor: int = 4
-    result_dir: str = "results/garden"
+    data_dir: str = "../../model/colmap"
+    data_factor: int = 1
+    result_dir: str = "../../result"
     test_every: int = 8
     patch_size: Optional[int] = None
     global_scale: float = 1.0
