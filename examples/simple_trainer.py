@@ -21,7 +21,7 @@ from datasets.traj import (
     generate_interpolated_path,
     generate_spiral_path,
 )
-from examples.retinex_loss import multi_scale_retinex_decomposition
+from retinex_loss import multi_scale_retinex_decomposition
 from retinex_loss import fixed_retinex_decomposition, RetinexLossMSR, RetinexLoss
 from fused_ssim import fused_ssim
 from torch import Tensor
