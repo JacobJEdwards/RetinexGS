@@ -26,7 +26,7 @@ def multi_scale_retinex_loss(input_img: torch.Tensor, sigma_list=None) -> torch.
     return torch.mean(torch.stack(retinex_components), dim=0)
 
 class RetinexLossMSR(nn.Module):
-    def __init__(self, sigma_list: list[float] | None=None, detail_weight: float=1.0, illum_weight: float=1.0):
+    def __init__(self, sigma_list: list[float] | None=None, detail_weight: float=0.0, illum_weight: float=1.0):
         super().__init__()
         if sigma_list is None:
             sigma_list = [15, 80, 250]
@@ -51,7 +51,9 @@ class RetinexLossMSR(nn.Module):
                 self.illum_weight * loss_smooth_illum)
         return loss, {
             'detail_loss': loss_detail,
-            'illumination_loss': loss_smooth_illum
+            'illumination_loss': loss_smooth_illum,
+            'reflectance': reflectance,
+            'illumination': illumination
         }
         
 
@@ -101,7 +103,9 @@ class RetinexLoss(nn.Module):
         return loss, {
             'recon': loss_recon,
             'illumination_loss': loss_illum_smooth,
-            'detail_loss': loss_reflect_smooth
+            'detail_loss': loss_reflect_smooth,
+            'reflectance': reflect,
+            'illumination': illum
         }
 
 def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tuple[torch.Tensor, torch.Tensor]:

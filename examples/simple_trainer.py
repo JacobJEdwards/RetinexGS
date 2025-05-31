@@ -5,7 +5,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, cast
 
 import imageio
 import numpy as np
@@ -126,7 +126,7 @@ class Config:
     depth_lambda: float = 1e-2
 
     tb_every: int = 100
-    tb_save_image: bool = False
+    tb_save_image: bool = True
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
@@ -141,10 +141,10 @@ class Config:
 
     enable_retinex_loss: bool = True
     retinex_model_type: Literal["msr", "standard"] = "msr"
-    retinex_lambda: float = 1.0
+    retinex_lambda: float = 10.0
     retinex_alpha: float = 1.0
     retinex_beta: float = 1.0
-    retinex_gamma: float = 1.0
+    retinex_gamma: float = 0.0
 
     eval_niqe: bool = True
 
@@ -191,7 +191,7 @@ def create_splats_with_optimizers(
         device: str = "cuda",
         world_rank: int = 0,
         world_size: int = 1,
-) -> Tuple[torch.nn.ParameterDict, Dict[str, torch.optim.Optimizer]]:
+) -> Tuple[torch.nn.ParameterDict, Dict[str, torch.optim.Adam | torch.optim.SparseAdam | SelectiveAdam]]:
     if init_type == "sfm":
         points = torch.from_numpy(parser.points).float()
         rgbs = torch.from_numpy(parser.points_rgb / 255.0).float()
@@ -317,7 +317,7 @@ class Runner:
         )
         print("Model initialized. Number of GS:", len(self.splats["means"]))
 
-        self.cfg.strategy.check_sanity(self.splats, self.optimizers)
+        self.cfg.strategy.check_sanity(self.splats, cast(torch.optim.Optimizer, self.optimizers))
         if isinstance(self.cfg.strategy, DefaultStrategy):
             self.strategy_state = self.cfg.strategy.initialize_state(
                 scene_scale=self.scene_scale
@@ -418,6 +418,7 @@ class Runner:
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
             global BilateralGrid
+            assert BilateralGrid is not None
             self.bil_grids = BilateralGrid(
                 len(self.trainset),
                 grid_X=cfg.bilateral_grid_shape[0],
@@ -503,6 +504,7 @@ class Runner:
             rasterize_mode = "antialiased" if self.cfg.antialiased else "classic"
         if camera_model is None:
             camera_model = self.cfg.camera_model
+
         render_colors, render_alphas, info = rasterization(
             means=means,
             quats=quats,
@@ -699,11 +701,16 @@ class Runner:
             retinex_detail_value = torch.tensor(0.0, device=device)
             retinex_illumination_value = torch.tensor(0.0, device=device)
 
+            illumination = torch.zeros(1, device=device)
+            reflectance = torch.zeros(1, device=device)
+
             if cfg.enable_retinex_loss and self.retinex_loss is not None:
                 processed_colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
 
                 if cfg.retinex_model_type == "standard":
                     R, L = fixed_retinex_decomposition(processed_colors_nchw)
+                    illumination = L
+                    reflectance = R
                     retinex_loss_value, retinex_info = self.retinex_loss(
                         processed_colors_nchw,
                         R,
@@ -719,6 +726,8 @@ class Runner:
 
                     retinex_detail_value = retinex_info.get("detail_loss", torch.tensor(0.0, device=device))
                     retinex_illumination_value = retinex_info.get("illumination_loss", torch.tensor(0.0, device=device))
+                    illumination = retinex_info.get("illumination", torch.tensor(0.0, device=device))
+                    reflectance = retinex_info.get("reflectance", torch.tensor(0.0, device=device))
 
                 else:
                     raise ValueError(f"Unknown Retinex model type: {cfg.retinex_model_type}")
@@ -744,16 +753,16 @@ class Runner:
                 depthloss_value = F.l1_loss(disp, disp_gt) * self.scene_scale
                 loss += depthloss_value * cfg.depth_lambda
 
-            tvloss_value = torch.tensor(0.0, device=device)
+            tvloss_value: Tensor = torch.tensor(0.0, device=device)
             if cfg.use_bilateral_grid:
                 tvloss_value = 10 * total_variation_loss(self.bil_grids.grids)
                 loss += tvloss_value
 
 
             if cfg.opacity_reg > 0.0:
-                loss = loss + cfg.opacity_reg * torch.abs(torch.sigmoid(self.splats["opacities"])).mean()
+                loss += cfg.opacity_reg * torch.abs(torch.sigmoid(self.splats["opacities"])).mean()
             if cfg.scale_reg > 0.0:
-                loss = loss + cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean()
+                loss += cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean()
 
             loss.backward()
 
@@ -795,6 +804,26 @@ class Runner:
                     canvas_tb = torch.cat([pixels, colors], dim=2).detach().cpu().numpy()
                     canvas_tb = canvas_tb.reshape(-1, *canvas_tb.shape[2:])
                     self.writer.add_image("train/render", canvas_tb, step, dataformats='HWC')
+                    if cfg.enable_retinex_loss and self.retinex_loss is not None:
+                        retinex_canvas = torch.cat(
+                            [
+                                reflectance.unsqueeze(1).unsqueeze(2).expand(-1, height, width),
+                                illumination.unsqueeze(1).unsqueeze(2).expand(-1, height, width),
+                            ],
+                            dim=1,
+                        ).detach().cpu().numpy()
+                        retinex_canvas = retinex_canvas.reshape(-1, 2, height, width)
+                        self.writer.add_image("train/retinex", retinex_canvas, step, dataformats='NCHW')
+                        self.writer.add_image(
+                            "train/retinex_reflectance",
+                            reflectance.unsqueeze(1).unsqueeze(2).expand(-1, height, width).detach().cpu().numpy(),
+                        )
+                        self.writer.add_image(
+                            "train/retinex_illumination",
+                            illumination.unsqueeze(1).unsqueeze(2).expand(-1, height, width).detach().cpu().numpy(),
+                        )
+
+
                 self.writer.flush()
 
             if step in [i - 1 for i in cfg.save_steps] or step == max_steps - 1:
