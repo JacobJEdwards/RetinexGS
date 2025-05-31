@@ -21,6 +21,7 @@ from datasets.traj import (
     generate_interpolated_path,
     generate_spiral_path,
 )
+from examples.retinex_loss import multi_scale_retinex_decomposition
 from retinex_loss import fixed_retinex_decomposition, RetinexLossMSR, RetinexLoss
 from fused_ssim import fused_ssim
 from torch import Tensor
@@ -141,10 +142,10 @@ class Config:
 
     enable_retinex_loss: bool = True
     retinex_model_type: Literal["msr", "standard"] = "standard"
-    retinex_lambda: float = 10.0
-    retinex_alpha: float = 0.1
+    retinex_lambda: float = 5.0
+    retinex_alpha: float = 0.0
     retinex_beta: float = 1.0
-    retinex_gamma: float = 0.1
+    retinex_gamma: float = 0.0
 
     eval_niqe: bool = True
 
@@ -708,7 +709,7 @@ class Runner:
                 processed_colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
 
                 if cfg.retinex_model_type == "standard":
-                    R, L = fixed_retinex_decomposition(processed_colors_nchw)
+                    R, L = multi_scale_retinex_decomposition(processed_colors_nchw)
                     illumination = L
                     reflectance = R
                     retinex_loss_value, retinex_info = self.retinex_loss(
@@ -805,8 +806,29 @@ class Runner:
                     canvas_tb = canvas_tb.reshape(-1, *canvas_tb.shape[2:])
                     self.writer.add_image("train/render", canvas_tb, step, dataformats='HWC')
                     if cfg.enable_retinex_loss and self.retinex_loss is not None:
-                        pass
-                        # todo
+                        if cfg.retinex_model_type == "standard":
+                            img_R_tb = reflectance[0].clamp(0,1).detach().cpu()
+                            img_L_tb = illumination[0].clamp(0,1).detach().cpu()
+
+                        elif cfg.retinex_model_type == "msr":
+                            log_R_from_msr = reflectance
+                            log_L_from_msr = illumination
+
+                            img_R_lin = torch.exp(log_R_from_msr[0]).clamp(0,1).detach().cpu()
+                            img_L_lin = torch.exp(log_L_from_msr[0]).clamp(0,1).detach().cpu()
+
+                            img_R_tb = img_R_lin
+                            img_L_tb = img_L_lin
+
+
+                        if img_R_tb.shape[0] == 1:
+                            img_R_tb = img_R_tb.repeat(3, 1, 1)
+                        if img_L_tb.shape[0] == 1:
+                            img_L_tb = img_L_tb.repeat(3, 1, 1)
+
+                        self.writer.add_image("train/retinex_Reflectance", img_R_tb, step)
+                        self.writer.add_image("train/retinex_Illumination", img_L_tb, step)
+                            # todo
 
                 self.writer.flush()
 

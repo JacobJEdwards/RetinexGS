@@ -63,14 +63,9 @@ def gradient(img: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     return grad_x, grad_y
 
 
-def illumination_smoothness_loss(illum: torch.Tensor, input_image: torch.Tensor) -> torch.Tensor:
+def illumination_smoothness_loss(illum: torch.Tensor) -> torch.Tensor:
     grad_x, grad_y = gradient(illum)
-    grad_x_input, grad_y_input = gradient(input_image)
-    
-    return (torch.mean(torch.abs(grad_x)) + 
-            torch.mean(torch.abs(grad_y)) + 
-            torch.mean(torch.abs(grad_x_input)) + 
-            torch.mean(torch.abs(grad_y_input)))
+    return torch.mean(torch.abs(grad_x)) + torch.mean(torch.abs(grad_y))
 
 def reflectance_smoothness_loss(reflect: torch.Tensor) -> torch.Tensor:
     grad_x, grad_y = gradient(reflect)
@@ -87,10 +82,9 @@ class RetinexLoss(nn.Module):
         self.beta = beta  
         self.gamma = gamma
 
-    def forward(self, input_image: torch.Tensor, reflect: torch.Tensor, illum: torch.Tensor) -> tuple[torch.Tensor, 
-                                                                                                dict[str, torch.Tensor]]:
+    def forward(self, input_image: torch.Tensor, reflect: torch.Tensor, illum: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         loss_recon = reconstruction_loss(input_image, reflect, illum)
-        loss_illum_smooth = illumination_smoothness_loss(illum, input_image)
+        loss_illum_smooth = illumination_smoothness_loss(illum)
         loss_reflect_smooth = reflectance_smoothness_loss(reflect)
 
         loss = (self.alpha * loss_recon +
@@ -114,3 +108,48 @@ def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tupl
     r_linear_final = torch.clamp(s_linear / (l_linear_final + 1e-6), min=0.0, max=1.0)
 
     return r_linear_final, l_linear_final
+
+# In your retinex_loss.py or a similar utility file
+
+import torch
+import kornia.filters as K # Make sure Kornia is imported
+
+def gaussian_blur(img: torch.Tensor, sigma: float) -> torch.Tensor:
+    # Ensure kernel_size is odd
+    kernel_size = int(2 * round(3 * sigma) + 1)
+    if kernel_size % 2 == 0: # kornia needs odd kernel size
+        kernel_size +=1
+    return K.gaussian_blur2d(img, (kernel_size, kernel_size), (sigma, sigma), border_type='reflect')
+
+
+def multi_scale_retinex_decomposition(
+        renders: torch.Tensor,
+        sigma_list: list[float] | None = None,
+        epsilon_log: float = 1e-6,
+        epsilon_div: float = 1e-6 
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if sigma_list is None:
+        sigma_list = [15, 80, 250]
+
+    s_linear = torch.clamp(renders, min=epsilon_log, max=1.0) # Clamp for log stability
+    log_s = torch.log(s_linear)
+
+    retinex_components = []
+    for sigma in sigma_list:
+        s_blurred = gaussian_blur(s_linear, sigma)
+        s_blurred_clamped = torch.clamp(s_blurred, min=epsilon_log, max=1.0) # Clamp for log stability
+        log_s_blurred = torch.log(s_blurred_clamped)
+        retinex_components.append(log_s - log_s_blurred)
+
+    log_r = torch.mean(torch.stack(retinex_components), dim=0)
+
+    r_linear = torch.exp(log_r)
+
+
+    r_final = torch.clamp(r_linear, 0.0, 1.5) 
+    r_final = torch.clamp(r_linear, 0.0, 1.0)
+
+
+    l_final = torch.clamp(s_linear / (r_final + epsilon_div), 0.0, 1.0)
+
+    return r_final, l_final
