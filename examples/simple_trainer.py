@@ -136,11 +136,11 @@ class Config:
 
     use_fused_bilagrid: bool = False
 
-    enable_clipiqa_loss: bool = False
-    clipiqa_lambda: float = 0.1
+    enable_clipiqa_loss: bool = True
+    clipiqa_lambda: float = 5
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
 
-    enable_retinex_loss: bool = True
+    enable_retinex_loss: bool = False
     retinex_model_type: Literal["msr", "standard"] = "standard"
     retinex_lambda: float = 5.0
     retinex_alpha: float = 0.0
@@ -691,9 +691,9 @@ class Runner:
             clipiqa_loss_value = torch.tensor(0.0, device=device)
             clipiqa_score_value = torch.tensor(0.0, device=device)
 
-            if cfg.enable_clipiqa_loss and self.clipiqa_metric is not None:
+            if cfg.enable_clipiqa_loss and self.clipiqa_model is not None:
                 colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
-                current_clipiqa_score = self.clipiqa_metric(colors_nchw)
+                current_clipiqa_score = self.clipiqa_model(colors_nchw)
                 clipiqa_score_value = current_clipiqa_score.mean()
                 clipiqa_loss_value = -clipiqa_score_value
                 loss = loss + cfg.clipiqa_lambda * clipiqa_loss_value
@@ -768,7 +768,7 @@ class Runner:
             loss.backward()
 
             desc_parts = [f"loss={loss.item():.3f}"]
-            if cfg.enable_clipiqa_loss and self.clipiqa_metric is not None:
+            if cfg.enable_clipiqa_loss:
                 desc_parts.append(f"clipiqa={clipiqa_score_value.item():.3f}")
             if cfg.enable_retinex_loss and self.retinex_loss is not None:
                 desc_parts.append(f"retinex={retinex_loss_value.item():.3f}")
@@ -790,7 +790,7 @@ class Runner:
                 self.writer.add_scalar("train/ssimloss", ssimloss.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
-                if cfg.enable_clipiqa_loss and self.clipiqa_metric is not None:
+                if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar("train/clipiqa_score", clipiqa_score_value.item(), step)
                     self.writer.add_scalar("train/clipiqa_loss", clipiqa_loss_value.item(), step)
                 if cfg.enable_retinex_loss and self.retinex_loss is not None:
