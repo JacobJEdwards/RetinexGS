@@ -805,27 +805,8 @@ class Runner:
                     canvas_tb = canvas_tb.reshape(-1, *canvas_tb.shape[2:])
                     self.writer.add_image("train/render", canvas_tb, step, dataformats='HWC')
                     if cfg.enable_retinex_loss and self.retinex_loss is not None:
-                        retinex_canvas = torch.cat(
-                            [
-                                reflectance.unsqueeze(1).repeat(1, 3, 1, 1),
-                                illumination.unsqueeze(1).repeat(1, 3, 1, 1),
-                            ],
-                            dim=2,
-                        ).detach().cpu().numpy()
-                        retinex_canvas = retinex_canvas.reshape(-1, *retinex_canvas.shape[2:])
-                        self.writer.add_image("train/retinex", retinex_canvas, step, dataformats='HWC')
-                        self.writer.add_image(
-                            "train/retinex_reflectance",
-                            reflectance.unsqueeze(1).repeat(1, 3, 1, 1).detach().cpu().numpy(),
-                            step,
-                            dataformats='NCHW',
-                        )
-                        self.writer.add_image(
-                            "train/retinex_illumination",
-                            illumination.unsqueeze(1).repeat(1, 3, 1, 1).detach().cpu().numpy(),
-                            step,
-                            dataformats='NCHW',
-                        )
+                        pass
+                        # todo
 
                 self.writer.flush()
 
