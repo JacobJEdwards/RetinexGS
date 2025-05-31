@@ -62,18 +62,15 @@ def gradient(img: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     grad_y = img[:, :, :-1, :] - img[:, :, 1:, :]
     return grad_x, grad_y
 
-def edge_aware_weight(image: torch.Tensor, lambd: int=10) -> tuple[torch.Tensor, torch.Tensor]:
-    grad_x, grad_y = gradient(image)
-    weight_x = torch.exp(-lambd * torch.abs(grad_x))
-    weight_y = torch.exp(-lambd * torch.abs(grad_y))
-    return weight_x, weight_y
 
 def illumination_smoothness_loss(illum: torch.Tensor, input_image: torch.Tensor) -> torch.Tensor:
-    grad_illum_x, grad_illum_y = gradient(illum)
-    weight_x, weight_y = edge_aware_weight(input_image)
-    loss_x = torch.mean(torch.abs(grad_illum_x * weight_x))
-    loss_y = torch.mean(torch.abs(grad_illum_y * weight_y))
-    return loss_x + loss_y
+    grad_x, grad_y = gradient(illum)
+    grad_x_input, grad_y_input = gradient(input_image)
+    
+    return (torch.mean(torch.abs(grad_x)) + 
+            torch.mean(torch.abs(grad_y)) + 
+            torch.mean(torch.abs(grad_x_input)) + 
+            torch.mean(torch.abs(grad_y_input)))
 
 def reflectance_smoothness_loss(reflect: torch.Tensor) -> torch.Tensor:
     grad_x, grad_y = gradient(reflect)

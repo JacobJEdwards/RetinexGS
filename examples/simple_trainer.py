@@ -140,11 +140,11 @@ class Config:
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
 
     enable_retinex_loss: bool = True
-    retinex_model_type: Literal["msr", "standard"] = "msr"
+    retinex_model_type: Literal["msr", "standard"] = "standard"
     retinex_lambda: float = 10.0
-    retinex_alpha: float = 1.0
+    retinex_alpha: float = 0.1
     retinex_beta: float = 1.0
-    retinex_gamma: float = 0.0
+    retinex_gamma: float = 0.1
 
     eval_niqe: bool = True
 
