@@ -52,16 +52,16 @@ except ImportError:
 
 @dataclass
 class Config:
-    disable_viewer: bool = False
-    ckpt: Optional[List[str]] = None
-    compression: Optional[Literal["png"]] = None
+    disable_viewer: bool = True
+    ckpt: list[str] | None = None
+    compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
     data_dir: str = "../../model/colmap"
     data_factor: int = 1
     result_dir: str = "../../result"
     test_every: int = 8
-    patch_size: Optional[int] = None
+    patch_size: int | None = None
     global_scale: float = 1.0
     normalize_world_space: bool = True
     camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
@@ -72,10 +72,10 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 30_000
-    eval_steps: list[int] = field(default_factory=lambda: [7_000, 30_000])
-    save_steps: list[int] = field(default_factory=lambda: [7_000, 30_000])
+    eval_steps: list[int] = field(default_factory=lambda: [7_000, 14_000, 30_000])
+    save_steps: list[int] = field(default_factory=lambda: [7_000, 14_000, 30_000])
     save_ply: bool = True
-    ply_steps: list[int] = field(default_factory=lambda: [7_000, 30_000])
+    ply_steps: list[int] = field(default_factory=lambda: [7_000, 14_000, 30_000])
     disable_video: bool = False
 
     init_type: str = "sfm"
@@ -90,7 +90,7 @@ class Config:
     near_plane: float = 0.01
     far_plane: float = 1e10
 
-    strategy: Union[DefaultStrategy, MCMCStrategy] = field(
+    strategy: DefaultStrategy | MCMCStrategy = field(
         default_factory=DefaultStrategy
     )
     packed: bool = False
@@ -120,8 +120,8 @@ class Config:
     app_opt_lr: float = 1e-3
     app_opt_reg: float = 1e-6
 
-    use_bilateral_grid: bool = False
-    bilateral_grid_shape: Tuple[int, int, int] = (16, 16, 8)
+    use_bilateral_grid: bool = True
+    bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
 
     depth_loss: bool = True
     depth_lambda: float = 1e-2
@@ -136,7 +136,7 @@ class Config:
 
     use_fused_bilagrid: bool = False
 
-    enable_clipiqa_loss: bool = True
+    enable_clipiqa_loss: bool = False
     clipiqa_lambda: float = 5
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
 
@@ -147,7 +147,7 @@ class Config:
     retinex_beta: float = 1.0
     retinex_gamma: float = 0.0
 
-    eval_niqe: bool = True
+    eval_niqe: bool = False
 
     def adjust_steps(self, factor: float):
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
