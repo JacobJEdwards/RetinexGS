@@ -3,11 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import kornia.filters as K
 
-def gaussian_blur(img: torch.Tensor, sigma: float) -> torch.Tensor:
-    kernel_size = int(2 * round(3 * sigma) + 1)
-    return K.gaussian_blur2d(img, (kernel_size, kernel_size), (sigma, sigma))
-
-
 def multi_scale_retinex_loss(input_img: torch.Tensor, sigma_list=None) -> torch.Tensor:
     if sigma_list is None:
         sigma_list = [15, 80, 250]
@@ -109,17 +104,11 @@ def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tupl
 
     return r_linear_final, l_linear_final
 
-# In your retinex_loss.py or a similar utility file
-
-import torch
-import kornia.filters as K # Make sure Kornia is imported
-
 def gaussian_blur(img: torch.Tensor, sigma: float) -> torch.Tensor:
-    # Ensure kernel_size is odd
     kernel_size = int(2 * round(3 * sigma) + 1)
-    if kernel_size % 2 == 0: # kornia needs odd kernel size
+    if kernel_size % 2 == 0:
         kernel_size +=1
-    return K.gaussian_blur2d(img, (kernel_size, kernel_size), (sigma, sigma), border_type='reflect')
+    return K.gaussian_blur2d(img, (kernel_size, kernel_size), (sigma, sigma))
 
 
 def multi_scale_retinex_decomposition(
@@ -131,13 +120,13 @@ def multi_scale_retinex_decomposition(
     if sigma_list is None:
         sigma_list = [15, 80, 250]
 
-    s_linear = torch.clamp(renders, min=epsilon_log, max=1.0) # Clamp for log stability
+    s_linear = torch.clamp(renders, min=epsilon_log, max=1.0)
     log_s = torch.log(s_linear)
 
     retinex_components = []
     for sigma in sigma_list:
         s_blurred = gaussian_blur(s_linear, sigma)
-        s_blurred_clamped = torch.clamp(s_blurred, min=epsilon_log, max=1.0) # Clamp for log stability
+        s_blurred_clamped = torch.clamp(s_blurred, min=epsilon_log, max=1.0)
         log_s_blurred = torch.log(s_blurred_clamped)
         retinex_components.append(log_s - log_s_blurred)
 
@@ -146,7 +135,6 @@ def multi_scale_retinex_decomposition(
     r_linear = torch.exp(log_r)
 
 
-    r_final = torch.clamp(r_linear, 0.0, 1.5) 
     r_final = torch.clamp(r_linear, 0.0, 1.0)
 
 
