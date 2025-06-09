@@ -187,7 +187,7 @@ class Config:
     clipiqa_lambda_start_factor: float = 0.01
     clipiqa_lambda_warmup_steps: int = 5000
 
-    enable_hard_view_mining: bool = True
+    enable_hard_view_mining: bool = False
     hard_view_mining_pool_size: int = 200
     hard_view_mining_every: int = 1000
     hard_view_mining_batch_size: int = 4
