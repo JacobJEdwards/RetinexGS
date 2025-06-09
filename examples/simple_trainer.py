@@ -381,7 +381,7 @@ class Runner:
 
         self.hard_view_candidate_poses = None
         self.hard_view_indices = None
-        if cfg.enable_clipiqa_loss and cfg.enable_hard_view_mining:
+        if cfg.enable_clipiqa_loss:
             print("Initializing candidate pool for Online Hard View Mining...")
             candidate_poses_np = generate_interpolated_path(
                 self.parser.camtoworlds, n_interp=5
@@ -406,7 +406,6 @@ class Runner:
                 all_poses_np[:cfg.hard_view_mining_pool_size]
             ).float().to(self.device)
             print(f"Created a pool of {len(self.hard_view_candidate_poses)} candidate poses for hard mining.")
-
 
         self.compression_method = None
         if cfg.compression is not None:
