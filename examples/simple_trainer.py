@@ -97,7 +97,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: str = "../../model/colmap"
+    data_dir: str = "../../colmap"
     data_factor: int = 1
     result_dir: str = "../../result"
     test_every: int = 8
@@ -160,7 +160,7 @@ class Config:
     app_opt_lr: float = 1e-3
     app_opt_reg: float = 1e-6
 
-    use_bilateral_grid: bool = True
+    use_bilateral_grid: bool = False
     bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
 
     depth_loss: bool = True
@@ -176,7 +176,7 @@ class Config:
 
     use_fused_bilagrid: bool = False
 
-    enable_clipiqa_loss: bool = False
+    enable_clipiqa_loss: bool = True
     clipiqa_lambda: float = 5
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
     num_novel_views: int = 100
