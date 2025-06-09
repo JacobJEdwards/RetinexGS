@@ -477,6 +477,50 @@ class Runner:
             self.server = viser.ViserServer(port=cfg.port, verbose=False)
             self.viewer = GsplatViewer(server=self.server, render_fn=self._viewer_render_fn, output_dir=Path(cfg.result_dir), mode="training")
 
+    @torch.no_grad()
+    def find_hard_views(self, sh_degree_to_use: int):
+        print(f"\nPerforming Online Hard View Mining (World Rank: {self.world_rank})...")
+        cfg = self.cfg
+        device = self.device
+        all_scores = []
+
+        first_cam_key = list(self.parser.Ks_dict.keys())[0]
+        K_hard_view = torch.from_numpy(self.parser.Ks_dict[first_cam_key]).float().to(device)
+        width, height = self.parser.imsize_dict[first_cam_key]
+
+        if cfg.enable_variational_intrinsics:
+            K_hard_view_batch = generate_variational_intrinsics(
+                K_hard_view,
+                num_intrinsics=len(self.hard_view_candidate_poses),
+                focal_perturb_factor=cfg.focal_length_perturb_factor,
+                principal_point_perturb_pixel=cfg.principal_point_perturb_pixel,
+            )
+        else:
+            K_hard_view_batch = K_hard_view.unsqueeze(0).expand(len(self.hard_view_candidate_poses), -1, -1)
+
+        batch_size = 16
+        for i in tqdm.tqdm(range(0, len(self.hard_view_candidate_poses), batch_size), desc="Mining Hard Views"):
+            batch_poses = self.hard_view_candidate_poses[i:i+batch_size]
+            batch_Ks = K_hard_view_batch[i:i+batch_size]
+
+            renders, _, _ = self.rasterize_splats(
+                camtoworlds=batch_poses,
+                Ks=batch_Ks,
+                width=width,
+                height=height,
+                sh_degree=sh_degree_to_use,
+                render_mode="RGB",
+            )
+            colors_nchw = renders.permute(0, 3, 1, 2).contiguous()
+            scores = self.clipiqa_model(colors_nchw)
+            all_scores.append(scores)
+
+        all_scores = torch.cat(all_scores)
+
+        sorted_indices = torch.argsort(all_scores)
+        self.hard_view_indices = sorted_indices
+        print(f"Hard View Mining complete. Hardest score: {all_scores.min():.4f}, Easiest score: {all_scores.max():.4f}\n")
+
     def rasterize_splats(
             self,
             camtoworlds: Tensor,
