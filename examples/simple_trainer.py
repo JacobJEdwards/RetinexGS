@@ -182,7 +182,7 @@ class Config:
     num_novel_views: int = 100
     num_novel_to_render: int = 4
     novel_view_translation_pertube: float = 0.5
-    novel_view_rotation_pertube: float = 5.0
+    novel_view_rotation_pertube: float = 20.0
     enable_loss_schedule: bool = True
     clipiqa_lambda_start_factor: float = 0.01
     clipiqa_lambda_warmup_steps: int = 5000
@@ -386,11 +386,18 @@ class Runner:
             candidate_poses_np = generate_interpolated_path(
                 self.parser.camtoworlds, n_interp=5
             )
+            if candidate_poses_np.shape[1] == 3:
+                print("Padding interpolated poses from 3x4 to 4x4...")
+                bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
+                repeated_bottom_row = np.repeat(
+                    bottom_row, len(candidate_poses_np), axis=0)
+                candidate_poses_np = np.concatenate([candidate_poses_np, repeated_bottom_row], axis=1)
+
             perturbed_poses_np = generate_novel_views(
                 self.parser.camtoworlds,
                 num_novel_views=cfg.hard_view_mining_pool_size // 2,
-                translation_perturbation=0.2,
-                rotation_perturbation=15.0
+                translation_perturbation=cfg.novel_view_translation_pertube,
+                rotation_perturbation=cfg.novel_view_rotation_pertube,
             )
             all_poses_np = np.concatenate([candidate_poses_np, perturbed_poses_np], axis=0)
             np.random.shuffle(all_poses_np)
