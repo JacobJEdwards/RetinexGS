@@ -40,7 +40,7 @@ class CameraOptModule(torch.nn.Module):
         pose_deltas = self.embeds(embed_ids)  # (..., 9)
         dx, drot = pose_deltas[..., :3], pose_deltas[..., 3:]
         rot = rotation_6d_to_matrix(
-            drot + self.identity.expand(*batch_dims, -1)
+            drot + self.identity.expand(*batch_dims, -1)  # pyright: ignore [reportCallIssue]
         )  # (..., 3, 3)
         transform = torch.eye(4, device=pose_deltas.device).repeat((*batch_dims, 1, 1))
         transform[..., :3, :3] = rot
@@ -64,11 +64,8 @@ class AppearanceOptModule(torch.nn.Module):
         self.embed_dim = embed_dim
         self.sh_degree = sh_degree
         self.embeds = torch.nn.Embedding(n, embed_dim)
-        layers = []
-        layers.append(
-            torch.nn.Linear(embed_dim + feature_dim + (sh_degree + 1) ** 2, mlp_width)
-        )
-        layers.append(torch.nn.ReLU(inplace=True))
+        layers = [torch.nn.Linear(embed_dim + feature_dim + (sh_degree + 1) ** 2, mlp_width),
+                  torch.nn.ReLU(inplace=True)]
         for _ in range(mlp_depth - 1):
             layers.append(torch.nn.Linear(mlp_width, mlp_width))
             layers.append(torch.nn.ReLU(inplace=True))
@@ -84,6 +81,7 @@ class AppearanceOptModule(torch.nn.Module):
             features: (N, feature_dim)
             embed_ids: (C,)
             dirs: (C, N, 3)
+            sh_degree: Spherical harmonics degree to use for view directions.
 
         Returns:
             colors: (C, N, 3)
@@ -127,7 +125,7 @@ def rotation_6d_to_matrix(d6: Tensor) -> Tensor:
     [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
     On the Continuity of Rotation Representations in Neural Networks.
     IEEE Conference on Computer Vision and Pattern Recognition, 2019.
-    Retrieved from http://arxiv.org/abs/1812.07035
+    Retrieved from https://arxiv.org/abs/1812.07035
     """
 
     a1, a2 = d6[..., :3], d6[..., 3:]
@@ -218,7 +216,7 @@ def apply_depth_colormap(
     far_plane = far_plane or float(torch.max(depth))
     depth = (depth - near_plane) / (far_plane - near_plane + 1e-10)
     depth = torch.clip(depth, 0.0, 1.0)
-    img = apply_float_colormap(depth, colormap="turbo")
+    img = apply_float_colormap(depth)
     if acc is not None:
         img = img * acc + (1.0 - acc)
     return img

@@ -2,10 +2,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, Tuple, Union
 
 import torch
+from torch.optim import SparseAdam, Adam
 from typing_extensions import Literal
 
 from .base import Strategy
 from .ops import duplicate, remove, reset_opa, split
+from .. import SelectiveAdam
 
 
 @dataclass
@@ -63,7 +65,7 @@ class DefaultStrategy(Strategy):
 
         >>> from gsplat import DefaultStrategy, rasterization
         >>> params: Dict[str, torch.nn.Parameter] | torch.nn.ParameterDict = ...
-        >>> optimizers: Dict[str, torch.optim.Optimizer] = ...
+        >>> optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam] = ...
         >>> strategy = DefaultStrategy()
         >>> strategy.check_sanity(params, optimizers)
         >>> strategy_state = strategy.initialize_state()
@@ -111,8 +113,8 @@ class DefaultStrategy(Strategy):
 
     def check_sanity(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
     ):
         """Sanity check for the parameters and optimizers.
 
@@ -138,7 +140,7 @@ class DefaultStrategy(Strategy):
     def step_pre_backward(
         self,
         params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
+        optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam],
         state: Dict[str, Any],
         step: int,
         info: Dict[str, Any],
@@ -151,11 +153,11 @@ class DefaultStrategy(Strategy):
 
     def step_post_backward(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
-        state: Dict[str, Any],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam],
+        state: dict[str, Any],
         step: int,
-        info: Dict[str, Any],
+        info: dict[str, Any],
         packed: bool = False,
     ):
         """Callback function to be executed after the `loss.backward()` call."""
@@ -196,7 +198,6 @@ class DefaultStrategy(Strategy):
             reset_opa(
                 params=params,
                 optimizers=optimizers,
-                state=state,
                 value=self.prune_opa * 2.0,
             )
 
@@ -262,9 +263,9 @@ class DefaultStrategy(Strategy):
     @torch.no_grad()
     def _grow_gs(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
-        state: Dict[str, Any],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
+        state: dict[str, Any],
         step: int,
     ) -> Tuple[int, int]:
         count = state["count"]
@@ -311,9 +312,9 @@ class DefaultStrategy(Strategy):
     @torch.no_grad()
     def _prune_gs(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
-        state: Dict[str, Any],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
+        state: dict[str, Any],
         step: int,
     ) -> int:
         is_prune = torch.sigmoid(params["opacities"].flatten()) < self.prune_opa
@@ -333,7 +334,8 @@ class DefaultStrategy(Strategy):
             is_prune = is_prune | is_too_big
 
         n_prune = is_prune.sum().item()
+
         if n_prune > 0:
             remove(params=params, optimizers=optimizers, state=state, mask=is_prune)
 
-        return n_prune
+        return int(n_prune)

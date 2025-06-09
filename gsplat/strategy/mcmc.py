@@ -1,12 +1,14 @@
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, Union
+from typing import Any
 
 import torch
 from torch import Tensor
+from torch.optim import Adam, SparseAdam
 
 from .base import Strategy
 from .ops import inject_noise_to_position, relocate, sample_add
+from .. import SelectiveAdam
 
 
 @dataclass
@@ -32,9 +34,9 @@ class MCMCStrategy(Strategy):
 
     Examples:
 
-        >>> from gsplat import MCMCStrategy, rasterization
-        >>> params: Dict[str, torch.nn.Parameter] | torch.nn.ParameterDict = ...
-        >>> optimizers: Dict[str, torch.optim.Optimizer] = ...
+        >>> from torch.optim import SparseAdam        >>> from gsplat import MCMCStrategy, rasterization, SelectiveAdam
+        >>> params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict = ...
+        >>> optimizers: dict[str, Adam | SparseAdam | SelectiveAdam] = ...
         >>> strategy = MCMCStrategy()
         >>> strategy.check_sanity(params, optimizers)
         >>> strategy_state = strategy.initialize_state()
@@ -54,7 +56,7 @@ class MCMCStrategy(Strategy):
     min_opacity: float = 0.005
     verbose: bool = False
 
-    def initialize_state(self) -> Dict[str, Any]:
+    def initialize_state(self) -> dict[str, Any]:
         """Initialize and return the running state for this strategy."""
         n_max = 51
         binoms = torch.zeros((n_max, n_max))
@@ -65,8 +67,8 @@ class MCMCStrategy(Strategy):
 
     def check_sanity(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
     ):
         """Sanity check for the parameters and optimizers.
 
@@ -102,16 +104,21 @@ class MCMCStrategy(Strategy):
 
     def step_post_backward(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
-        state: Dict[str, Any],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
+        state: dict[str, Any],
         step: int,
-        info: Dict[str, Any],
+        info: dict[str, Any],
         lr: float,
     ):
         """Callback function to be executed after the `loss.backward()` call.
 
         Args:
+            params (dict[str, torch.nn.Parameter] | torch.nn.ParameterDict): Model parameters.
+            optimizers (dict[str, Adam | SparseAdam | SelectiveAdam]): Optimizers for the model parameters.
+            state (dict[str, Any]): Running state of the strategy.
+            step (int): Current training step.
+            info (dict[str, Any]): Additional information from the training step.
             lr (float): Learning rate for "means" attribute of the GS.
         """
         # move to the correct device
@@ -120,9 +127,8 @@ class MCMCStrategy(Strategy):
         binoms = state["binoms"]
 
         if (
-            step < self.refine_stop_iter
-            and step > self.refine_start_iter
-            and step % self.refine_every == 0
+            self.refine_stop_iter > step > self.refine_start_iter
+                and step % self.refine_every == 0
         ):
             # teleport GSs
             n_relocated_gs = self._relocate_gs(params, optimizers, binoms)
@@ -141,14 +147,14 @@ class MCMCStrategy(Strategy):
 
         # add noise to GSs
         inject_noise_to_position(
-            params=params, optimizers=optimizers, state={}, scaler=lr * self.noise_lr
+            params=params, scaler=lr * self.noise_lr
         )
 
     @torch.no_grad()
     def _relocate_gs(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
         binoms: Tensor,
     ) -> int:
         opacities = torch.sigmoid(params["opacities"].flatten())
@@ -163,13 +169,13 @@ class MCMCStrategy(Strategy):
                 binoms=binoms,
                 min_opacity=self.min_opacity,
             )
-        return n_gs
+        return int(n_gs)
 
     @torch.no_grad()
     def _add_new_gs(
         self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
+        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
         binoms: Tensor,
     ) -> int:
         current_n_points = len(params["means"])

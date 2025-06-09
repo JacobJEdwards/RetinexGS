@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from typing import Dict, Union
 
 import torch
+from torch.optim import SparseAdam, Adam
+
+from gsplat import SelectiveAdam
 
 
 @dataclass
@@ -15,7 +18,7 @@ class Strategy:
     def check_sanity(
         self,
         params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, torch.optim.Optimizer],
+        optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam],
     ):
         """Sanity check for the parameters and optimizers."""
         trainable_params = set(

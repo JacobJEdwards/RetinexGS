@@ -7,6 +7,39 @@ https://github.com/google-research/multinerf/blob/5b4d4f64608ec8077222c52fdf814d
 import numpy as np
 import scipy
 
+def generate_novel_views(
+        base_poses: np.ndarray,
+        num_novel_views: int,
+        translation_perturbation: float = 0.1,
+        rotation_perturbation: float = 5.0,
+) -> np.ndarray:
+    novel_poses = []
+    num_base_poses = base_poses.shape[0]
+
+    for _ in range(num_novel_views):
+        base_pose = base_poses[np.random.randint(num_base_poses)]
+
+        translation_offset = np.random.uniform(-translation_perturbation, translation_perturbation, size=3)
+        novel_pose = np.copy(base_pose)
+        novel_pose[:3, 3] += translation_offset
+
+        angle_rad = np.deg2rad(np.random.uniform(-rotation_perturbation, rotation_perturbation, size=3))
+        rx = np.array([[1, 0, 0],
+                       [0, np.cos(angle_rad[0]), -np.sin(angle_rad[0])],
+                       [0, np.sin(angle_rad[0]), np.cos(angle_rad[0])]])
+        ry = np.array([[np.cos(angle_rad[1]), 0, np.sin(angle_rad[1])],
+                       [0, 1, 0],
+                       [-np.sin(angle_rad[1]), 0, np.cos(angle_rad[1])]])
+        rz = np.array([[np.cos(angle_rad[2]), -np.sin(angle_rad[2]), 0],
+                       [np.sin(angle_rad[2]), np.cos(angle_rad[2]), 0],
+                       [0, 0, 1]])
+        rotation_offset = rz @ ry @ rx
+
+        novel_pose[:3, :3] = novel_pose[:3, :3] @ rotation_offset
+
+        novel_poses.append(novel_pose)
+
+    return np.array(novel_poses)
 
 def normalize(x: np.ndarray) -> np.ndarray:
     """Normalization helper function."""

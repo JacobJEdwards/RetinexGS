@@ -5,33 +5,32 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, cast
+from typing import Dict, Optional, Tuple, cast
 
 import imageio
 import numpy as np
+import piq
 import torch
 import torch.nn.functional as F
 import tqdm
 import tyro
 import viser
 import yaml
-from datasets.colmap import Dataset, Parser
-from datasets.traj import (
-    generate_ellipse_path_z,
-    generate_interpolated_path,
-    generate_spiral_path,
-)
-from retinex_loss import multi_scale_retinex_decomposition
-from retinex_loss import fixed_retinex_decomposition, RetinexLossMSR, RetinexLoss
 from fused_ssim import fused_ssim
+from nerfview import CameraState, RenderTabState, apply_float_colormap
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal, assert_never
-from utils import AppearanceOptModule, CameraOptModule, knn, rgb_to_sh, set_random_seed
 
+from datasets.colmap import Dataset, Parser
+from datasets.traj import (
+    generate_ellipse_path_z,
+    generate_interpolated_path,
+    generate_spiral_path,
+)
 from gsplat import export_splats
 from gsplat.compression import PngCompression
 from gsplat.distributed import cli
@@ -39,16 +38,57 @@ from gsplat.optimizers import SelectiveAdam
 from gsplat.rendering import rasterization
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
 from gsplat_viewer import GsplatViewer, GsplatRenderTabState
-from nerfview import CameraState, RenderTabState, apply_float_colormap
+from retinex_loss import RetinexLossMSR, RetinexLoss
+from retinex_loss import multi_scale_retinex_decomposition
+from utils import AppearanceOptModule, CameraOptModule, knn, rgb_to_sh, set_random_seed
 
-try:
-    import piq
-    PIQ_AVAILABLE = True
-except ImportError:
-    PIQ_AVAILABLE = False
-    print("Warning: 'piq' library not found. NR-IQA functionalities (CLIPIQA, BRISQUE) will be disabled.")
-    print("Please install it using: pip install piq clip-anytorch")
+import numpy as np
+import torch
+from torch import Tensor
 
+def generate_novel_views(
+        base_poses: np.ndarray,
+        num_novel_views: int,
+        translation_perturbation: float = 0.1,
+        rotation_perturbation: float = 5.0,
+) -> np.ndarray:
+    novel_poses = []
+    num_base_poses = base_poses.shape[0]
+    for _ in range(num_novel_views):
+        base_pose = base_poses[np.random.randint(num_base_poses)]
+        translation_offset = np.random.uniform(-translation_perturbation, translation_perturbation, size=3)
+        novel_pose = np.copy(base_pose)
+        novel_pose[:3, 3] += translation_offset
+        angle_rad = np.deg2rad(np.random.uniform(-rotation_perturbation, rotation_perturbation, size=3))
+        rx = np.array([[1, 0, 0], [0, np.cos(angle_rad[0]), -np.sin(angle_rad[0])], [0, np.sin(angle_rad[0]), np.cos(angle_rad[0])]])
+        ry = np.array([[np.cos(angle_rad[1]), 0, np.sin(angle_rad[1])], [0, 1, 0], [-np.sin(angle_rad[1]), 0, np.cos(angle_rad[1])]])
+        rz = np.array([[np.cos(angle_rad[2]), -np.sin(angle_rad[2]), 0], [np.sin(angle_rad[2]), np.cos(angle_rad[2]), 0], [0, 0, 1]])
+        rotation_offset = rz @ ry @ rx
+        novel_pose[:3, :3] = novel_pose[:3, :3] @ rotation_offset
+        novel_poses.append(novel_pose)
+    return np.array(novel_poses)
+
+def generate_variational_intrinsics(
+        base_K: Tensor,
+        num_intrinsics: int,
+        focal_perturb_factor: float,
+        principal_point_perturb_pixel: int,
+) -> Tensor:
+    device = base_K.device
+    fx_base, fy_base = base_K[0, 0], base_K[1, 1]
+    cx_base, cy_base = base_K[0, 2], base_K[1, 2]
+
+    new_Ks = base_K.unsqueeze(0).repeat(num_intrinsics, 1, 1)
+
+    focal_perturb = 1.0 + (torch.rand(num_intrinsics, 2, device=device) * 2 - 1) * focal_perturb_factor
+    new_Ks[:, 0, 0] = fx_base * focal_perturb[:, 0]
+    new_Ks[:, 1, 1] = fy_base * focal_perturb[:, 1]
+
+    principal_point_perturb = (torch.rand(num_intrinsics, 2, device=device) * 2 - 1) * principal_point_perturb_pixel
+    new_Ks[:, 0, 2] = cx_base + principal_point_perturb[:, 0]
+    new_Ks[:, 1, 2] = cy_base + principal_point_perturb[:, 1]
+
+    return new_Ks
 
 @dataclass
 class Config:
@@ -139,6 +179,22 @@ class Config:
     enable_clipiqa_loss: bool = False
     clipiqa_lambda: float = 5
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
+    num_novel_views: int = 100
+    num_novel_to_render: int = 4
+    novel_view_translation_pertube: float = 0.5
+    novel_view_rotation_pertube: float = 5.0
+    enable_loss_schedule: bool = True
+    clipiqa_lambda_start_factor: float = 0.01
+    clipiqa_lambda_warmup_steps: int = 5000
+
+    enable_hard_view_mining: bool = True
+    hard_view_mining_pool_size: int = 200
+    hard_view_mining_every: int = 1000
+    hard_view_mining_batch_size: int = 4
+
+    enable_variational_intrinsics: bool = True
+    focal_length_perturb_factor: float = 0.1
+    principal_point_perturb_pixel: int = 10
 
     enable_retinex_loss: bool = False
     retinex_model_type: Literal["msr", "standard"] = "standard"
@@ -149,7 +205,7 @@ class Config:
 
     eval_niqe: bool = False
 
-    def adjust_steps(self, factor: float):
+    def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
         self.save_steps = [int(i * factor) for i in self.save_steps]
         self.ply_steps = [int(i * factor) for i in self.ply_steps]
@@ -188,11 +244,11 @@ def create_splats_with_optimizers(
         sparse_grad: bool = False,
         visible_adam: bool = False,
         batch_size: int = 1,
-        feature_dim: Optional[int] = None,
+        feature_dim: int | None = None,
         device: str = "cuda",
         world_rank: int = 0,
         world_size: int = 1,
-) -> Tuple[torch.nn.ParameterDict, Dict[str, torch.optim.Adam | torch.optim.SparseAdam | SelectiveAdam]]:
+) -> Tuple[torch.nn.ParameterDict, dict[str, torch.optim.Adam | torch.optim.SparseAdam | SelectiveAdam]]:
     if init_type == "sfm":
         points = torch.from_numpy(parser.points).float()
         rgbs = torch.from_numpy(parser.points_rgb / 255.0).float()
@@ -202,7 +258,7 @@ def create_splats_with_optimizers(
     else:
         raise ValueError("Please specify a correct init_type: sfm or random")
 
-    dist2_avg = (knn(points, 4)[:, 1:] ** 2).mean(dim=-1)
+    dist2_avg = (knn(points)[:, 1:] ** 2).mean(dim=-1)
     dist_avg = torch.sqrt(dist2_avg)
     scales = torch.log(dist_avg * init_scale).unsqueeze(-1).repeat(1, 3)
 
@@ -282,12 +338,7 @@ class Runner:
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
         )
-        self.trainset = Dataset(
-            self.parser,
-            split="train",
-            patch_size=cfg.patch_size,
-            load_depths=cfg.depth_loss,
-        )
+        self.trainset = Dataset(self.parser, patch_size=cfg.patch_size, load_depths=cfg.depth_loss)
         self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
@@ -318,7 +369,7 @@ class Runner:
         )
         print("Model initialized. Number of GS:", len(self.splats["means"]))
 
-        self.cfg.strategy.check_sanity(self.splats, cast(torch.optim.Optimizer, self.optimizers))
+        self.cfg.strategy.check_sanity(self.splats, self.optimizers)
         if isinstance(self.cfg.strategy, DefaultStrategy):
             self.strategy_state = self.cfg.strategy.initialize_state(
                 scene_scale=self.scene_scale
@@ -327,6 +378,28 @@ class Runner:
             self.strategy_state = self.cfg.strategy.initialize_state()
         else:
             assert_never(self.cfg.strategy)
+
+        self.hard_view_candidate_poses = None
+        self.hard_view_indices = None
+        if cfg.enable_clipiqa_loss and cfg.enable_hard_view_mining:
+            print("Initializing candidate pool for Online Hard View Mining...")
+            candidate_poses_np = generate_interpolated_path(
+                self.parser.camtoworlds, n_interp=5
+            )
+            perturbed_poses_np = generate_novel_views(
+                self.parser.camtoworlds,
+                num_novel_views=cfg.hard_view_mining_pool_size // 2,
+                translation_perturbation=0.2,
+                rotation_perturbation=15.0
+            )
+            all_poses_np = np.concatenate([candidate_poses_np, perturbed_poses_np], axis=0)
+            np.random.shuffle(all_poses_np)
+
+            self.hard_view_candidate_poses = torch.from_numpy(
+                all_poses_np[:cfg.hard_view_mining_pool_size]
+            ).float().to(self.device)
+            print(f"Created a pool of {len(self.hard_view_candidate_poses)} candidate poses for hard mining.")
+
 
         self.compression_method = None
         if cfg.compression is not None:
@@ -339,138 +412,63 @@ class Runner:
         if cfg.pose_opt:
             self.pose_adjust = CameraOptModule(len(self.trainset)).to(self.device)
             self.pose_adjust.zero_init()
-            self.pose_optimizers = [
-                torch.optim.Adam(
-                    self.pose_adjust.parameters(),
-                    lr=cfg.pose_opt_lr * math.sqrt(cfg.batch_size),
-                    weight_decay=cfg.pose_opt_reg,
-                )
-            ]
-            if world_size > 1:
-                self.pose_adjust = DDP(self.pose_adjust)
+            self.pose_optimizers = [torch.optim.Adam(self.pose_adjust.parameters(), lr=cfg.pose_opt_lr * math.sqrt(cfg.batch_size), weight_decay=cfg.pose_opt_reg)]
+            if world_size > 1: self.pose_adjust = DDP(self.pose_adjust)
 
         if cfg.pose_noise > 0.0:
             self.pose_perturb = CameraOptModule(len(self.trainset)).to(self.device)
             self.pose_perturb.random_init(cfg.pose_noise)
-            if world_size > 1:
-                self.pose_perturb = DDP(self.pose_perturb)
+            if world_size > 1: self.pose_perturb = DDP(self.pose_perturb)
 
         self.app_optimizers = []
         if cfg.app_opt:
             assert feature_dim is not None
-            self.app_module = AppearanceOptModule(
-                len(self.trainset), feature_dim, cfg.app_embed_dim, cfg.sh_degree
-            ).to(self.device)
-            torch.nn.init.zeros_(self.app_module.color_head[-1].weight)
-            torch.nn.init.zeros_(self.app_module.color_head[-1].bias)
+            self.app_module = AppearanceOptModule(len(self.trainset), feature_dim, cfg.app_embed_dim, cfg.sh_degree).to(self.device)
+            torch.nn.init.zeros_(cast(Tensor, self.app_module.color_head[-1].weight))
+            torch.nn.init.zeros_(cast(Tensor, self.app_module.color_head[-1].bias))
             self.app_optimizers = [
-                torch.optim.Adam(
-                    self.app_module.embeds.parameters(),
-                    lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size) * 10.0,
-                    weight_decay=cfg.app_opt_reg,
-                ),
-                torch.optim.Adam(
-                    self.app_module.color_head.parameters(),
-                    lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size),
-                ),
+                torch.optim.Adam(self.app_module.embeds.parameters(), lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size) * 10.0, weight_decay=cfg.app_opt_reg),
+                torch.optim.Adam(self.app_module.color_head.parameters(), lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size)),
             ]
-            if world_size > 1:
-                self.app_module = DDP(self.app_module)
+            if world_size > 1: self.app_module = DDP(self.app_module)
 
         self.nrqm_optimizers = []
         if cfg.enable_clipiqa_loss:
             if cfg.clipiqa_model_type == "clipiqa":
                 self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
-        #         self.nrqm_optimizers = [
-        #             torch.optim.Adam(
-        #                 self.clipiqa_model.parameters(),
-        #                 lr=1e-3 * math.sqrt(cfg.batch_size),
-        #                 eps=1e-15,
-        #             ),
-        #         ]
-        #     else:
-        #         raise ValueError(f"Unknown CLIPIQA model type: {cfg.clipiqa_model_type}")
 
         self.retinex_optimizers = []
-
         if cfg.enable_retinex_loss and cfg.retinex_model_type == "standard":
-            self.retinex_loss = RetinexLoss(
-                alpha=cfg.retinex_alpha,
-                beta=cfg.retinex_beta,
-                gamma=cfg.retinex_gamma,
-            ).to(self.device)
-        #     self.retinex_optimizers = [
-        #         torch.optim.Adam(
-        #             self.retinex_loss.parameters(),
-        #             lr=1e-3 * math.sqrt(cfg.batch_size),
-        #             eps=1e-15,
-        #         ),
-        #     ]
+            self.retinex_loss = RetinexLoss(alpha=cfg.retinex_alpha, beta=cfg.retinex_beta, gamma=cfg.retinex_gamma).to(self.device)
         elif cfg.enable_retinex_loss and cfg.retinex_model_type == "msr":
             self.retinex_loss = RetinexLossMSR().to(self.device)
-        #     self.retinex_optimizers = [
-        #         torch.optim.Adam(
-        #             self.retinex_loss.parameters(),
-        #             lr=1e-3 * math.sqrt(cfg.batch_size),
-        #             eps=1e-15,
-        #         ),
-        #     ]
 
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
             global BilateralGrid
             assert BilateralGrid is not None
-            self.bil_grids = BilateralGrid(
-                len(self.trainset),
-                grid_X=cfg.bilateral_grid_shape[0],
-                grid_Y=cfg.bilateral_grid_shape[1],
-                grid_W=cfg.bilateral_grid_shape[2],
-            ).to(self.device)
-            self.bil_grid_optimizers = [
-                torch.optim.Adam(
-                    self.bil_grids.parameters(),
-                    lr=2e-3 * math.sqrt(cfg.batch_size),
-                    eps=1e-15,
-                ),
-            ]
-
+            self.bil_grids = BilateralGrid(len(self.trainset), grid_X=cfg.bilateral_grid_shape[0], grid_Y=cfg.bilateral_grid_shape[1], grid_W=cfg.bilateral_grid_shape[2]).to(self.device)
+            self.bil_grid_optimizers = [torch.optim.Adam(self.bil_grids.parameters(), lr=2e-3 * math.sqrt(cfg.batch_size), eps=1e-15)]
 
         self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
         self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
 
-        if cfg.lpips_net == "alex":
-            self.lpips = LearnedPerceptualImagePatchSimilarity(
-                net_type="alex", normalize=True
-            ).to(self.device)
-        elif cfg.lpips_net == "vgg":
-            self.lpips = LearnedPerceptualImagePatchSimilarity(
-                net_type="vgg", normalize=False
-            ).to(self.device)
-        else:
-            raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
+        if cfg.lpips_net == "alex": self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True).to(self.device)
+        elif cfg.lpips_net == "vgg": self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="vgg").to(self.device)
+        else: raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
 
         self.niqe_metric = None
-        if cfg.eval_niqe and PIQ_AVAILABLE:
+        if cfg.eval_niqe:
             try:
-                self.niqe_metric = piq.BRISQUELoss(data_range=1.0, reduction='mean')
-                self.niqe_metric = self.niqe_metric.to(self.device)
+                self.niqe_metric = piq.BRISQUELoss(data_range=1.0).to(self.device)
                 print("BRISQUE metric initialized for evaluation.")
             except Exception as e:
                 print(f"Error initializing BRISQUE: {e}. BRISQUE evaluation will be skipped.")
                 cfg.eval_niqe = False
-        elif cfg.eval_niqe and not PIQ_AVAILABLE:
-            print("BRISQUE evaluation enabled in config, but 'piq' library is not available. Skipping BRISQUE.")
-            cfg.eval_niqe = False
-
 
         if not self.cfg.disable_viewer:
             self.server = viser.ViserServer(port=cfg.port, verbose=False)
-            self.viewer = GsplatViewer(
-                server=self.server,
-                render_fn=self._viewer_render_fn,
-                output_dir=Path(cfg.result_dir),
-                mode="training",
-            )
+            self.viewer = GsplatViewer(server=self.server, render_fn=self._viewer_render_fn, output_dir=Path(cfg.result_dir), mode="training")
 
     def rasterize_splats(
             self,
@@ -479,8 +477,7 @@ class Runner:
             width: int,
             height: int,
             masks: Optional[Tensor] = None,
-            rasterize_mode: Optional[Literal["classic", "antialiased"]] = None,
-            camera_model: Optional[Literal["pinhole", "ortho", "fisheye"]] = None,
+            rasterize_mode: Literal["classic", "antialiased"] | None = None,
             **kwargs,
     ) -> Tuple[Tensor, Tensor, Dict]:
         means = self.splats["means"]
@@ -502,9 +499,7 @@ class Runner:
             colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
         if rasterize_mode is None:
-            rasterize_mode = "antialiased" if self.cfg.antialiased else "classic"
-        if camera_model is None:
-            camera_model = self.cfg.camera_model
+            rasterize_mode: Literal["antialiased", "classic"] = "antialiased" if self.cfg.antialiased else "classic"
 
         render_colors, render_alphas, info = rasterization(
             means=means,
@@ -560,6 +555,7 @@ class Runner:
             )
         if cfg.use_bilateral_grid:
             global total_variation_loss
+
             schedulers.append(
                 torch.optim.lr_scheduler.ChainedScheduler(
                     [
@@ -575,22 +571,6 @@ class Runner:
                 )
             )
 
-        # if cfg.enable_clipiqa_loss:
-        #     if self.clipiqa_metric is not None:
-        #         schedulers.append(
-        #             torch.optim.lr_scheduler.ExponentialLR(
-        #                 self.nrqm_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
-        #             )
-        #         )
-        #
-        # if cfg.enable_retinex_loss and self.retinex_loss is not None:
-        #     schedulers.append(
-        #         torch.optim.lr_scheduler.ExponentialLR(
-        #             self.retinex_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
-        #         )
-        #     )
-
-
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
             batch_size=cfg.batch_size,
@@ -602,6 +582,7 @@ class Runner:
         trainloader_iter = iter(trainloader)
 
         global_tic = time.time()
+
         pbar = tqdm.tqdm(range(init_step, max_steps))
         for step in pbar:
             if not cfg.disable_viewer:
@@ -616,6 +597,12 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
+            current_clipiqa_lambda = cfg.clipiqa_lambda
+            if cfg.enable_loss_schedule and step < cfg.clipiqa_lambda_warmup_steps:
+                warmup_factor = min(1.0, step / cfg.clipiqa_lambda_warmup_steps)
+                start_factor = cfg.clipiqa_lambda_start_factor
+                current_clipiqa_lambda = cfg.clipiqa_lambda * (start_factor + (1.0 - start_factor) * warmup_factor)
+
             camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
             pixels = data["image"].to(device) / 255.0
@@ -624,6 +611,7 @@ class Runner:
             )
             image_ids = data["image_id"].to(device)
             masks = data["mask"].to(device) if "mask" in data else None
+
             if cfg.depth_loss:
                 points = data["points"].to(device)
                 depths_gt = data["depths"].to(device)
@@ -662,6 +650,7 @@ class Runner:
                     indexing="ij",
                     )
                 grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)
+
                 colors = slice(
                     self.bil_grids,
                     grid_xy.expand(colors.shape[0], -1, -1, -1),
@@ -691,12 +680,31 @@ class Runner:
             clipiqa_loss_value = torch.tensor(0.0, device=device)
             clipiqa_score_value = torch.tensor(0.0, device=device)
 
-            if cfg.enable_clipiqa_loss and self.clipiqa_model is not None:
-                colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
-                current_clipiqa_score = self.clipiqa_model(colors_nchw)
-                clipiqa_score_value = current_clipiqa_score.mean()
+            if cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0:
+                if cfg.enable_hard_view_mining:
+                    if self.hard_view_indices is None or (step > 0 and step % cfg.hard_view_mining_every == 0):
+                        self.find_hard_views(sh_degree_to_use)
+                    sample_indices = self.hard_view_indices[:cfg.hard_view_mining_batch_size]
+                    novel_c2w = self.hard_view_candidate_poses[sample_indices]
+                else:
+                    rand_indices = torch.randint(0, len(self.hard_view_candidate_poses), (cfg.hard_view_mining_batch_size,))
+                    novel_c2w = self.hard_view_candidate_poses[rand_indices]
+
+                first_cam_key = list(self.parser.Ks_dict.keys())[0]
+                K_novel_base = torch.from_numpy(self.parser.Ks_dict[first_cam_key]).float().to(device)
+                width_novel, height_novel = self.parser.imsize_dict[first_cam_key]
+
+                if cfg.enable_variational_intrinsics:
+                    K_novel = generate_variational_intrinsics(K_novel_base, num_intrinsics=novel_c2w.shape[0], focal_perturb_factor=cfg.focal_length_perturb_factor, principal_point_perturb_pixel=cfg.principal_point_perturb_pixel)
+                else:
+                    K_novel = K_novel_base.unsqueeze(0).expand(novel_c2w.shape[0], -1, -1)
+
+                novel_renders, _, _ = self.rasterize_splats(camtoworlds=novel_c2w, Ks=K_novel, width=width_novel, height=height_novel, sh_degree=sh_degree_to_use, render_mode="RGB")
+                colors_nchw = novel_renders.permute(0, 3, 1, 2).contiguous()
+                current_clipiqa_score = self.clipiqa_model(colors_nchw).mean()
+                clipiqa_score_value = current_clipiqa_score
                 clipiqa_loss_value = -clipiqa_score_value
-                loss = loss + cfg.clipiqa_lambda * clipiqa_loss_value
+                loss = loss + current_clipiqa_lambda * clipiqa_loss_value
 
             retinex_loss_value = torch.tensor(0.0, device=device)
             retinex_detail_value = torch.tensor(0.0, device=device)
@@ -756,7 +764,7 @@ class Runner:
 
             tvloss_value: Tensor = torch.tensor(0.0, device=device)
             if cfg.use_bilateral_grid:
-                tvloss_value = 10 * total_variation_loss(self.bil_grids.grids)
+                tvloss_value = cast(Tensor, 10 * total_variation_loss(self.bil_grids.grids))
                 loss += tvloss_value
 
 
@@ -768,8 +776,8 @@ class Runner:
             loss.backward()
 
             desc_parts = [f"loss={loss.item():.3f}"]
-            if cfg.enable_clipiqa_loss:
-                desc_parts.append(f"clipiqa={clipiqa_score_value.item():.3f}")
+            if cfg.enable_clipiqa_loss and clipiqa_score_value.item() != 0.0:
+                desc_parts.append(f"clipiqa={clipiqa_score_value.item():.3f} (λ={current_clipiqa_lambda:.2f})")
             if cfg.enable_retinex_loss and self.retinex_loss is not None:
                 desc_parts.append(f"retinex={retinex_loss_value.item():.3f}")
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
@@ -793,6 +801,7 @@ class Runner:
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar("train/clipiqa_score", clipiqa_score_value.item(), step)
                     self.writer.add_scalar("train/clipiqa_loss", clipiqa_loss_value.item(), step)
+                    self.writer.add_scalar("train/clipiqa_lambda", current_clipiqa_lambda, step)
                 if cfg.enable_retinex_loss and self.retinex_loss is not None:
                     self.writer.add_scalar("train/retinex_loss", retinex_loss_value.item(), step)
                     self.writer.add_scalar("train/retinex_detail", retinex_detail_value.item(), step)
@@ -821,7 +830,7 @@ class Runner:
                             img_L_tb = img_L_lin
 
 
-                        if img_R_tb.shape[0] == 1:
+                        if img_R_tb.shape[0] == 1:  # pyright: ignore [reportPossiblyUnboundVariable]
                             img_R_tb = img_R_tb.repeat(3, 1, 1)
                         if img_L_tb.shape[0] == 1:
                             img_L_tb = img_L_tb.repeat(3, 1, 1)
@@ -867,11 +876,9 @@ class Runner:
                 else:
                     sh0_export = self.splats["sh0"]
                     shN_export = self.splats["shN"]
-                export_splats(
-                    means=self.splats["means"], scales=self.splats["scales"], quats=self.splats["quats"],
-                    opacities=self.splats["opacities"], sh0=sh0_export, shN=shN_export,
-                    format="ply", save_to=f"{self.ply_dir}/point_cloud_{step}.ply",
-                )
+                export_splats(means=self.splats["means"], scales=self.splats["scales"], quats=self.splats["quats"],
+                              opacities=self.splats["opacities"], sh0=sh0_export, shN=shN_export,
+                              save_to=f"{self.ply_dir}/point_cloud_{step}.ply")
 
             if cfg.sparse_grad:
                 assert cfg.packed
@@ -895,10 +902,10 @@ class Runner:
             for optimizer in self.optimizers.values():
                 if cfg.visible_adam: optimizer.step(visibility_mask)
                 else: optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-            for optimizer in self.pose_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
-            for optimizer in self.app_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
-            for optimizer in self.bil_grid_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
+                optimizer.zero_grad()
+            for optimizer in self.pose_optimizers: optimizer.step(); optimizer.zero_grad()
+            for optimizer in self.app_optimizers: optimizer.step(); optimizer.zero_grad()
+            for optimizer in self.bil_grid_optimizers: optimizer.step(); optimizer.zero_grad()
             for optimizer in self.nrqm_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
             for optimizer in self.retinex_optimizers: optimizer.step(); optimizer.zero_grad(set_to_none=True)
             for scheduler in schedulers: scheduler.step()
@@ -1147,7 +1154,6 @@ class Runner:
             backgrounds=torch.tensor([render_tab_state.backgrounds], device=self.device) / 255.0,
             render_mode=RENDER_MODE_MAP[render_tab_state.render_mode],
             rasterize_mode=render_tab_state.rasterize_mode,
-            camera_model=render_tab_state.camera_model,
         )
         render_tab_state.total_gs_count = len(self.splats["means"])
         render_tab_state.rendered_gs_count = (info_viewer["radii"] > 0).all(-1).sum().item()
