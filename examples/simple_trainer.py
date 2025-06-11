@@ -31,7 +31,7 @@ from datasets.traj import (
     generate_interpolated_path,
     generate_spiral_path,
 )
-from examples.retinex_loss import retinex_on_v_channel
+from retinex_loss import retinex_on_v_channel
 from gsplat import export_splats
 from gsplat.compression import PngCompression
 from gsplat.distributed import cli
