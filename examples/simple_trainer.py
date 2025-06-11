@@ -664,7 +664,7 @@ class Runner:
                 pixels_nchw = pixels.permute(0, 3, 1, 2).contiguous()
 
                 with torch.no_grad():
-                    R_gt, L_gt = retinex_on_v_channel(pixels_nchw)
+                    R_gt = retinex_on_v_channel(pixels_nchw)
 
                 target_colours = R_gt.permute(0,2,3,1).contiguous()
             else:
