@@ -42,9 +42,6 @@ from retinex_loss import RetinexLossMSR, RetinexLoss
 from retinex_loss import multi_scale_retinex_decomposition
 from utils import AppearanceOptModule, CameraOptModule, knn, rgb_to_sh, set_random_seed
 
-import numpy as np
-import torch
-from torch import Tensor
 
 def generate_novel_views(
         base_poses: np.ndarray,
@@ -656,9 +653,23 @@ class Runner:
             camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
             pixels = data["image"].to(device) / 255.0
+            
+            
             num_train_rays_per_step = (
                     pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
+
+            if cfg.enable_retinex_loss:
+                pixels_nchw = pixels.permute(0, 3, 1, 2).contiguous()
+
+                with torch.no_grad():
+                    R_gt, L_gt = multi_scale_retinex_decomposition(pixels_nchw)
+
+                target_colours = R_gt.permute(0,2,3,1).contiguous()
+            else:
+                target_colours = pixels
+
+
             image_ids = data["image_id"].to(device)
             masks = data["mask"].to(device) if "mask" in data else None
 
@@ -721,23 +732,24 @@ class Runner:
                 info=info,
             )
 
-            l1loss = F.l1_loss(colors, pixels)
+            l1loss = F.l1_loss(colors, target_colours)
             ssimloss = 1.0 - fused_ssim(
-                colors.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2), padding="valid"
+                colors.permute(0, 3, 1, 2), target_colours.permute(0, 3, 1, 2), padding="valid"
             )
             loss = l1loss * (1.0 - cfg.ssim_lambda) + ssimloss * cfg.ssim_lambda
 
             clipiqa_loss_value = torch.tensor(0.0, device=device)
             clipiqa_score_value = torch.tensor(0.0, device=device)
-            if (cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step % 
+
+            if (cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step %
                     5 == 0):
-                clip_colours = colors.permute(0, 3, 1, 2).contiguous()
+                clip_colours = target_colours.permute(0, 3, 1, 2).contiguous()
                 current_clipiqa_score = self.clipiqa_model(clip_colours).mean()
                 clipiqa_score_value = current_clipiqa_score
                 clipiqa_loss_value = -clipiqa_score_value
                 loss = loss + current_clipiqa_lambda * clipiqa_loss_value
-                
-            elif (cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step % 8== 0):
+
+            elif cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step % 8== 0:
                 first_cam_key = list(self.parser.Ks_dict.keys())[0]
                 K_novel_base = torch.from_numpy(self.parser.Ks_dict[first_cam_key]).float().to(device)
                 width_novel, height_novel = self.parser.imsize_dict[first_cam_key]
@@ -754,44 +766,8 @@ class Runner:
                 clipiqa_loss_value = -clipiqa_score_value
                 loss = loss + current_clipiqa_lambda * clipiqa_loss_value
 
-            retinex_loss_value = torch.tensor(0.0, device=device)
-            retinex_detail_value = torch.tensor(0.0, device=device)
-            retinex_illumination_value = torch.tensor(0.0, device=device)
-
-            illumination = torch.zeros(1, device=device)
-            reflectance = torch.zeros(1, device=device)
-
-            if cfg.enable_retinex_loss and self.retinex_loss is not None:
-                processed_colors_nchw = colors.permute(0, 3, 1, 2).contiguous()
-
-                if cfg.retinex_model_type == "standard":
-                    R, L = multi_scale_retinex_decomposition(processed_colors_nchw)
-                    illumination = L
-                    reflectance = R
-                    retinex_loss_value, retinex_info = self.retinex_loss(
-                        processed_colors_nchw,
-                        R,
-                        L,
-                    )
-                    retinex_detail_value = retinex_info.get("detail_loss", torch.tensor(0.0, device=device))
-                    retinex_illumination_value = retinex_info.get("illumination_loss", torch.tensor(0.0, device=device))
-
-                elif cfg.retinex_model_type == "msr":
-                    retinex_loss_value, retinex_info = self.retinex_loss(
-                        processed_colors_nchw,
-                    )
-
-                    retinex_detail_value = retinex_info.get("detail_loss", torch.tensor(0.0, device=device))
-                    retinex_illumination_value = retinex_info.get("illumination_loss", torch.tensor(0.0, device=device))
-                    illumination = retinex_info.get("illumination", torch.tensor(0.0, device=device))
-                    reflectance = retinex_info.get("reflectance", torch.tensor(0.0, device=device))
-
-                else:
-                    raise ValueError(f"Unknown Retinex model type: {cfg.retinex_model_type}")
-
-                loss += cfg.retinex_lambda * retinex_loss_value
-
             depthloss_value = torch.tensor(0.0, device=device)
+
             if cfg.depth_loss and depths_map is not None:
                 points_norm = torch.stack(
                     [
@@ -998,6 +974,7 @@ class Runner:
             camtoworlds = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
             pixels = data["image"].to(device) / 255.0
+
             masks = data["mask"].to(device) if "mask" in data else None
             height, width = pixels.shape[1:3]
 
