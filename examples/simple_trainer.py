@@ -173,7 +173,7 @@ class Config:
 
     use_fused_bilagrid: bool = False
 
-    enable_clipiqa_loss: bool = True
+    enable_clipiqa_loss: bool = False
     clipiqa_lambda: float = 5
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
     num_novel_views: int = 100
@@ -193,7 +193,7 @@ class Config:
     focal_length_perturb_factor: float = 0.1
     principal_point_perturb_pixel: int = 10
 
-    enable_retinex_loss: bool = False
+    enable_retinex_loss: bool = True
     retinex_model_type: Literal["msr", "standard"] = "standard"
     retinex_lambda: float = 5.0
     retinex_alpha: float = 0.0
@@ -653,8 +653,8 @@ class Runner:
             camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
             pixels = data["image"].to(device) / 255.0
-            
-            
+
+
             num_train_rays_per_step = (
                     pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
@@ -802,8 +802,8 @@ class Runner:
             desc_parts = [f"loss={loss.item():.3f}"]
             if cfg.enable_clipiqa_loss and clipiqa_score_value.item() != 0.0:
                 desc_parts.append(f"clipiqa={clipiqa_score_value.item():.3f} (λ={current_clipiqa_lambda:.2f})")
-            if cfg.enable_retinex_loss and self.retinex_loss is not None:
-                desc_parts.append(f"retinex={retinex_loss_value.item():.3f}")
+            # if cfg.enable_retinex_loss and self.retinex_loss is not None:
+            #     desc_parts.append(f"retinex={retinex_loss_value.item():.3f}")
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
             if cfg.depth_loss and depths_map is not None:
                 desc_parts.append(f"depth_l={depthloss_value.item():.6f}")
@@ -826,10 +826,10 @@ class Runner:
                     self.writer.add_scalar("train/clipiqa_score", clipiqa_score_value.item(), step)
                     self.writer.add_scalar("train/clipiqa_loss", clipiqa_loss_value.item(), step)
                     self.writer.add_scalar("train/clipiqa_lambda", current_clipiqa_lambda, step)
-                if cfg.enable_retinex_loss and self.retinex_loss is not None:
-                    self.writer.add_scalar("train/retinex_loss", retinex_loss_value.item(), step)
-                    self.writer.add_scalar("train/retinex_detail", retinex_detail_value.item(), step)
-                    self.writer.add_scalar("train/retinex_illumination", retinex_illumination_value.item(), step)
+                # if cfg.enable_retinex_loss and self.retinex_loss is not None:
+                #     self.writer.add_scalar("train/retinex_loss", retinex_loss_value.item(), step)
+                #     self.writer.add_scalar("train/retinex_detail", retinex_detail_value.item(), step)
+                #     self.writer.add_scalar("train/retinex_illumination", retinex_illumination_value.item(), step)
                 if cfg.depth_loss and depths_map is not None:
                     self.writer.add_scalar("train/depthloss", depthloss_value.item(), step)
                 if cfg.use_bilateral_grid:
@@ -838,29 +838,29 @@ class Runner:
                     canvas_tb = torch.cat([pixels, colors], dim=2).detach().cpu().numpy()
                     canvas_tb = canvas_tb.reshape(-1, *canvas_tb.shape[2:])
                     self.writer.add_image("train/render", canvas_tb, step, dataformats='HWC')
-                    if cfg.enable_retinex_loss and self.retinex_loss is not None:
-                        if cfg.retinex_model_type == "standard":
-                            img_R_tb = reflectance[0].clamp(0,1).detach().cpu()
-                            img_L_tb = illumination[0].clamp(0,1).detach().cpu()
-
-                        elif cfg.retinex_model_type == "msr":
-                            log_R_from_msr = reflectance
-                            log_L_from_msr = illumination
-
-                            img_R_lin = torch.exp(log_R_from_msr[0]).clamp(0,1).detach().cpu()
-                            img_L_lin = torch.exp(log_L_from_msr[0]).clamp(0,1).detach().cpu()
-
-                            img_R_tb = img_R_lin
-                            img_L_tb = img_L_lin
-
-
-                        if img_R_tb.shape[0] == 1:  # pyright: ignore [reportPossiblyUnboundVariable]
-                            img_R_tb = img_R_tb.repeat(3, 1, 1)
-                        if img_L_tb.shape[0] == 1:
-                            img_L_tb = img_L_tb.repeat(3, 1, 1)
-
-                        self.writer.add_image("train/retinex_Reflectance", img_R_tb, step)
-                        self.writer.add_image("train/retinex_Illumination", img_L_tb, step)
+                    # if cfg.enable_retinex_loss and self.retinex_loss is not None:
+                    #     if cfg.retinex_model_type == "standard":
+                    #         img_R_tb = reflectance[0].clamp(0,1).detach().cpu()
+                    #         img_L_tb = illumination[0].clamp(0,1).detach().cpu()
+                    # 
+                    #     elif cfg.retinex_model_type == "msr":
+                    #         log_R_from_msr = reflectance
+                    #         log_L_from_msr = illumination
+                    # 
+                    #         img_R_lin = torch.exp(log_R_from_msr[0]).clamp(0,1).detach().cpu()
+                    #         img_L_lin = torch.exp(log_L_from_msr[0]).clamp(0,1).detach().cpu()
+                    # 
+                    #         img_R_tb = img_R_lin
+                    #         img_L_tb = img_L_lin
+                    # 
+                    # 
+                    #     if img_R_tb.shape[0] == 1:  # pyright: ignore [reportPossiblyUnboundVariable]
+                    #         img_R_tb = img_R_tb.repeat(3, 1, 1)
+                    #     if img_L_tb.shape[0] == 1:
+                    #         img_L_tb = img_L_tb.repeat(3, 1, 1)
+                    # 
+                    #     self.writer.add_image("train/retinex_Reflectance", img_R_tb, step)
+                    #     self.writer.add_image("train/retinex_Illumination", img_L_tb, step)
                             # todo
 
                 self.writer.flush()
