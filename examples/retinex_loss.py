@@ -1,7 +1,10 @@
+import kornia
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import kornia.filters as K
+from torch import finfo
+
 
 def multi_scale_retinex_loss(input_img: torch.Tensor, sigma_list=None) -> torch.Tensor:
     if sigma_list is None:
@@ -104,19 +107,59 @@ def fixed_retinex_decomposition(renders: torch.Tensor, sigma: float = 3) -> tupl
 
     return r_linear_final, l_linear_final
 
+@torch.compile
 def gaussian_blur(img: torch.Tensor, sigma: float) -> torch.Tensor:
     kernel_size = int(2 * round(3 * sigma) + 1)
     if kernel_size % 2 == 0:
-        kernel_size +=1
+        kernel_size += 1
     return K.gaussian_blur2d(img, (kernel_size, kernel_size), (sigma, sigma))
 
+@torch.compile
+def retinex_on_v_channel(
+    renders_rgb: torch.Tensor,
+    sigma_list: list[float] | None = None,
+    gain: float = 1.2,
+    offset: float = 0.0,
+) -> torch.Tensor:
+    epsilon = finfo(renders_rgb.dtype).eps
+    
+    if sigma_list is None:
+        sigma_list = [15, 80, 250]
 
+    renders_hsv = kornia.color.rgb_to_hsv(renders_rgb)
+
+    v_channel = renders_hsv[:, 2:3, :, :]
+
+    s_linear = torch.clamp(v_channel, min=epsilon)
+    log_s = torch.log(s_linear)
+
+    retinex_components = []
+    for sigma in sigma_list:
+        s_blurred = gaussian_blur(s_linear, sigma)
+        log_s_blurred = torch.log(torch.clamp(s_blurred, min=epsilon))
+        retinex_components.append(log_s - log_s_blurred)
+
+    log_R = torch.mean(torch.stack(retinex_components), dim=0)
+    v_new_linear = torch.exp(log_R)
+
+    v_new = gain * v_new_linear + offset
+    v_new_clamped = torch.clamp(v_new, 0.0, 1.0)
+
+    h_s_channels = renders_hsv[:, 0:2, :, :]
+    final_hsv = torch.cat([h_s_channels, v_new_clamped], dim=1)
+
+    final_rgb = kornia.color.hsv_to_rgb(final_hsv)
+
+    return torch.clamp(final_rgb, 0.0, 1.0) 
+
+@torch.compile
 def multi_scale_retinex_decomposition(
         renders: torch.Tensor,
         sigma_list: list[float] | None = None,
-        epsilon_log: float = 1e-6,
-        epsilon_div: float = 1e-6 
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    epsilon_log = finfo(renders.dtype).eps
+    epsilon_div = finfo(renders.dtype).eps
+    
     if sigma_list is None:
         sigma_list = [15, 80, 250]
 
@@ -124,12 +167,11 @@ def multi_scale_retinex_decomposition(
     log_s = torch.log(s_linear)
 
     retinex_components = []
+    
     for sigma in sigma_list:
-        s_blurred = gaussian_blur(s_linear, sigma)
-        s_blurred_clamped = torch.clamp(s_blurred, min=epsilon_log, max=1.0)
-        log_s_blurred = torch.log(s_blurred_clamped)
-        retinex_components.append(log_s - log_s_blurred)
-
+        log_illumination_estimate = gaussian_blur(log_s, sigma)
+        retinex_components.append(log_s - log_illumination_estimate)
+        
     log_r = torch.mean(torch.stack(retinex_components), dim=0)
 
     r_linear = torch.exp(log_r)
