@@ -133,7 +133,7 @@ class Config:
     strategy: DefaultStrategy | MCMCStrategy = field(
         default_factory=DefaultStrategy
     )
-    packed: bool = False
+    packed: bool = True
     sparse_grad: bool = False
     visible_adam: bool = True
     antialiased: bool = False
@@ -729,17 +729,15 @@ class Runner:
 
             clipiqa_loss_value = torch.tensor(0.0, device=device)
             clipiqa_score_value = torch.tensor(0.0, device=device)
-
-            if cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0:
-                if cfg.enable_hard_view_mining:
-                    if self.hard_view_indices is None or (step > 0 and step % cfg.hard_view_mining_every == 0):
-                        self.find_hard_views(sh_degree_to_use)
-                    sample_indices = self.hard_view_indices[:cfg.hard_view_mining_batch_size]
-                    novel_c2w = self.hard_view_candidate_poses[sample_indices]
-                else:
-                    rand_indices = torch.randint(0, len(self.hard_view_candidate_poses), (cfg.hard_view_mining_batch_size,))
-                    novel_c2w = self.hard_view_candidate_poses[rand_indices]
-
+            if (cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step % 
+                    5 == 0):
+                clip_colours = colors.permute(0, 3, 1, 2).contiguous()
+                current_clipiqa_score = self.clipiqa_model(clip_colours).mean()
+                clipiqa_score_value = current_clipiqa_score
+                clipiqa_loss_value = -clipiqa_score_value
+                loss = loss + current_clipiqa_lambda * clipiqa_loss_value
+                
+            elif (cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step % 8== 0):
                 first_cam_key = list(self.parser.Ks_dict.keys())[0]
                 K_novel_base = torch.from_numpy(self.parser.Ks_dict[first_cam_key]).float().to(device)
                 width_novel, height_novel = self.parser.imsize_dict[first_cam_key]
