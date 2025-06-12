@@ -174,7 +174,7 @@ class Config:
 
     use_fused_bilagrid: bool = False
 
-    enable_clipiqa_loss: bool = False
+    enable_clipiqa_loss: bool = True
     clipiqa_lambda: float = 5
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
     num_novel_views: int = 100
@@ -184,8 +184,9 @@ class Config:
     enable_loss_schedule: bool = True
     clipiqa_lambda_start_factor: float = 0.01
     clipiqa_lambda_warmup_steps: int = 5000
+    clipiqa_novel_view_frequency: int = 8
 
-    enable_hard_view_mining: bool = False
+    enable_hard_view_mining: bool = True
     hard_view_mining_pool_size: int = 200
     hard_view_mining_every: int = 1000
     hard_view_mining_batch_size: int = 4
@@ -194,7 +195,7 @@ class Config:
     focal_length_perturb_factor: float = 0.1
     principal_point_perturb_pixel: int = 10
 
-    enable_retinex_loss: bool = True
+    enable_retinex_loss: bool = False
     retinex_model_type: Literal["msr", "standard"] = "standard"
     retinex_lambda: float = 0.5
     retinex_alpha: float = 0.0
@@ -481,9 +482,74 @@ class Runner:
         device = self.device
         all_scores = []
 
+        if not self.parser.Ks_dict or not self.parser.imsize_dict:
+            print("Warning: Ks_dict or imsize_dict is empty. Skipping hard view mining.")
+            self.hard_view_indices = None
+            return
+
         first_cam_key = list(self.parser.Ks_dict.keys())[0]
         K_hard_view = torch.from_numpy(self.parser.Ks_dict[first_cam_key]).float().to(device)
         width, height = self.parser.imsize_dict[first_cam_key]
+
+        base_c2w_for_novel_views_np = np.copy(self.parser.camtoworlds)
+
+        if base_c2w_for_novel_views_np.shape[1] == 3 and base_c2w_for_novel_views_np.shape[2] == 4: # (N, 3, 4)
+            print("Padding base_c2w_for_novel_views_np from 3x4 to 4x4 for hard view generation...")
+            bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
+            repeated_bottom_row = np.repeat(bottom_row, len(base_c2w_for_novel_views_np), axis=0)
+            base_c2w_for_novel_views_np = np.concatenate([base_c2w_for_novel_views_np, repeated_bottom_row], axis=1)
+        elif base_c2w_for_novel_views_np.shape[1:] != (4,4):
+            print(f"Warning: Unexpected base_c2w_for_novel_views_np shape {base_c2w_for_novel_views_np.shape}. Skipping hard view mining.")
+            self.hard_view_indices = None
+            return
+
+        print("Initializing candidate pool for Online Hard View Mining...")
+        candidate_poses_np = generate_interpolated_path(
+            base_c2w_for_novel_views_np, n_interp=5
+        )
+
+        if candidate_poses_np.shape[1] == 3 and candidate_poses_np.shape[2] == 4:
+            print("Padding interpolated poses from 3x4 to 4x4 for hard view mining pool...")
+            bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
+            repeated_bottom_row = np.repeat(
+                bottom_row, len(candidate_poses_np), axis=0)
+            candidate_poses_np = np.concatenate([candidate_poses_np, repeated_bottom_row], axis=1)
+        elif candidate_poses_np.shape[1:] != (4,4) and candidate_poses_np.size > 0 : # if not empty and not 4x4
+            print(f"Warning: Unexpected candidate_poses_np shape {candidate_poses_np.shape} after interpolation. Skipping hard view mining.")
+            self.hard_view_indices = None
+            return
+
+        perturbed_poses_np = generate_novel_views(
+            base_c2w_for_novel_views_np,
+            num_novel_views=cfg.hard_view_mining_pool_size // 2,
+            translation_perturbation=cfg.novel_view_translation_pertube,
+            rotation_perturbation=cfg.novel_view_rotation_pertube,
+        )
+
+        if candidate_poses_np.size == 0 and perturbed_poses_np.size == 0:
+            print("Warning: No candidate or perturbed poses generated for hard view mining. Skipping.")
+            self.hard_view_indices = None
+            return
+        elif candidate_poses_np.size == 0:
+            all_poses_np = perturbed_poses_np
+        elif perturbed_poses_np.size == 0:
+            all_poses_np = candidate_poses_np
+        else:
+            all_poses_np = np.concatenate([candidate_poses_np, perturbed_poses_np], axis=0)
+
+
+        np.random.shuffle(all_poses_np)
+
+        self.hard_view_candidate_poses = torch.from_numpy(
+            all_poses_np[:cfg.hard_view_mining_pool_size]
+        ).float().to(self.device)
+
+        if len(self.hard_view_candidate_poses) == 0:
+            print("Warning: Hard view candidate pose pool is empty. Skipping hard view mining.")
+            self.hard_view_indices = None
+            return
+
+        print(f"Created a pool of {len(self.hard_view_candidate_poses)} candidate poses for hard mining.")
 
         if cfg.enable_variational_intrinsics:
             K_hard_view_batch = generate_variational_intrinsics(
@@ -507,16 +573,23 @@ class Runner:
                 height=height,
                 sh_degree=sh_degree_to_use,
                 render_mode="RGB",
+                near_plane=cfg.near_plane,
+                far_plane=cfg.far_plane,
             )
             colors_nchw = renders.permute(0, 3, 1, 2).contiguous()
+            colors_nchw = torch.clamp(colors_nchw, 0.0, 1.0)
             scores = self.clipiqa_model(colors_nchw)
             all_scores.append(scores)
 
-        all_scores = torch.cat(all_scores)
+        if not all_scores:
+            print("Warning: No scores generated during hard view mining. Skipping update to hard_view_indices.")
+            self.hard_view_indices = None
+            return
 
+        all_scores = torch.cat(all_scores)
         sorted_indices = torch.argsort(all_scores)
         self.hard_view_indices = sorted_indices
-        print(f"Hard View Mining complete. Hardest score: {all_scores.min():.4f}, Easiest score: {all_scores.max():.4f}\n")
+        print(f"Hard View Mining complete. Hardest score: {all_scores.min():.4f}, Easiest score: {all_scores.max():.4f}. Pool size: {len(self.hard_view_indices)}\n")
 
     def rasterize_splats(
             self,
@@ -651,6 +724,12 @@ class Runner:
                 start_factor = cfg.clipiqa_lambda_start_factor
                 current_clipiqa_lambda = cfg.clipiqa_lambda * (start_factor + (1.0 - start_factor) * warmup_factor)
 
+            sh_degree_to_use = min(step // cfg.sh_degree_interval, cfg.sh_degree) # Defined early
+            if cfg.enable_hard_view_mining and cfg.enable_clipiqa_loss and \
+                    self.clipiqa_model is not None and \
+                    step > 0 and step % cfg.hard_view_mining_every == 0:
+                self.find_hard_views(sh_degree_to_use=sh_degree_to_use)
+
             camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
             pixels = data["image"].to(device) / 255.0
@@ -659,6 +738,8 @@ class Runner:
             num_train_rays_per_step = (
                     pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
+
+
 
             # # every 10 steps, compare to reflectance map ?
             # if cfg.enable_retinex_loss and step % 5 == 0:
@@ -754,30 +835,91 @@ class Runner:
             clipiqa_loss_value = torch.tensor(0.0, device=device)
             clipiqa_score_value= torch.tensor(0.0, device=device)
 
-            if (cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step %
-                    5 == 0):
-                clip_colours = target_colours.permute(0, 3, 1, 2).contiguous()
-                current_clipiqa_score = self.clipiqa_model(clip_colours).mean()
-                clipiqa_score_value = current_clipiqa_score
-                clipiqa_loss_value = -clipiqa_score_value
-                loss = loss + current_clipiqa_lambda * clipiqa_loss_value
+            apply_clipiqa_novel_view_loss = (
+                    cfg.enable_clipiqa_loss and
+                    self.clipiqa_model is not None and
+                    current_clipiqa_lambda > 0 and
+                    step % cfg.clipiqa_novel_view_frequency == 0
+            )
 
-            elif cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step % 8== 0:
-                first_cam_key = list(self.parser.Ks_dict.keys())[0]
-                K_novel_base = torch.from_numpy(self.parser.Ks_dict[first_cam_key]).float().to(device)
-                width_novel, height_novel = self.parser.imsize_dict[first_cam_key]
-
-                if cfg.enable_variational_intrinsics:
-                    K_novel = generate_variational_intrinsics(K_novel_base, num_intrinsics=novel_c2w.shape[0], focal_perturb_factor=cfg.focal_length_perturb_factor, principal_point_perturb_pixel=cfg.principal_point_perturb_pixel)
+            if apply_clipiqa_novel_view_loss:
+                if not self.parser.Ks_dict or not self.parser.imsize_dict:
+                    if world_rank == 0:
+                        print(f"Step {step}: Warning: Ks_dict or imsize_dict is empty. Skipping CLIPIQA novel view loss.")
                 else:
-                    K_novel = K_novel_base.unsqueeze(0).expand(novel_c2w.shape[0], -1, -1)
+                    first_cam_key = list(self.parser.Ks_dict.keys())[0]
+                    K_novel_base = torch.from_numpy(self.parser.Ks_dict[first_cam_key]).float().to(device)
+                    width_novel, height_novel = self.parser.imsize_dict[first_cam_key]
 
-                novel_renders, _, _ = self.rasterize_splats(camtoworlds=novel_c2w, Ks=K_novel, width=width_novel, height=height_novel, sh_degree=sh_degree_to_use, render_mode="RGB")
-                colors_nchw = novel_renders.permute(0, 3, 1, 2).contiguous()
-                current_clipiqa_score = self.clipiqa_model(colors_nchw).mean()
-                clipiqa_score_value = current_clipiqa_score
-                clipiqa_loss_value = -clipiqa_score_value
-                loss = loss + current_clipiqa_lambda * clipiqa_loss_value
+                    novel_c2w_for_loss = None
+                    num_actual_views_for_clipiqa = 0
+                    if cfg.enable_hard_view_mining and \
+                            self.hard_view_candidate_poses is not None and \
+                            self.hard_view_indices is not None and \
+                            len(self.hard_view_indices) > 0:
+
+                        num_to_sample = min(cfg.hard_view_mining_batch_size, len(self.hard_view_indices))
+                        selected_indices = self.hard_view_indices[:num_to_sample]
+                        novel_c2w_for_loss = self.hard_view_candidate_poses[selected_indices]
+                        num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[0]
+                        if world_rank == 0 and step % (cfg.tb_every * 10) == 0:
+                            print(f"Step {step}: Using {num_actual_views_for_clipiqa} hard views for CLIPIQA loss.")
+                        if novel_c2w_for_loss is None or num_actual_views_for_clipiqa == 0 :
+                            base_poses_np = np.copy(self.parser.camtoworlds)
+
+                            if base_poses_np.shape[0] > 0:
+                                if base_poses_np.shape[1] == 3 and base_poses_np.shape[2] == 4:
+                                    bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
+                                    repeated_bottom_row = np.repeat(bottom_row, len(base_poses_np), axis=0)
+                                    base_poses_np = np.concatenate([base_poses_np, repeated_bottom_row], axis=1)
+
+                                if base_poses_np.shape[1:] == (4,4):
+                                    novel_c2w_np = generate_novel_views(
+                                        base_poses=base_poses_np,
+                                        num_novel_views=cfg.num_novel_views,
+                                        translation_perturbation=cfg.novel_view_translation_pertube,
+                                        rotation_perturbation=cfg.novel_view_rotation_pertube,
+                                    )
+                                    if novel_c2w_np.size > 0:
+                                        novel_c2w_for_loss = torch.from_numpy(novel_c2w_np).float().to(device)
+                                    num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[0]
+                                else:
+                                    if world_rank == 0: print(f"Step {step}: Warning: generate_novel_views returned empty array. Skipping CLIPIQA.")
+                            else:
+                                if world_rank == 0: print(f"Step {step}: Warning: Base poses for novel view generation are not 4x4. Shape: {base_poses_np.shape}. Skipping CLIPIQA.")
+                        else:
+                            if world_rank == 0: print(f"Step {step}: Warning: No base poses available (self.parser.camtoworlds). Skipping CLIPIQA.")
+
+                    if novel_c2w_for_loss is not None and num_actual_views_for_clipiqa > 0:
+                        if cfg.enable_variational_intrinsics:
+                            K_novel_for_loss = generate_variational_intrinsics(
+                                K_novel_base,
+                                num_intrinsics=num_actual_views_for_clipiqa,
+                                focal_perturb_factor=cfg.focal_length_perturb_factor,
+                                principal_point_perturb_pixel=cfg.principal_point_perturb_pixel,
+                            )
+                        else:
+                            K_novel_for_loss = K_novel_base.unsqueeze(0).expand(num_actual_views_for_clipiqa, -1, -1)
+
+                        novel_renders, _, _ = self.rasterize_splats(
+                            camtoworlds=novel_c2w_for_loss,
+                            Ks=K_novel_for_loss,
+                            width=width_novel,
+                            height=height_novel,
+                            sh_degree=sh_degree_to_use,
+                            render_mode="RGB",
+                            near_plane=cfg.near_plane,
+                            far_plane=cfg.far_plane,
+                        )
+
+                        colors_nchw = novel_renders.permute(0, 3, 1, 2).contiguous()
+                        colors_nchw = torch.clamp(colors_nchw, 0.0, 1.0)
+
+                        current_clipiqa_score = self.clipiqa_model(colors_nchw).mean()
+                        clipiqa_score_value = current_clipiqa_score
+                        temp_clipiqa_loss_value = -clipiqa_score_value
+                        loss = loss + current_clipiqa_lambda * temp_clipiqa_loss_value
+                        clipiqa_loss_value = temp_clipiqa_loss_value
 
             depthloss_value = torch.tensor(0.0, device=device)
 
