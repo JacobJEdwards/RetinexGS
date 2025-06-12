@@ -31,7 +31,6 @@ from datasets.traj import (
     generate_interpolated_path,
     generate_spiral_path,
 )
-from retinex_loss import retinex_on_v_channel
 from gsplat import export_splats
 from gsplat.compression import PngCompression
 from gsplat.distributed import cli
@@ -842,8 +841,6 @@ class Runner:
                     step % cfg.clipiqa_novel_view_frequency == 0
             )
 
-            print("apply_clipiqa_novel_view_loss:", apply_clipiqa_novel_view_loss)
-
             if apply_clipiqa_novel_view_loss:
                 if not self.parser.Ks_dict or not self.parser.imsize_dict:
                     if world_rank == 0:
@@ -855,7 +852,9 @@ class Runner:
 
                     novel_c2w_for_loss = None
                     num_actual_views_for_clipiqa = 0
-                    if self.hard_view_candidate_poses is not None and \
+
+                    if cfg.enable_hard_view_mining and \
+                            self.hard_view_candidate_poses is not None and \
                             self.hard_view_indices is not None and \
                             len(self.hard_view_indices) > 0:
 
@@ -865,34 +864,34 @@ class Runner:
                         num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[0]
                         if world_rank == 0 and step % (cfg.tb_every * 10) == 0:
                             print(f"Step {step}: Using {num_actual_views_for_clipiqa} hard views for CLIPIQA loss.")
-                        if novel_c2w_for_loss is None or num_actual_views_for_clipiqa == 0 :
-                            base_poses_np = np.copy(self.parser.camtoworlds)
 
-                            if base_poses_np.shape[0] > 0:
-                                if base_poses_np.shape[1] == 3 and base_poses_np.shape[2] == 4:
-                                    bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
-                                    repeated_bottom_row = np.repeat(bottom_row, len(base_poses_np), axis=0)
-                                    base_poses_np = np.concatenate([base_poses_np, repeated_bottom_row], axis=1)
+                    if novel_c2w_for_loss is None or num_actual_views_for_clipiqa == 0:
+                        base_poses_np = np.copy(self.parser.camtoworlds)
+                        if base_poses_np.shape[0] > 0:
+                            if base_poses_np.shape[1] == 3 and base_poses_np.shape[2] == 4:
+                                bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
+                                repeated_bottom_row = np.repeat(bottom_row, len(base_poses_np), axis=0)
+                                base_poses_np = np.concatenate([base_poses_np, repeated_bottom_row], axis=1)
 
-                                if base_poses_np.shape[1:] == (4,4):
-                                    novel_c2w_np = generate_novel_views(
-                                        base_poses=base_poses_np,
-                                        num_novel_views=cfg.num_novel_views,
-                                        translation_perturbation=cfg.novel_view_translation_pertube,
-                                        rotation_perturbation=cfg.novel_view_rotation_pertube,
-                                    )
-                                    if novel_c2w_np.size > 0:
-                                        novel_c2w_for_loss = torch.from_numpy(novel_c2w_np).float().to(device)
-                                    num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[0]
-                                else:
-                                    if world_rank == 0: print(f"Step {step}: Warning: generate_novel_views returned empty array. Skipping CLIPIQA.")
-                            else:
-                                if world_rank == 0: print(f"Step {step}: Warning: Base poses for novel view generation are not 4x4. Shape: {base_poses_np.shape}. Skipping CLIPIQA.")
+                        if base_poses_np.shape[1:] == (4,4):
+                            novel_c2w_np = generate_novel_views(
+                                base_poses=base_poses_np,
+                                num_novel_views=cfg.num_novel_to_render,
+                                translation_perturbation=cfg.novel_view_translation_pertube,
+                                rotation_perturbation=cfg.novel_view_rotation_pertube,
+                            )
+                            if novel_c2w_np.size > 0:
+                                novel_c2w_for_loss = torch.from_numpy(novel_c2w_np).float().to(device)
+                                num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[0]
+                                if world_rank == 0 and step % (cfg.tb_every * 10) == 0:
+                                    print(f"Step {step}: Generated {num_actual_views_for_clipiqa} novel views for CLIPIQA loss.")
                         else:
-                            if world_rank == 0: print(f"Step {step}: Warning: No base poses available (self.parser.camtoworlds). Skipping CLIPIQA.")
+                            if world_rank == 0:
+                                print(f"Step {step}: Warning: Base poses for novel view generation are not 4x4. Skipping CLIPIQA.")
+                    else:
+                        if world_rank == 0: print(f"Step {step}: Warning: No base poses available. Skipping CLIPIQA.")
 
                     if novel_c2w_for_loss is not None and num_actual_views_for_clipiqa > 0:
-                        print("jere")
                         if cfg.enable_variational_intrinsics:
                             K_novel_for_loss = generate_variational_intrinsics(
                                 K_novel_base,
@@ -922,6 +921,7 @@ class Runner:
                         temp_clipiqa_loss_value = -clipiqa_score_value
                         loss = loss + current_clipiqa_lambda * temp_clipiqa_loss_value
                         clipiqa_loss_value = temp_clipiqa_loss_value
+
 
             depthloss_value = torch.tensor(0.0, device=device)
 
