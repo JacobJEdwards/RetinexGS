@@ -842,6 +842,8 @@ class Runner:
                     step % cfg.clipiqa_novel_view_frequency == 0
             )
 
+            print("apply_clipiqa_novel_view_loss:", apply_clipiqa_novel_view_loss)
+
             if apply_clipiqa_novel_view_loss:
                 if not self.parser.Ks_dict or not self.parser.imsize_dict:
                     if world_rank == 0:
@@ -853,8 +855,7 @@ class Runner:
 
                     novel_c2w_for_loss = None
                     num_actual_views_for_clipiqa = 0
-                    if cfg.enable_hard_view_mining and \
-                            self.hard_view_candidate_poses is not None and \
+                    if self.hard_view_candidate_poses is not None and \
                             self.hard_view_indices is not None and \
                             len(self.hard_view_indices) > 0:
 
