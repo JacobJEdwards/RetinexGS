@@ -174,7 +174,7 @@ class Config:
     use_fused_bilagrid: bool = False
 
     enable_clipiqa_loss: bool = True
-    clipiqa_lambda: float = 5
+    clipiqa_lambda: float = 10
     clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
     num_novel_views: int = 100
     num_novel_to_render: int = 4
