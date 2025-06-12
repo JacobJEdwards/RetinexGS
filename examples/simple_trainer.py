@@ -891,6 +891,7 @@ class Runner:
                             if world_rank == 0: print(f"Step {step}: Warning: No base poses available (self.parser.camtoworlds). Skipping CLIPIQA.")
 
                     if novel_c2w_for_loss is not None and num_actual_views_for_clipiqa > 0:
+                        print("jere")
                         if cfg.enable_variational_intrinsics:
                             K_novel_for_loss = generate_variational_intrinsics(
                                 K_novel_base,
