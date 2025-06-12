@@ -196,7 +196,7 @@ class Config:
 
     enable_retinex_loss: bool = True
     retinex_model_type: Literal["msr", "standard"] = "standard"
-    retinex_lambda: float = 5.0
+    retinex_lambda: float = 0.5
     retinex_alpha: float = 0.0
     retinex_beta: float = 1.0
     retinex_gamma: float = 0.0
@@ -660,18 +660,18 @@ class Runner:
                     pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
 
-            # every 10 steps, compare to reflectance map ?
-            if cfg.enable_retinex_loss and step > 6000:
-                pixels_nchw = pixels.permute(0, 3, 1, 2).contiguous()
-
-                with torch.no_grad():
-                    R_gt = retinex_on_v_channel(
-                        pixels_nchw
-                    )
-
-                target_colours = R_gt.permute(0,2,3,1).contiguous()
-            else:
-                target_colours = pixels
+            # # every 10 steps, compare to reflectance map ?
+            # if cfg.enable_retinex_loss and step % 5 == 0:
+            #     pixels_nchw = pixels.permute(0, 3, 1, 2).contiguous()
+            #
+            #     with torch.no_grad():
+            #         R_gt, _ = multi_scale_retinex_decomposition(
+            #             pixels_nchw
+            #         )
+            #
+            #     target_colours = R_gt.permute(0,2,3,1).contiguous()
+            # else:
+            target_colours = pixels
 
 
             image_ids = data["image_id"].to(device)
@@ -742,8 +742,17 @@ class Runner:
             )
             loss = l1loss * (1.0 - cfg.ssim_lambda) + ssimloss * cfg.ssim_lambda
 
+            if cfg.enable_retinex_loss:
+                pixels_nchw = pixels.permute(0, 3, 1, 2).contiguous()
+                with torch.no_grad():
+                    R_gt, _ = multi_scale_retinex_decomposition(pixels_nchw)
+
+                t = R_gt.permute(0, 2, 3, 1).contiguous()
+                retinex_loss_value = F.l1_loss(colors, t)
+                loss += cfg.retinex_lambda * retinex_loss_value
+
             clipiqa_loss_value = torch.tensor(0.0, device=device)
-            clipiqa_score_value = torch.tensor(0.0, device=device)
+            clipiqa_score_value= torch.tensor(0.0, device=device)
 
             if (cfg.enable_clipiqa_loss and self.clipiqa_model is not None and current_clipiqa_lambda > 0 and step %
                     5 == 0):
