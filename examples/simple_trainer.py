@@ -661,11 +661,11 @@ class Runner:
             )
 
             # every 10 steps, compare to reflectance map ?
-            if cfg.enable_retinex_loss and step > 5000:
+            if cfg.enable_retinex_loss and step > 6000:
                 pixels_nchw = pixels.permute(0, 3, 1, 2).contiguous()
 
                 with torch.no_grad():
-                    R_gt, _ = multi_scale_retinex_decomposition(
+                    R_gt = retinex_on_v_channel(
                         pixels_nchw
                     )
 
