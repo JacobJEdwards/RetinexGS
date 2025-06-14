@@ -722,7 +722,6 @@ class Runner:
         all_scores = torch.cat(all_scores)
         sorted_indices = torch.argsort(all_scores)
         self.hard_view_indices = sorted_indices
-        
         print(
             f"Hard View Mining complete. Hardest score: {all_scores.min():.4f}, Easiest score: {all_scores.max():.4f}. Pool size: {len(self.hard_view_indices)}\n"
         )
@@ -1194,15 +1193,36 @@ class Runner:
                     dim=-1,
                 )  # normalize to [-1, 1]
                 grid = points.unsqueeze(2)  # [1, M, 1, 2]
-                depths = F.grid_sample(
-                    depths.permute(0, 3, 1, 2), grid, align_corners=True
+                depths_low = F.grid_sample(
+                    depths_low.permute(0, 3, 1, 2), grid, align_corners=True
                 )  # [1, 1, M, 1]
-                depths = depths.squeeze(3).squeeze(1)  # [1, M]
+                depths_low = depths_low.squeeze(3).squeeze(1)  # [1, M]
                 # calculate loss in disparity space
-                disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
+                disp = torch.where(depths_low > 0.0, 1.0 / depths_low, torch.zeros_like(depths_low))
                 disp_gt = 1.0 / depths_gt  # [1, M]
                 depthloss = F.l1_loss(disp, disp_gt) * self.scene_scale
                 loss += depthloss * cfg.depth_lambda
+                
+                if cfg.enable_retinex:
+                    # query depths from depth map
+                    points = torch.stack(
+                        [
+                            points[:, :, 0] / (width - 1) * 2 - 1,
+                            points[:, :, 1] / (height - 1) * 2 - 1,
+                            ],
+                        dim=-1,
+                    )  # normalize to [-1, 1]
+                    grid = points.unsqueeze(2)  # [1, M, 1, 2]
+                    depths_enh = F.grid_sample(
+                        depths_enh.permute(0, 3, 1, 2), grid, align_corners=True
+                    )  # [1, 1, M, 1]
+                    depths_enh = depth_enh.squeeze(3).squeeze(1)  # [1, M]
+                    # calculate loss in disparity space
+                    disp = torch.where(depths_enh > 0.0, 1.0 / depths_enh, torch.zeros_like(depths_enh))
+                    disp_gt = 1.0 / depths_gt  # [1, M]
+                    depthloss_enh = F.l1_loss(disp, disp_gt) * self.scene_scale
+                    loss += depthloss_enh * cfg.depth_lambda
+                    
 
             tvloss_value: Tensor = torch.tensor(0.0, device=device)
             if cfg.use_bilateral_grid:
