@@ -112,8 +112,8 @@ def rasterization_dual(
         tile_width,
         tile_height,
         packed=packed,
-        n_cameras=C,
-        camera_ids=camera_ids,
+        n_images=C,
+        image_ids=camera_ids,
         gaussian_ids=gaussian_ids,
     )
     isect_offsets = isect_offset_encode(isect_ids, C, tile_width, tile_height)
