@@ -1668,7 +1668,8 @@ class Runner:
             cam_c2w = camtoworlds_all_torch[i : i + 1]
             cam_K = K_traj[None]
 
-            renders_traj, _, _ = self.rasterize_splats(
+
+            out = self.rasterize_splats(
                 camtoworlds=cam_c2w,
                 Ks=cam_K,
                 width=width_traj,
@@ -1678,6 +1679,13 @@ class Runner:
                 far_plane=cfg.far_plane,
                 render_mode="RGB+ED",
             )
+
+            if cfg.enable_retinex:
+                renders_traj, _, _, _, _ = out
+            else:
+                renders_traj, _, _ = out
+
+
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
             depths_traj_norm = (depths_traj - depths_traj.min()) / (
