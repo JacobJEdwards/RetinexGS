@@ -95,7 +95,7 @@ class Config:
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
     packed: bool = True
     sparse_grad: bool = False
-    visible_adam: bool = True
+    visible_adam: bool = False
     antialiased: bool = False
 
     random_bkgd: bool = False
@@ -123,7 +123,7 @@ class Config:
     use_bilateral_grid: bool = False
     bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
 
-    depth_loss: bool = True
+    depth_loss: bool = False
     depth_lambda: float = 1e-2
 
     tb_every: int = 100
