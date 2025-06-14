@@ -211,30 +211,55 @@ class SpatialLoss(nn.Module):
         self.pool = nn.AvgPool2d(4)
 
     def forward(self, org, enhance, contrast=8):
-        org_mean = torch.mean(org, 1, keepdim=True)
-        enhance_mean = torch.mean(enhance, 1, keepdim=True)
+        org_mean = torch.mean(org,1,keepdim=True)
+        enhance_mean = torch.mean(enhance,1,keepdim=True)
 
-        org_pool = self.pool(org_mean)
+        org_pool =  self.pool(org_mean)
         enhance_pool = self.pool(enhance_mean)
 
-        def p(pool: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-            org_letf = F.conv2d(pool, self.weight_left.to(pool.device), padding=1)
-            org_right = F.conv2d(pool, self.weight_right.to(pool.device), padding=1)
-            org_up = F.conv2d(pool, self.weight_up.to(pool.device), padding=1)
-            org_down = F.conv2d(pool, self.weight_down.to(pool.device), padding=1)
+        D_org_letf = F.conv2d(org_pool , self.weight_left.to(org_pool.device), padding=1)
+        D_org_right = F.conv2d(org_pool , self.weight_right.to(org_pool.device), padding=1)
+        D_org_up = F.conv2d(org_pool , self.weight_up.to(org_pool.device), padding=1)
+        D_org_down = F.conv2d(org_pool , self.weight_down.to(org_pool.device), padding=1)
 
-            return org_letf, org_right, org_up, org_down
+        D_enhance_letf = F.conv2d(enhance_pool , self.weight_left.to(org_pool.device), padding=1)
+        D_enhance_right = F.conv2d(enhance_pool , self.weight_right.to(org_pool.device), padding=1)
+        D_enhance_up = F.conv2d(enhance_pool , self.weight_up.to(org_pool.device), padding=1)
+        D_enhance_down = F.conv2d(enhance_pool , self.weight_down.to(org_pool.device), padding=1)
 
-        D_org_letf, D_org_right, D_org_up, D_org_down = p(org_pool)
-        D_enhance_letf, D_enhance_right, D_enhance_up, D_enhance_down = p(enhance_pool)
+        D_left = torch.pow(D_org_letf * contrast - D_enhance_letf,2)
+        D_right = torch.pow(D_org_right * contrast - D_enhance_right,2)
+        D_up = torch.pow(D_org_up * contrast - D_enhance_up,2)
+        D_down = torch.pow(D_org_down * contrast - D_enhance_down,2)
+        E = (D_left + D_right + D_up +D_down)
 
-        D_left = torch.pow(D_org_letf * contrast - D_enhance_letf, 2)
-        D_right = torch.pow(D_org_right * contrast - D_enhance_right, 2)
-        D_up = torch.pow(D_org_up * contrast - D_enhance_up, 2)
-        D_down = torch.pow(D_org_down * contrast - D_enhance_down, 2)
-        E = D_left + D_right + D_up + D_down
 
         return torch.mean(E)
+        
+        # org_mean = torch.mean(org, 1, keepdim=True)
+        # enhance_mean = torch.mean(enhance, 1, keepdim=True)
+        # 
+        # org_pool = self.pool(org_mean)
+        # enhance_pool = self.pool(enhance_mean)
+        # 
+        # def p(pool: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        #     org_letf = F.conv2d(pool, self.weight_left.to(pool.device), padding=1)
+        #     org_right = F.conv2d(pool, self.weight_right.to(pool.device), padding=1)
+        #     org_up = F.conv2d(pool, self.weight_up.to(pool.device), padding=1)
+        #     org_down = F.conv2d(pool, self.weight_down.to(pool.device), padding=1)
+        # 
+        #     return org_letf, org_right, org_up, org_down
+        # 
+        # D_org_letf, D_org_right, D_org_up, D_org_down = p(org_pool)
+        # D_enhance_letf, D_enhance_right, D_enhance_up, D_enhance_down = p(enhance_pool)
+        # 
+        # D_left = torch.pow(D_org_letf * contrast - D_enhance_letf, 2)
+        # D_right = torch.pow(D_org_right * contrast - D_enhance_right, 2)
+        # D_up = torch.pow(D_org_up * contrast - D_enhance_up, 2)
+        # D_down = torch.pow(D_org_down * contrast - D_enhance_down, 2)
+        # E = D_left + D_right + D_up + D_down
+        # 
+        # return torch.mean(E)
 
 
 if __name__ == "__main__":
