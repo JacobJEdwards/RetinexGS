@@ -1216,7 +1216,7 @@ class Runner:
                     depths_enh = F.grid_sample(
                         depths_enh.permute(0, 3, 1, 2), grid, align_corners=True
                     )  # [1, 1, M, 1]
-                    depths_enh = depth_enh.squeeze(3).squeeze(1)  # [1, M]
+                    depths_enh = depths_enh.squeeze(3).squeeze(1)  # [1, M]
                     # calculate loss in disparity space
                     disp = torch.where(depths_enh > 0.0, 1.0 / depths_enh, torch.zeros_like(depths_enh))
                     disp_gt = 1.0 / depths_gt  # [1, M]
@@ -1254,11 +1254,11 @@ class Runner:
                 desc_parts.append(
                     f"retinex_loss={loss_reflectance.item():.3f} "
                     f"illum_smooth={loss_illum_smooth.item():.3f} "
-                    f"illum_color={loss_illum_color.item():.3f} "
-                    f"illum_exposure={loss_illum_exposure.item():.3f}"
+                    # f"illum_color={loss_illum_color.item():.3f} "
+                    # f"illum_exposure={loss_illum_exposure.item():.3f}"
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
-            if cfg.depth_loss and depths_map is not None:
+            if cfg.depth_loss:
                 desc_parts.append(f"depth_l={depthloss_value.item():.6f}")
             if cfg.use_bilateral_grid:
                 desc_parts.append(f"tv_l={tvloss_value.item():.6f}")
@@ -1281,12 +1281,12 @@ class Runner:
                     self.writer.add_scalar(
                         "train/illumination_smooth", loss_illum_smooth.item(), step
                     )
-                    self.writer.add_scalar(
-                        "train/illumination_color", loss_illum_color.item(), step
-                    )
-                    self.writer.add_scalar(
-                        "train/illumination_exposure", loss_illum_exposure.item(), step
-                    )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_color", loss_illum_color.item(), step
+                    # )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_exposure", loss_illum_exposure.item(), step
+                    # )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
                         "train/clipiqa_score", clipiqa_score_value.item(), step
@@ -1301,7 +1301,7 @@ class Runner:
                 #     self.writer.add_scalar("train/retinex_loss", retinex_loss_value.item(), step)
                 #     self.writer.add_scalar("train/retinex_detail", retinex_detail_value.item(), step)
                 #     self.writer.add_scalar("train/retinex_illumination", retinex_illumination_value.item(), step)
-                if cfg.depth_loss and depths_map is not None:
+                if cfg.depth_loss:
                     self.writer.add_scalar(
                         "train/depthloss", depthloss_value.item(), step
                     )
