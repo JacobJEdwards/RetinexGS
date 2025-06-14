@@ -1253,8 +1253,8 @@ class Runner:
             if world_rank == 0 and cfg.tb_every > 0 and step % cfg.tb_every == 0:
                 mem = torch.cuda.max_memory_allocated() / 1024**3
                 self.writer.add_scalar("train/loss", loss.item(), step)
-                self.writer.add_scalar("train/l1loss", l1loss.item(), step)
-                self.writer.add_scalar("train/ssimloss", ssimloss.item(), step)
+                self.writer.add_scalar("train/l1loss", loss_reflectance.item(), step)
+                self.writer.add_scalar("train/ssimloss", ssim_loss_low.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
                 if cfg.enable_retinex:
@@ -1292,7 +1292,7 @@ class Runner:
                     self.writer.add_scalar("train/tvloss", tvloss_value.item(), step)
                 if cfg.tb_save_image:
                     canvas_tb = (
-                        torch.cat([pixels, colors], dim=2).detach().cpu().numpy()
+                        torch.cat([pixels, colors_low], dim=2).detach().cpu().numpy()
                     )
                     canvas_tb = canvas_tb.reshape(-1, *canvas_tb.shape[2:])
                     self.writer.add_image(
