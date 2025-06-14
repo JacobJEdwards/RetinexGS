@@ -722,6 +722,7 @@ class Runner:
         all_scores = torch.cat(all_scores)
         sorted_indices = torch.argsort(all_scores)
         self.hard_view_indices = sorted_indices
+        
         print(
             f"Hard View Mining complete. Hardest score: {all_scores.min():.4f}, Easiest score: {all_scores.max():.4f}. Pool size: {len(self.hard_view_indices)}\n"
         )
