@@ -12,7 +12,7 @@ from pycolmap import SceneManager
 from tqdm import tqdm
 from typing_extensions import assert_never
 
-from normalize import (
+from .normalize import (
     align_principal_axes,
     similarity_from_cameras,
     transform_cameras,
