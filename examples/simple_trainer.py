@@ -32,9 +32,9 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
-from examples.losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
-from examples.rendering_double import rasterization_dual
-from examples.utils import RetinexNet, CrossAttention
+from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
+from rendering_double import rasterization_dual
+from utils import RetinexNet, CrossAttention
 from gsplat import export_splats
 from gsplat.compression import PngCompression
 from gsplat.distributed import cli
@@ -42,7 +42,6 @@ from gsplat.optimizers import SelectiveAdam
 from gsplat.rendering import rasterization
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
 from gsplat_viewer import GsplatViewer, GsplatRenderTabState
-from retinex_loss import multi_scale_retinex_decomposition
 from utils import (
     AppearanceOptModule,
     CameraOptModule,
