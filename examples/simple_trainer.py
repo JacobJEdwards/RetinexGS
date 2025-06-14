@@ -550,7 +550,7 @@ class Runner:
             )
 
         # Running stats for prunning & growing.
-        n_gauss = len(self.splats["means3d"])
+        n_gauss = len(self.splats["means"])
         self.running_stats = {
             "grad2d": torch.zeros(n_gauss, device=self.device),  # norm of the gradient
             "count": torch.zeros(n_gauss, device=self.device, dtype=torch.int),
