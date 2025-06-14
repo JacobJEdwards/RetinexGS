@@ -220,7 +220,7 @@ class SpatialLoss(nn.Module):
         def p(pool: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
             org_letf = F.conv2d(pool, self.weight_left.to(pool.device), padding=1)
             org_right = F.conv2d(pool, self.weight_right.to(pool.device), padding=1)
-            org_up = F.conv2d(pool, self.weight_up.to(org_pool.pool), padding=1)
+            org_up = F.conv2d(pool, self.weight_up.to(pool.device), padding=1)
             org_down = F.conv2d(pool, self.weight_down.to(pool.device), padding=1)
 
             return org_letf, org_right, org_up, org_down
