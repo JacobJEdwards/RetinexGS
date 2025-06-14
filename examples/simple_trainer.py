@@ -1023,7 +1023,6 @@ class Runner:
             ssim_loss_low = 1.0 - self.ssim(
                 colors_low.permute(0, 3, 1, 2),
                 pixels.permute(0, 3, 1, 2),
-                padding="valid",
             )
 
             loss_illum_color = self.loss_color(
