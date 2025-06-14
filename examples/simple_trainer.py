@@ -1183,27 +1183,25 @@ class Runner:
 
             depthloss_value = torch.tensor(0.0, device=device)
 
-            if cfg.depth_loss and depths_map is not None:
-                points_norm = torch.stack(
+            if cfg.depth_loss:
+                # query depths from depth map
+                points = torch.stack(
                     [
                         points[:, :, 0] / (width - 1) * 2 - 1,
                         points[:, :, 1] / (height - 1) * 2 - 1,
-                    ],
+                        ],
                     dim=-1,
-                )
-                grid = points_norm.unsqueeze(2)
-                depths_sampled = F.grid_sample(
-                    depths_map.permute(0, 3, 1, 2), grid, align_corners=True
-                )
-                depths_sampled = depths_sampled.squeeze(3).squeeze(1)
-                disp = torch.where(
-                    depths_sampled > 0.0,
-                    1.0 / depths_sampled,
-                    torch.zeros_like(depths_sampled),
-                )
-                disp_gt = 1.0 / depths_gt
-                depthloss_value = F.l1_loss(disp, disp_gt) * self.scene_scale
-                loss += depthloss_value * cfg.depth_lambda
+                )  # normalize to [-1, 1]
+                grid = points.unsqueeze(2)  # [1, M, 1, 2]
+                depths = F.grid_sample(
+                    depths.permute(0, 3, 1, 2), grid, align_corners=True
+                )  # [1, 1, M, 1]
+                depths = depths.squeeze(3).squeeze(1)  # [1, M]
+                # calculate loss in disparity space
+                disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
+                disp_gt = 1.0 / depths_gt  # [1, M]
+                depthloss = F.l1_loss(disp, disp_gt) * self.scene_scale
+                loss += depthloss * cfg.depth_lambda
 
             tvloss_value: Tensor = torch.tensor(0.0, device=device)
             if cfg.use_bilateral_grid:
