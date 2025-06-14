@@ -162,8 +162,8 @@ class Config:
     lambda_reflect = 1.0
     lambda_smooth = 0.1
     lambda_low = 1.0
-    lambda_color = 0.1
-    lambda_exposure = 0.1
+    lambda_color = 0.0
+    lambda_exposure = 0.0
 
     eval_niqe: bool = False
 
@@ -1026,6 +1026,7 @@ class Runner:
                 pixels.permute(0, 3, 1, 2),
             )
 
+            # some problems here
             loss_illum_color = self.loss_color(
                 illumination_map
             )
