@@ -1012,6 +1012,7 @@ class Runner:
             info["means2d"].retain_grad()
 
             reflectance_target_permuted = reflectance_target.permute(0, 2, 3, 1)  # [1, H, W, 3]
+
             loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
 
             illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
@@ -1025,19 +1026,19 @@ class Runner:
                 pixels.permute(0, 3, 1, 2),
             )
 
-            # loss_illum_color = self.loss_color(
-            #     illumination_map
-            # )
-            # loss_illum_exposure = self.loss_exposure(
-            #     illumination_map
-            # )
+            loss_illum_color = self.loss_color(
+                illumination_map
+            )
+            loss_illum_exposure = self.loss_exposure(
+                illumination_map
+            )
 
             loss = (cfg.lambda_reflect * loss_reflectance +
                     cfg.lambda_smooth * loss_illum_smooth +
                     cfg.lambda_low * loss_reconstruct_low
-                    + cfg.ssim_lambda * ssim_loss_low)
-                    # + loss_illum_color * cfg.lambda_color
-                    # + loss_illum_exposure * cfg.lambda_exposure)
+                    + cfg.ssim_lambda * ssim_loss_low
+                    + loss_illum_color * cfg.lambda_color
+                    + loss_illum_exposure * cfg.lambda_exposure)
 
             self.cfg.strategy.step_pre_backward(
                 params=self.splats,
@@ -1248,14 +1249,12 @@ class Runner:
                 desc_parts.append(
                     f"clipiqa={clipiqa_score_value.item():.3f} (λ={current_clipiqa_lambda:.2f})"
                 )
-            # if cfg.enable_retinex_loss and self.retinex_loss is not None:
-            #     desc_parts.append(f"retinex={retinex_loss_value.item():.3f}")
             if cfg.enable_retinex:
                 desc_parts.append(
                     f"retinex_loss={loss_reflectance.item():.3f} "
                     f"illum_smooth={loss_illum_smooth.item():.3f} "
-                    # f"illum_color={loss_illum_color.item():.3f} "
-                    # f"illum_exposure={loss_illum_exposure.item():.3f}"
+                    f"illum_color={loss_illum_color.item():.3f} "
+                    f"illum_exposure={loss_illum_exposure.item():.3f}"
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
             if cfg.depth_loss:
@@ -1281,12 +1280,12 @@ class Runner:
                     self.writer.add_scalar(
                         "train/illumination_smooth", loss_illum_smooth.item(), step
                     )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_color", loss_illum_color.item(), step
-                    # )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_exposure", loss_illum_exposure.item(), step
-                    # )
+                    self.writer.add_scalar(
+                        "train/illumination_color", loss_illum_color.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_exposure", loss_illum_exposure.item(), step
+                    )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
                         "train/clipiqa_score", clipiqa_score_value.item(), step
@@ -1297,10 +1296,6 @@ class Runner:
                     self.writer.add_scalar(
                         "train/clipiqa_lambda", current_clipiqa_lambda, step
                     )
-                # if cfg.enable_retinex_loss and self.retinex_loss is not None:
-                #     self.writer.add_scalar("train/retinex_loss", retinex_loss_value.item(), step)
-                #     self.writer.add_scalar("train/retinex_detail", retinex_detail_value.item(), step)
-                #     self.writer.add_scalar("train/retinex_illumination", retinex_illumination_value.item(), step)
                 if cfg.depth_loss:
                     self.writer.add_scalar(
                         "train/depthloss", depthloss_value.item(), step
@@ -1314,6 +1309,14 @@ class Runner:
                     canvas_tb = canvas_tb.reshape(-1, *canvas_tb.shape[2:])
                     self.writer.add_image(
                         "train/render", canvas_tb, step, dataformats="HWC"
+                    )
+
+                    canvas_enh = (
+                        torch.cat([pixels, colors_enh], dim=2).detach().cpu().numpy()
+                    )
+                    canvas_enh = canvas_enh.reshape(-1, *canvas_enh.shape[2:])
+                    self.writer.add_image(
+                        "train/render_enh", canvas_enh, step, dataformats="HWC"
                     )
 
                 self.writer.flush()
