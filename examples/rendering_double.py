@@ -38,6 +38,10 @@ def rasterization_dual(
         rasterize_mode: Literal["classic", "antialiased"] = "classic",
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, dict]:
 
+    batch_dims = means.shape[:-2]
+    num_batch_dims = len(batch_dims)
+    B = math.prod(batch_dims)
+
     N = means.shape[0]
     C = viewmats.shape[0]
     assert means.shape == (N, 3), means.shape
@@ -276,6 +280,8 @@ def rasterization_dual(
         "width": width,
         "height": height,
         "tile_size": tile_size,
+        "n_cameras": C,
+        "n_batches": B,
     }
     
     return render_colors, render_low_colors, render_alphas, render_low_alphas, meta
