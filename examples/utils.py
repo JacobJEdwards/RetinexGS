@@ -3,10 +3,66 @@ import random
 import numpy as np
 import torch
 from sklearn.neighbors import NearestNeighbors
-from torch import Tensor
+from torch import Tensor, nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
+import einops
+
+class CrossAttention(nn.Module):
+    def __init__(self, img_channels=3, hidden_dim=128, out_dim=255):
+        super(CrossAttention, self).__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(img_channels, 64, kernel_size=3, padding=1),  # (1, 64, H, W)
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),  # (1, 64, H/2, W/2)
+
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),  # (1, 128, H/2, W/2)
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4))  # (1, 128, 4, 4)
+        )
+
+        self.query_fc = nn.Linear(4 * 4, hidden_dim)  # embedding -> query
+        self.key_fc = nn.Linear(128, hidden_dim)  # image feature -> key
+        self.value_fc = nn.Linear(128, hidden_dim)  # image feature -> value
+
+        self.out_fc = nn.Sequential(
+            nn.Linear(hidden_dim, out_dim),
+        )
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight, gain=0.01)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+    def forward(self, image, embedding):
+
+        img_feat = self.conv(image)
+
+        img_feat = einops.rearrange(img_feat, 'b c h w -> b (h w) c')
+
+        embed_flat = embedding.view(1, -1)  # (1, 16)
+        query = self.query_fc(embed_flat).unsqueeze(1)  # (1, 1, hidden_dim)
+
+        key = self.key_fc(img_feat)  # (1, 16, hidden_dim)
+        value = self.value_fc(img_feat)  # (1, 16, hidden_dim)
+
+        attention_scores = torch.bmm(query, key.transpose(1, 2)) / (128 ** 0.5)  # (1, 1, 16)
+        attention_weights = F.softmax(attention_scores, dim=-1)  # (1, 1, 16)
+
+        context = torch.bmm(attention_weights, value)  # (1, 1, hidden_dim)
+        context = context.squeeze(1)  # (1, hidden_dim)
+
+        output = self.out_fc(context)  # (1, 255)
+        return output
 
 
 class CameraOptModule(torch.nn.Module):
@@ -64,8 +120,10 @@ class AppearanceOptModule(torch.nn.Module):
         self.embed_dim = embed_dim
         self.sh_degree = sh_degree
         self.embeds = torch.nn.Embedding(n, embed_dim)
-        layers = [torch.nn.Linear(embed_dim + feature_dim + (sh_degree + 1) ** 2, mlp_width),
-                  torch.nn.ReLU(inplace=True)]
+        layers = [
+            torch.nn.Linear(embed_dim + feature_dim + (sh_degree + 1) ** 2, mlp_width),
+            torch.nn.ReLU(inplace=True),
+        ]
         for _ in range(mlp_depth - 1):
             layers.append(torch.nn.Linear(mlp_width, mlp_width))
             layers.append(torch.nn.ReLU(inplace=True))
@@ -135,7 +193,6 @@ def rotation_6d_to_matrix(d6: Tensor) -> Tensor:
     b3 = torch.cross(b1, b2, dim=-1)
     return torch.stack((b1, b2, b3), dim=-2)
 
-
 def knn(x: Tensor, K: int = 4) -> Tensor:
     x_np = x.cpu().numpy()
     model = NearestNeighbors(n_neighbors=K, metric="euclidean").fit(x_np)
@@ -197,9 +254,9 @@ def apply_float_colormap(img: torch.Tensor, colormap: str = "turbo") -> torch.Te
 
 def apply_depth_colormap(
     depth: torch.Tensor,
-    acc: torch.Tensor = None,
-    near_plane: float = None,
-    far_plane: float = None,
+    acc: torch.Tensor | None = None,
+    near_plane: float | None = None,
+    far_plane: float| None = None,
 ) -> torch.Tensor:
     """Converts a depth image to color for easier analysis.
 
@@ -220,3 +277,68 @@ def apply_depth_colormap(
     if acc is not None:
         img = img * acc + (1.0 - acc)
     return img
+
+class RetinexNet(nn.Module):
+    def __init__(self, in_channels=3, out_channels=1):
+        super(RetinexNet, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+
+        self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
+        self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
+        self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
+
+        self.relu = nn.ReLU()
+        # self.sigmoid = nn.Sigmoid() we operate in log space, no need for sigmoid
+
+    def forward(self, x):
+        c1 = self.relu(self.conv1(x))
+        p1 = self.pool(c1)
+
+        c2 = self.relu(self.conv2(p1))
+        p2 = self.pool(c2)
+
+        up1 = self.upconv1(p2)
+
+        up1_resized = F.interpolate(up1, size=p1.shape[2:], mode='bilinear', align_corners=False)
+
+        merged = torch.cat([up1_resized, p1], dim=1)
+        c3 = self.relu(self.conv3(merged))
+
+        log_illumination = self.upconv2(c3)
+
+        # illumination = self.sigmoid(up2)
+
+        final_illumination = F.interpolate(log_illumination, size=x.shape[2:], mode='bilinear', align_corners=False)
+
+        return final_illumination.repeat(1, 3, 1, 1)
+
+def generate_variational_intrinsics(
+        base_K: Tensor,
+        num_intrinsics: int,
+        focal_perturb_factor: float,
+        principal_point_perturb_pixel: int,
+) -> Tensor:
+    device = base_K.device
+    fx_base, fy_base = base_K[0, 0], base_K[1, 1]
+    cx_base, cy_base = base_K[0, 2], base_K[1, 2]
+
+    new_Ks = base_K.unsqueeze(0).repeat(num_intrinsics, 1, 1)
+
+    focal_perturb = (
+            1.0
+            + (torch.rand(num_intrinsics, 2, device=device) * 2 - 1) * focal_perturb_factor
+    )
+    new_Ks[:, 0, 0] = fx_base * focal_perturb[:, 0]
+    new_Ks[:, 1, 1] = fy_base * focal_perturb[:, 1]
+
+    principal_point_perturb = (
+                                      torch.rand(num_intrinsics, 2, device=device) * 2 - 1
+                              ) * principal_point_perturb_pixel
+    new_Ks[:, 0, 2] = cx_base + principal_point_perturb[:, 0]
+    new_Ks[:, 1, 2] = cy_base + principal_point_perturb[:, 1]
+
+    return new_Ks
+

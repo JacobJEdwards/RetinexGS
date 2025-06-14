@@ -17,14 +17,14 @@ class GsplatRenderTabState(RenderTabState):
     radius_clip: float = 0.0
     eps2d: float = 0.3
     backgrounds: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    render_mode: Literal[
-        "rgb", "depth(accumulated)", "depth(expected)", "alpha"
-    ] = "rgb"
+    render_mode: Literal["rgb", "depth(accumulated)", "depth(expected)", "alpha"] = (
+        "rgb"
+    )
     normalize_nearfar: bool = False
     inverse: bool = False
-    colormap: Literal[
-        "turbo", "viridis", "magma", "inferno", "cividis", "gray"
-    ] = "turbo"
+    colormap: Literal["turbo", "viridis", "magma", "inferno", "cividis", "gray"] = (
+        "turbo"
+    )
     rasterize_mode: Literal["classic", "antialiased"] = "classic"
     camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
 

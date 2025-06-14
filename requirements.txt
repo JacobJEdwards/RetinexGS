@@ -24,3 +24,6 @@ PyYAML~=6.0.2
 torchmetrics~=1.7.2
 typing_extensions~=4.13.2
 piq~=0.8.0
+typing_extensions~=4.13.2
+einops~=0.8.1
+typing_extensions~=4.13.2
