@@ -1478,7 +1478,8 @@ class Runner:
 
             torch.cuda.synchronize()
             tic = time.time()
-            colors, _, _ = self.rasterize_splats(
+
+            out = self.rasterize_splats(
                 camtoworlds=camtoworlds,
                 Ks=Ks,
                 width=width,
@@ -1488,6 +1489,12 @@ class Runner:
                 far_plane=cfg.far_plane,
                 masks=masks,
             )
+
+            if cfg.enable_retinex:
+                colors, _, alphas, _, info = out
+            else:
+                colors, alphas, info = out
+
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
