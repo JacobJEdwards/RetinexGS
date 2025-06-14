@@ -1025,19 +1025,19 @@ class Runner:
                 pixels.permute(0, 3, 1, 2),
             )
 
-            loss_illum_color = self.loss_color(
-                illumination_map
-            )
-            loss_illum_exposure = self.loss_exposure(
-                illumination_map
-            )
+            # loss_illum_color = self.loss_color(
+            #     illumination_map
+            # )
+            # loss_illum_exposure = self.loss_exposure(
+            #     illumination_map
+            # )
 
             loss = (cfg.lambda_reflect * loss_reflectance +
                     cfg.lambda_smooth * loss_illum_smooth +
                     cfg.lambda_low * loss_reconstruct_low
-                    + cfg.ssim_lambda * (1.0 - ssim_loss_low)
-                    + loss_illum_color * cfg.lambda_color
-                    + loss_illum_exposure * cfg.lambda_exposure)
+                    + cfg.ssim_lambda * ssim_loss_low)
+                    # + loss_illum_color * cfg.lambda_color
+                    # + loss_illum_exposure * cfg.lambda_exposure)
 
             self.cfg.strategy.step_pre_backward(
                 params=self.splats,

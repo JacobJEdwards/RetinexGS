@@ -1,421 +1,281 @@
 import math
-
+from typing import Optional
 import torch
-import torch.distributed
 from torch import Tensor
 from typing_extensions import Literal
 
 from gsplat.cuda._wrapper import (
-    RollingShutterType,
     fully_fused_projection,
-    fully_fused_projection_with_ut,
     isect_offset_encode,
     isect_tiles,
     rasterize_to_pixels,
-    rasterize_to_pixels_eval3d,
     spherical_harmonics,
-)
-from gsplat.distributed import (
-    all_gather_int32,
-    all_gather_tensor_list,
-    all_to_all_int32,
-    all_to_all_tensor_list,
 )
 
 
 def rasterization_dual(
-        means: Tensor,  # [..., N, 3]
-        quats: Tensor,  # [..., N, 4]
-        scales: Tensor,  # [..., N, 3]
-        opacities: Tensor,  # [..., N]
-        colors: Tensor,  # [..., (C,) N, D] or [..., (C,) N, K, 3]
-        colors_low: Tensor,  # [..., (C,) N, D] or [..., (C,) N, K, 3]
-        viewmats: Tensor,  # [..., C, 4, 4]
-        Ks: Tensor,  # [..., C, 3, 3]
+        means: Tensor,  # [N, 3]
+        quats: Tensor,  # [N, 4]
+        scales: Tensor,  # [N, 3]
+        opacities: Tensor,  # [N]
+        colors: Tensor,  # [N, D] or [N, K, 3]
+        colors_low: Tensor,  # [N, D] or [N, K, 3]
+        viewmats: Tensor,  # [C, 4, 4]
+        Ks: Tensor,  # [C, 3, 3]
         width: int,
         height: int,
         near_plane: float = 0.01,
         far_plane: float = 1e10,
         radius_clip: float = 0.0,
         eps2d: float = 0.3,
-        sh_degree: int | None = None,
+        sh_degree: Optional[int] = None,
         packed: bool = True,
         tile_size: int = 16,
-        backgrounds: Tensor | None = None,
+        backgrounds: Optional[Tensor] = None,
         render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
         sparse_grad: bool = False,
         absgrad: bool = False,
         rasterize_mode: Literal["classic", "antialiased"] = "classic",
-        channel_chunk: int = 32,
-        distributed: bool = False,
-        camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole",
-        segmented: bool = False,
-        covars: Tensor | None = None,
-        with_ut: bool = False,
-        with_eval3d: bool = False,
-        # distortion
-        radial_coeffs: Tensor | None = None,  # [..., C, 6] or [..., C, 4]
-        tangential_coeffs: Tensor | None = None,  # [..., C, 2]
-        thin_prism_coeffs: Tensor | None = None,  # [..., C, 4]
-        # rolling shutter
-        rolling_shutter: RollingShutterType = RollingShutterType.GLOBAL,
-        viewmats_rs: Tensor | None = None,  # [..., C, 4, 4]
-) -> tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Tensor]]:
-    """Rasterizes a set of 3D Gaussians with two separate color features.
+) -> tuple[Tensor, Tensor, Tensor, Tensor, dict]:
 
-    This function is an updated version of the original `rasterization_dual`,
-    aligned with the modern `rasterization` API. It renders two images,
-    `render_colors` and `render_low_colors`, from a single set of Gaussians
-    but with two different feature sets (`colors` and `colors_low`).
-
-    All features from the standard `rasterization` function (e.g., distributed
-    rendering, batching, antialiasing, distortion) are supported and applied
-    consistently across both render passes.
-
-    Args:
-        means: The 3D centers of the Gaussians. [..., N, 3]
-        quats: The quaternions of the Gaussians. [..., N, 4]
-        scales: The scales of the Gaussians. [..., N, 3]
-        opacities: The opacities of the Gaussians. [..., N]
-        colors: The primary colors/features of the Gaussians. [..., (C,) N, D] or [..., (C,) N, K, 3].
-        colors_low: The secondary colors/features of the Gaussians. Same shape as `colors`.
-        viewmats: The world-to-cam transformation of the cameras. [..., C, 4, 4]
-        Ks: The camera intrinsics. [..., C, 3, 3]
-        width: The width of the image.
-        height: The height of the image.
-        near_plane: The near clipping plane distance.
-        far_plane: The far clipping plane distance.
-        radius_clip: The radius clipping distance.
-        eps2d: The 2D epsilon value for rasterization.
-        sh_degree: The spherical harmonics degree for the colors. If None, direct colors are used.
-        packed: Whether to use packed mode for rendering.
-        tile_size: The size of the tiles for rasterization.
-        backgrounds: Optional background colors for the images. [..., (C,) 1] or [..., (C,) 3].
-        render_mode: The rendering mode, one of ["RGB", "D", "ED", "RGB+D", "RGB+ED"].
-        sparse_grad: Whether to use sparse gradients.
-        absgrad: Whether to use absolute gradients.
-        rasterize_mode: The rasterization mode, either "classic" or "antialiased".
-        channel_chunk: The chunk size for rendering colors.
-        distributed: Whether to use distributed rendering.
-        camera_model: The camera model, one of ["pinhole", "ortho", "fisheye"].
-        segmented: Whether to use segmented rendering.
-        covars: Optional covariance matrices for the Gaussians. If provided, quats and scales are ignored.
-        with_ut: Whether to use the unified transformation (UT) for rendering.
-        with_eval3d: Whether to use the eval3d mode for rendering.
-        radial_coeffs: Optional radial distortion coefficients. [..., C, 6] or [..., C, 4].
-        tangential_coeffs: Optional tangential distortion coefficients. [..., C, 2].
-        thin_prism_coeffs: Optional thin prism distortion coefficients. [..., C, 4].
-        rolling_shutter: The rolling shutter type, one of RollingShutterType.
-        viewmats_rs: Optional rolling shutter view matrices. Used only if `rolling_shutter` is not GLOBAL.
-
-    Returns:
-        A tuple:
-
-        **render_colors**: The rendered primary colors. [..., C, height, width, X].
-
-        **render_low_colors**: The rendered secondary colors. [..., C, height, width, X].
-
-        **render_alphas**: The rendered alphas, which are the same for both images. [..., C, height, width, 1].
-
-        **meta**: A dictionary of intermediate results from the rasterization.
-    """
-    meta = {}
-    batch_dims = means.shape[:-2]
-    num_batch_dims = len(batch_dims)
-    B = math.prod(batch_dims)
-    N = means.shape[-2]
-    C = viewmats.shape[-3]
-    I = B * C
-    device = means.device
-
-    #<-- Boilerplate and Assertions from `rasterization` -->
-    assert means.shape == batch_dims + (N, 3), means.shape
-    if covars is None:
-        assert quats.shape == batch_dims + (N, 4), quats.shape
-        assert scales.shape == batch_dims + (N, 3), scales.shape
-    else:
-        assert covars.shape == batch_dims + (N, 3, 3), covars.shape
-        quats, scales = None, None
-        tri_indices = ([0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2])
-        covars = covars[..., tri_indices[0], tri_indices[1]]
-    assert opacities.shape == batch_dims + (N,), opacities.shape
-    assert viewmats.shape == batch_dims + (C, 4, 4), viewmats.shape
-    assert Ks.shape == batch_dims + (C, 3, 3), Ks.shape
+    N = means.shape[0]
+    C = viewmats.shape[0]
+    assert means.shape == (N, 3), means.shape
+    assert quats.shape == (N, 4), quats.shape
+    assert scales.shape == (N, 3), scales.shape
+    assert opacities.shape == (N,), opacities.shape
+    assert viewmats.shape == (C, 4, 4), viewmats.shape
+    assert Ks.shape == (C, 3, 3), Ks.shape
     assert render_mode in ["RGB", "D", "ED", "RGB+D", "RGB+ED"], render_mode
 
-    def _check_color_shape(colors_tensor, name):
-        if sh_degree is None:
-            assert (
-                           colors_tensor.dim() == num_batch_dims + 2
-                           and colors_tensor.shape[:-1] == batch_dims + (N,)
-                   ) or (
-                           colors_tensor.dim() == num_batch_dims + 3
-                           and colors_tensor.shape[:-1] == batch_dims + (C, N)
-                   ), f"{name} shape: {colors_tensor.shape}"
-            if distributed:
-                assert (
-                        colors_tensor.dim() == num_batch_dims + 2
-                ), f"Distributed mode only supports per-Gaussian {name}."
-        else:
-            assert (
-                           colors_tensor.dim() == num_batch_dims + 3
-                           and colors_tensor.shape[:-2] == batch_dims + (N,)
-                           and colors_tensor.shape[-1] == 3
-                   ) or (
-                           colors_tensor.dim() == num_batch_dims + 4
-                           and colors_tensor.shape[:-2] == batch_dims + (C, N)
-                           and colors_tensor.shape[-1] == 3
-                   ), f"{name} shape: {colors_tensor.shape}"
-            assert (sh_degree + 1) ** 2 <= colors_tensor.shape[-2], f"{name} shape: {colors_tensor.shape}"
-            if distributed:
-                assert (
-                        colors_tensor.dim() == num_batch_dims + 3
-                ), f"Distributed mode only supports per-Gaussian {name}."
-
-    _check_color_shape(colors, "colors")
-    _check_color_shape(colors_low, "colors_low")
-
-    # Assertions for advanced features
-    if absgrad:
-        assert not distributed, "AbsGrad is not supported in distributed mode."
-    if radial_coeffs is not None or tangential_coeffs is not None or thin_prism_coeffs is not None or rolling_shutter != RollingShutterType.GLOBAL:
-        assert with_ut, "Distortion and rolling shutter require `with_ut=True`."
-    if rolling_shutter != RollingShutterType.GLOBAL:
-        assert viewmats_rs is not None, "Rolling shutter requires `viewmats_rs`."
+    if sh_degree is None:   # None
+        # treat colors as post-activation values
+        # colors should be in shape [N, D] or (C, N, D) (silently support)
+        assert (colors.dim() == 2 and colors.shape[0] == N) or (
+                colors.dim() == 3 and colors.shape[:2] == (C, N)
+        ), colors.shape
     else:
-        assert viewmats_rs is None, "`viewmats_rs` should be None for global shutter."
-    if with_ut or with_eval3d:
-        assert (quats is not None) and (scales is not None), "UT and eval3d require quats and scales."
-        assert not packed, "Packed mode is not supported with UT or eval3d."
-        assert not sparse_grad, "Sparse grad is not supported with UT or eval3d."
-    #<-- End Boilerplate -->
+        # treat colors as SH coefficients. Allowing for activating partial SH bands
+        assert (
+                colors.dim() == 3 and colors.shape[0] == N and colors.shape[2] == 3
+        ), colors.shape
+        assert (sh_degree + 1) ** 2 <= colors.shape[1], colors.shape
 
-    def reshape_view(C: int, world_view: torch.Tensor, N_world: list) -> torch.Tensor:
-        view_list = list(
-            map(
-                lambda x: x.split(int(x.shape[0] / C), dim=0),
-                world_view.split([C * N_i for N_i in N_world]),
-            )
-        )
-        return torch.stack([torch.cat(l) for l in zip(*view_list)])
+    # Project Gaussians to 2D. Directly pass in {quats, scales} is faster than precomputing covars.
+    proj_results = fully_fused_projection(
+        means,
+        None,  # covars,
+        quats,
+        scales,
+        viewmats,
+        Ks,
+        width,
+        height,
+        eps2d=eps2d,
+        packed=packed,
+        near_plane=near_plane,
+        far_plane=far_plane,
+        radius_clip=radius_clip,
+        sparse_grad=sparse_grad,
+        calc_compensations=(rasterize_mode == "antialiased"),
+    )
 
-    if distributed:
-        #<-- Distributed Setup from `rasterization` -->
-        assert batch_dims == (), "Distributed mode does not support batch dimensions"
-        world_rank = torch.distributed.get_rank()
-        world_size = torch.distributed.get_world_size()
-        N_world = all_gather_int32(world_size, N, device=device)
-        C_world = [C] * world_size
-        viewmats, Ks = all_gather_tensor_list(world_size, [viewmats, Ks])
-        if viewmats_rs is not None:
-            (viewmats_rs,) = all_gather_tensor_list(world_size, [viewmats_rs])
-        C = len(viewmats)
-        #<-- End Distributed Setup -->
-
-    #<-- Projection Logic from `rasterization` -->
-    if with_ut:
-        proj_results = fully_fused_projection_with_ut(
-            means, quats, scales, opacities, viewmats, Ks, width, height,
-            eps2d=eps2d, near_plane=near_plane, far_plane=far_plane, radius_clip=radius_clip,
-            calc_compensations=(rasterize_mode == "antialiased"), camera_model=camera_model,
-            radial_coeffs=radial_coeffs, tangential_coeffs=tangential_coeffs,
-            thin_prism_coeffs=thin_prism_coeffs, rolling_shutter=rolling_shutter, viewmats_rs=viewmats_rs,
-        )
+    if packed:  # True
+        # The results are packed into shape [nnz, ...]. All elements are valid.
+        (
+            camera_ids,
+            gaussian_ids,
+            radii,
+            means2d,
+            depths,
+            conics,
+            compensations,
+        ) = proj_results
+        opacities = opacities[gaussian_ids]  # [nnz]
     else:
-        proj_results = fully_fused_projection(
-            means, covars, quats, scales, viewmats, Ks, width, height,
-            eps2d=eps2d, packed=packed, near_plane=near_plane, far_plane=far_plane,
-            radius_clip=radius_clip, sparse_grad=sparse_grad,
-            calc_compensations=(rasterize_mode == "antialiased"), camera_model=camera_model,
-            opacities=opacities,
-        )
-
-    if packed:
-        (batch_ids, camera_ids, gaussian_ids, radii, means2d, depths, conics, compensations) = proj_results  # pyright: ignore [reportAssignmentType]
-        opacities = opacities.view(B, N)[batch_ids, gaussian_ids]
-        image_ids = batch_ids * C + camera_ids
-    else:
+        # The results are with shape [C, N, ...]. Only the elements with radii > 0 are valid.
         radii, means2d, depths, conics, compensations = proj_results
-        opacities = torch.broadcast_to(opacities[..., None, :], batch_dims + (C, N))
-        batch_ids, camera_ids, gaussian_ids, image_ids = None, None, None, None
-    #<-- End Projection Logic -->
+        opacities = opacities.repeat(C, 1)  # [C, N]
+        camera_ids, gaussian_ids = None, None
 
     if compensations is not None:
-        opacities *= compensations
+        opacities = opacities * compensations
 
-    meta.update({
-        "batch_ids": batch_ids, "camera_ids": camera_ids, "gaussian_ids": gaussian_ids,
-        "radii": radii, "means2d": means2d, "depths": depths, "conics": conics, "opacities": opacities,
-    })
-
-    # This function processes a color tensor (either direct or SH)
-    def _process_color(color_tensor: Tensor):
-        if sh_degree is None: # Direct color
-            if packed:
-                if color_tensor.dim() == num_batch_dims + 2:
-                    return color_tensor.view(B, N, -1)[batch_ids, gaussian_ids]
-                else:
-                    return color_tensor.view(B, C, N, -1)[batch_ids, camera_ids, gaussian_ids]
-            else:
-                if color_tensor.dim() == num_batch_dims + 2:
-                    return torch.broadcast_to(color_tensor[..., None, :, :], batch_dims + (C, N, -1))
-                else:
-                    return color_tensor
-        else: # SH coefficients
-            campos = torch.inverse(viewmats)[..., :3, 3]
-            if viewmats_rs is not None:
-                campos_rs = torch.inverse(viewmats_rs)[..., :3, 3]
-                campos = 0.5 * (campos + campos_rs)
-
-            if packed:
-                dirs = means.view(B, N, 3)[batch_ids, gaussian_ids] - campos.view(B, C, 3)[batch_ids, camera_ids]
-                masks = (radii > 0).all(dim=-1)
-                if color_tensor.dim() == num_batch_dims + 3:
-                    shs = color_tensor.view(B, N, -1, 3)[batch_ids, gaussian_ids]
-                else:
-                    shs = color_tensor.view(B, C, N, -1, 3)[batch_ids, camera_ids, gaussian_ids]
-            else: # Not packed
-                dirs = means[..., None, :, :] - campos[..., None, :]
-                masks = (radii > 0).all(dim=-1)
-                if color_tensor.dim() == num_batch_dims + 3:
-                    shs = torch.broadcast_to(color_tensor[..., None, :, :, :], batch_dims + (C, N, -1, 3))
-                else:
-                    shs = color_tensor
-
-            processed_colors = spherical_harmonics(sh_degree, dirs, shs, masks=masks)
-            return torch.clamp_min(processed_colors + 0.5, 0.0)
-
-    colors = _process_color(colors)
-    colors_low = _process_color(colors_low)
-
-    if distributed:
-        #<-- Distributed Data Exchange from `rasterization` -->
-        if packed:
-            cnts = torch.bincount(camera_ids, minlength=C).split(C_world, dim=0)
-            cnts = [c.sum() for c in cnts]
-            collected_splits = all_to_all_int32(world_size, cnts, device=device)
-
-            # Scatter geometry and BOTH color tensors
-            (radii,) = all_to_all_tensor_list(world_size, [radii], cnts, output_splits=collected_splits)
-            (means2d, depths, conics, opacities, colors, colors_low) = all_to_all_tensor_list(
-                world_size, [means2d, depths, conics, opacities, colors, colors_low],
-                cnts, output_splits=collected_splits
-            )
-            # Scatter IDs
-            offsets = torch.cumsum(torch.tensor([0] + C_world[:-1], device=device, dtype=torch.long), dim=0)
-            camera_ids -= offsets.repeat_interleave(torch.stack(cnts))
-            offsets = torch.cumsum(torch.tensor([0] + N_world[:-1], device=device, dtype=torch.long), dim=0)
-            gaussian_ids += offsets.repeat_interleave(torch.stack(cnts))
-            (camera_ids, gaussian_ids) = all_to_all_tensor_list(
-                world_size, [camera_ids, gaussian_ids], cnts, output_splits=collected_splits
-            )
-            C = C_world[world_rank]
-        else: # Not packed
-            C = C_world[world_rank]
-            (radii,) = all_to_all_tensor_list(world_size, [radii.flatten(0, 1)], [C_i * N for C_i in C_world], [C * N_i for N_i in N_world])
-            radii = reshape_view(C, radii, N_world)
-
-            (means2d, depths, conics, opacities, colors, colors_low) = all_to_all_tensor_list(
-                world_size, [t.flatten(0, 1) for t in [means2d, depths, conics, opacities, colors, colors_low]],
-                [C_i * N for C_i in C_world], [C * N_i for N_i in N_world]
-            )
-            means2d, depths, conics, opacities = reshape_view(C, means2d, N_world), reshape_view(C, depths, N_world), reshape_view(C, conics, N_world), reshape_view(C, opacities, N_world)
-            colors, colors_low = reshape_view(C, colors, N_world), reshape_view(C, colors_low, N_world)
-        #<-- End Distributed Data Exchange -->
-
-    if render_mode in ["RGB+D", "RGB+ED"]:
-        colors = torch.cat((colors, depths[..., None]), dim=-1)
-        colors_low = torch.cat((colors_low, depths[..., None]), dim=-1)
-        if backgrounds is not None:
-            backgrounds = torch.cat([backgrounds, torch.zeros(batch_dims + (C, 1), device=device)], dim=-1)
-    elif render_mode in ["D", "ED"]:
-        colors = colors_low = depths[..., None]
-        if backgrounds is not None:
-            backgrounds = torch.zeros(batch_dims + (C, 1), device=device)
-
-    #<-- Tile Intersection from `rasterization` -->
+    # Identify intersecting tiles
     tile_width = math.ceil(width / float(tile_size))
     tile_height = math.ceil(height / float(tile_size))
     tiles_per_gauss, isect_ids, flatten_ids = isect_tiles(
-        means2d, radii, depths, tile_size, tile_width, tile_height,
-        segmented=segmented, packed=packed, n_images=I, image_ids=image_ids, gaussian_ids=gaussian_ids,
+        means2d,
+        radii,
+        depths,
+        tile_size,
+        tile_width,
+        tile_height,
+        packed=packed,
+        n_cameras=C,
+        camera_ids=camera_ids,
+        gaussian_ids=gaussian_ids,
     )
-    isect_offsets = isect_offset_encode(isect_ids, I, tile_width, tile_height)
-    isect_offsets = isect_offsets.reshape(batch_dims + (C, tile_height, tile_width))
-    #<-- End Tile Intersection -->
+    isect_offsets = isect_offset_encode(isect_ids, C, tile_width, tile_height)
 
-    meta.update({
-        "tile_width": tile_width, "tile_height": tile_height, "tiles_per_gauss": tiles_per_gauss,
-        "isect_ids": isect_ids, "flatten_ids": flatten_ids, "isect_offsets": isect_offsets,
-        "width": width, "height": height, "tile_size": tile_size, "n_batches": B, "n_cameras": C,
-    })
+    # TODO: SH also suport N-D.
+    # Compute the per-view colors
+    if not (
+            colors.dim() == 3 and sh_degree is None
+    ):  # silently support [C, N, D] color.
+        colors = (
+            colors[gaussian_ids] if packed else colors.expand(C, *([-1] * colors.dim()))
+        )  # [nnz, D] or [C, N, 3]
+        colors_low = (
+            colors_low[gaussian_ids] if packed else colors_low.expand(C, *([-1] * colors_low.dim()))
+        )  # [nnz, D] or [C, N, 3]
 
-    # Perform dual rasterization
-    if colors.shape[-1] > channel_chunk:
-        n_chunks = (colors.shape[-1] + channel_chunk - 1) // channel_chunk
-        render_colors_list, render_low_colors_list, render_alphas_list = [], [], []
+    else:
+        if packed:
+            colors = colors[camera_ids, gaussian_ids, :]
+            colors_low = colors_low[camera_ids, gaussian_ids, :]
+
+    if sh_degree is not None:  # SH coefficients
+        camtoworlds = torch.inverse(viewmats)
+        if packed:
+            dirs = means[gaussian_ids, :] - camtoworlds[camera_ids, :3, 3]
+        else:
+            dirs = means[None, :, :] - camtoworlds[:, None, :3, 3]
+        colors = spherical_harmonics(
+            sh_degree, dirs, colors, masks=radii > 0
+        )  # [nnz, D] or [C, N, 3]
+        colors_low = spherical_harmonics(
+            sh_degree, dirs, colors_low, masks=radii > 0
+        )  # [nnz, D] or [C, N, 3]
+        # make it apple-to-apple with Inria's CUDA Backend.
+        colors = torch.clamp_min(colors + 0.5, 0.0)
+        colors_low = torch.clamp_min(colors_low + 0.5, 0.0)
+
+
+    # Rasterize to pixels
+    if render_mode in ["RGB+D", "RGB+ED"]:  # Here, RGB only
+        colors = torch.cat((colors, depths[..., None]), dim=-1)
+        colors_low = torch.cat((colors_low, depths[..., None]), dim=-1)
+    elif render_mode in ["D", "ED"]:
+        colors = depths[..., None]
+        colors_low = depths[..., None]
+    else:  # RGB
+        pass
+
+    if colors.shape[-1] > 32:   # False
+        # slice into 32-channel chunks
+        n_chunks = (colors.shape[-1] + 31) // 32
+        render_colors = []
+        render_enh_colors = []
+        render_alphas = []
+        render_low_colors = []
 
         for i in range(n_chunks):
-            colors_chunk = colors[..., i * channel_chunk : (i + 1) * channel_chunk]
-            colors_low_chunk = colors_low[..., i * channel_chunk : (i + 1) * channel_chunk]
-            backgrounds_chunk = backgrounds[..., i * channel_chunk : (i + 1) * channel_chunk] if backgrounds is not None else None
-
-            if with_eval3d:
-                # This block would need two calls to a hypothetical `rasterize_to_pixels_eval3d_dual`
-                # For simplicity, we assume one pass for now or separate calls.
-                raise NotImplementedError("Chunked dual rendering for `with_eval3d` is not implemented.")
-            else:
-                rc, ra = rasterize_to_pixels(
-                    means2d, conics, colors_chunk, opacities, width, height, tile_size, isect_offsets,
-                    flatten_ids, backgrounds=backgrounds_chunk, packed=packed, absgrad=absgrad
-                )
-                rlc, _ = rasterize_to_pixels(
-                    means2d, conics, colors_low_chunk, opacities, width, height, tile_size, isect_offsets,
-                    flatten_ids, backgrounds=backgrounds_chunk, packed=packed, absgrad=absgrad
-                )
-            render_colors_list.append(rc)
-            render_low_colors_list.append(rlc)
-            render_alphas_list.append(ra)
-
-        render_colors = torch.cat(render_colors_list, dim=-1)
-        render_low_colors = torch.cat(render_low_colors_list, dim=-1)
-        render_alphas = render_alphas_list[0]
-        render_low_alphas = render_alphas_list[0]
+            colors_chunk = colors[..., i * 32 : (i + 1) * 32]
+            colors_low_chunk = colors_low[..., i * 32 : (i + 1) * 32]
+            backgrounds_chunk = (
+                backgrounds[:, i * 32 : (i + 1) * 32]
+                if backgrounds is not None
+                else None
+            )
+            render_colors_, render_alphas_ = rasterize_to_pixels(
+                means2d,
+                conics,
+                colors_chunk,
+                opacities,
+                width,
+                height,
+                tile_size,
+                isect_offsets,
+                flatten_ids,
+                backgrounds=backgrounds_chunk,
+                packed=packed,
+                absgrad=absgrad,
+            )
+            render_low_colors_, render_alphas_ = rasterize_to_pixels(
+                means2d,
+                conics,
+                colors_low_chunk,
+                opacities,
+                width,
+                height,
+                tile_size,
+                isect_offsets,
+                flatten_ids,
+                backgrounds=backgrounds_chunk,
+                packed=packed,
+                absgrad=absgrad,
+            )
+            render_colors.append(render_colors_)
+            render_enh_colors.append(render_low_colors_)
+            render_alphas.append(render_alphas_)
+        render_colors = torch.cat(render_colors, dim=-1)
+        render_enh_colors = torch.cat(render_enh_colors, dim=-1)
+        render_alphas = render_alphas[0]  # discard the rest
     else:
-        if with_eval3d:
-            # Similar to chunking, this would ideally be a fused CUDA kernel for efficiency.
-            # Here we perform two separate calls.
-            render_colors, render_alphas = rasterize_to_pixels_eval3d(
-                means, quats, scales, colors, opacities, viewmats, Ks, width, height, tile_size,
-                isect_offsets, flatten_ids, backgrounds=backgrounds, camera_model=camera_model,
-                radial_coeffs=radial_coeffs, tangential_coeffs=tangential_coeffs, thin_prism_coeffs=thin_prism_coeffs,
-                rolling_shutter=rolling_shutter, viewmats_rs=viewmats_rs,
-            )
-            render_low_colors, render_low_alphas = rasterize_to_pixels_eval3d(
-                means, quats, scales, colors_low, opacities, viewmats, Ks, width, height, tile_size,
-                isect_offsets, flatten_ids, backgrounds=backgrounds, camera_model=camera_model,
-                radial_coeffs=radial_coeffs, tangential_coeffs=tangential_coeffs, thin_prism_coeffs=thin_prism_coeffs,
-                rolling_shutter=rolling_shutter, viewmats_rs=viewmats_rs,
-            )
-        else:
-            render_colors, render_alphas = rasterize_to_pixels(
-                means2d, conics, colors, opacities, width, height, tile_size,
-                isect_offsets, flatten_ids, backgrounds=backgrounds, packed=packed, absgrad=absgrad
-            )
-            render_low_colors, render_low_alphas = rasterize_to_pixels(
-                means2d, conics, colors_low, opacities, width, height, tile_size,
-                isect_offsets, flatten_ids, backgrounds=backgrounds, packed=packed, absgrad=absgrad
-            )
+        render_colors, render_alphas = rasterize_to_pixels(
+            means2d,
+            conics,
+            colors,
+            opacities,
+            width,
+            height,
+            tile_size,
+            isect_offsets,
+            flatten_ids,
+            backgrounds=backgrounds,
+            packed=packed,
+            absgrad=absgrad,
+        )
+        render_low_colors, render_low_alphas = rasterize_to_pixels(
+            means2d,
+            conics,
+            colors_low,
+            opacities,
+            width,
+            height,
+            tile_size,
+            isect_offsets,
+            flatten_ids,
+            backgrounds=backgrounds,
+            packed=packed,
+            absgrad=absgrad,
+        )
 
-    if render_mode in ["ED", "RGB+ED"]:
-        # Normalize the accumulated depth to get the expected depth for both renders
-        render_colors = torch.cat([
-            render_colors[..., :-1],
-            render_colors[..., -1:] / render_alphas.clamp(min=1e-10),
-            ], dim=-1)
-        render_low_colors = torch.cat([
-            render_low_colors[..., :-1],
-            render_low_colors[..., -1:] / render_alphas.clamp(min=1e-10),
-            ], dim=-1)
+    if render_mode in ["ED", "RGB+ED"]: # False
+        # normalize the accumulated depth to get the expected depth
+        render_colors = torch.cat(
+            [
+                render_colors[..., :-1],
+                render_colors[..., -1:] / render_alphas.clamp(min=1e-10),
+                ],
+            dim=-1,
+        )
+        render_low_colors = torch.cat(
+            [
+                render_low_colors[..., :-1],
+                render_low_colors[..., -1:] / render_low_alphas.clamp(min=1e-10),
+                ],
+            dim=-1,
+        )
 
+    meta = {
+        "camera_ids": camera_ids,
+        "gaussian_ids": gaussian_ids,
+        "radii": radii,
+        "means2d": means2d,
+        "depths": depths,
+        "conics": conics,
+        "opacities": opacities,
+        "tile_width": tile_width,
+        "tile_height": tile_height,
+        "tiles_per_gauss": tiles_per_gauss,
+        "isect_ids": isect_ids,
+        "flatten_ids": flatten_ids,
+        "isect_offsets": isect_offsets,
+        "width": width,
+        "height": height,
+        "tile_size": tile_size,
+    }
+    
     return render_colors, render_low_colors, render_alphas, render_low_alphas, meta
