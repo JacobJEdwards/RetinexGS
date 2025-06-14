@@ -142,10 +142,10 @@ def rasterization_dual(
         else:
             dirs = means[None, :, :] - camtoworlds[:, None, :3, 3]
         colors = spherical_harmonics(
-            sh_degree, dirs, colors, masks=radii > 0
+            sh_degree, dirs, colors, masks=(radii > 0).all(dim=-1)
         )  # [nnz, D] or [C, N, 3]
         colors_low = spherical_harmonics(
-            sh_degree, dirs, colors_low, masks=radii > 0
+            sh_degree, dirs, colors_low, masks=(radii > 0).all(dim=-1)
         )  # [nnz, D] or [C, N, 3]
         # make it apple-to-apple with Inria's CUDA Backend.
         colors = torch.clamp_min(colors + 0.5, 0.0)
