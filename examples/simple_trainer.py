@@ -95,7 +95,7 @@ class Config:
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
     packed: bool = False
     sparse_grad: bool = False
-    visible_adam: bool = True
+    visible_adam: bool = False
     antialiased: bool = False
 
     random_bkgd: bool = True
