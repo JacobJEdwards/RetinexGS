@@ -1,13 +1,15 @@
 import random
 
 import numpy as np
-import torch
 from sklearn.neighbors import NearestNeighbors
-from torch import Tensor, nn
-import torch.nn.functional as F
+from torch import Tensor
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 import einops
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.transforms.functional as TF
 
 class CrossAttention(nn.Module):
     def __init__(self, img_channels=3, hidden_dim=128, out_dim=255):
@@ -354,7 +356,50 @@ class MultiScaleRetinexNet(nn.Module):
                                                     mode='bilinear', align_corners=False).repeat(1, 3, 1, 1)
 
         return [final_illumination_full_res, final_illumination_half_res]
-    
+
+# retinex.py
+
+
+class TrainableMSR(nn.Module):
+    """
+    A trainable Multi-Scale Retinex module.
+    It learns the sigmas for the Gaussian blurs and the weights for combining them.
+    """
+    def __init__(self, num_scales=3):
+        super().__init__()
+
+        initial_sigmas = torch.tensor([15.0, 80.0, 250.0])
+        self.log_sigmas = nn.Parameter(torch.log(initial_sigmas))
+
+        self.weights = nn.Parameter(torch.ones(num_scales))
+
+    def forward(self, img_srgb: torch.Tensor) -> torch.Tensor:
+        epsilon = 1e-6
+
+        img_log = torch.log(img_srgb + epsilon)
+
+        msr_log_reflectance = torch.zeros_like(img_log)
+
+        normalized_weights = F.softmax(self.weights, dim=0)
+
+        sigmas = torch.exp(self.log_sigmas)
+
+        for i in range(len(sigmas)):
+            kernel_size = int(sigmas[i].item() * 3) // 2 * 2 + 1
+
+            illumination_log = TF.gaussian_blur(img_log, kernel_size=[kernel_size], sigma=[sigmas[i].item()])
+
+            reflectance_log = img_log - illumination_log
+
+            msr_log_reflectance += normalized_weights[i] * reflectance_log
+
+        reflectance = torch.exp(msr_log_reflectance)
+
+        min_val = torch.min(reflectance)
+        max_val = torch.max(reflectance)
+        enhanced_img = (reflectance - min_val) / (max_val - min_val + epsilon)
+
+        return enhanced_img
     
 def generate_variational_intrinsics(
         base_K: Tensor,
