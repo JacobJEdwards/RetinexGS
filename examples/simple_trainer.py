@@ -834,7 +834,7 @@ class Runner:
         trainloader_iter = iter(trainloader)
 
         pbar = tqdm.tqdm(range(1000), desc="Pre-training RetinexNet")
-        for _ in pbar:
+        for step in pbar:
             try:
                 data = next(trainloader_iter)
             except StopIteration:
@@ -853,6 +853,10 @@ class Runner:
             self.retinex_optimizer.step()
 
             pbar.set_postfix({"loss": loss.item()})
+
+            if step % 100 == 0:
+                self.writer.add_scalar("retinex_net/loss", loss.item(), step)
+
 
 
 
