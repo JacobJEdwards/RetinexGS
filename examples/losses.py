@@ -93,6 +93,7 @@ class HistogramPriorLoss(nn.Module):
         return total_loss
 
 
+# Adaptive Curve Loss
 class AdaptiveCurveLoss(nn.Module):
     def __init__(
         self,
