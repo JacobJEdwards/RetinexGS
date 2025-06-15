@@ -335,7 +335,7 @@ class Runner:
             [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
         )
 
-        self.loss_color = ColourConsistencyLoss().to(self.device)
+        # self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.4).to(self.device)
 
         feature_dim = 32 if cfg.app_opt else None
@@ -822,16 +822,16 @@ class Runner:
             illumination_map = torch.exp(log_illumination_map)
 
             loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
-            loss_color_val = self.loss_color(
-                illumination_map
-            )
+            # loss_color_val = self.loss_color(
+            #     illumination_map
+            # )
             loss_exposure_val = self.loss_exposure(
                 illumination_map
             )
 
             loss = (
                 cfg.lambda_reflect * loss_spa_val
-                + cfg.lambda_color * loss_color_val
+                # + cfg.lambda_color * loss_color_val
                 + cfg.lambda_exposure * loss_exposure_val
             )
 
@@ -847,9 +847,9 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_spatial", loss_spa_val.item(), step
                 )
-                self.writer.add_scalar(
-                    "retinex_net/loss_color", loss_color_val.item(), step
-                )
+                # self.writer.add_scalar(
+                #     "retinex_net/loss_color", loss_color_val.item(), step
+                # )
                 self.writer.add_scalar(
                     "retinex_net/loss_exposure", loss_exposure_val.item(), step
                 )
@@ -1076,9 +1076,9 @@ class Runner:
 
             # some problems here
             # whcih is the issue ?
-            loss_illum_color = self.loss_color(
-                illumination_map
-            )
+            # loss_illum_color = self.loss_color(
+            #     illumination_map
+            # )
             loss_illum_exposure = self.loss_exposure(
                 illumination_map
             )
@@ -1086,7 +1086,7 @@ class Runner:
             loss_illumination = (
                 cfg.lambda_reflect * loss_illum_smooth
                 + cfg.lambda_exposure * loss_illum_exposure
-                + cfg.lambda_color * loss_illum_color
+                # + cfg.lambda_color * loss_illum_color
             )
 
             loss = (
