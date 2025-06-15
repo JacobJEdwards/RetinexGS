@@ -32,7 +32,7 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
-from examples.utils import MultiScaleRetinexNet
+from utils import MultiScaleRetinexNet
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
 from rendering_double import rasterization_dual
 from utils import RetinexNet, CrossAttention
