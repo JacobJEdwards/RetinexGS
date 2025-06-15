@@ -809,7 +809,7 @@ class Runner:
             illumination_map = self.retinex_net(input_image_for_net)  # [B, 3, H, W]
             illumination_map = torch.exp(illumination_map)
 
-            loss_spa_val = loss_contrast(illumination_map)
+            loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
             loss_color_val = self.loss_color(
                 illumination_map
             )
@@ -966,7 +966,7 @@ class Runner:
 
             reflectance_target = torch.exp(log_reflectance_target)
             reflectance_target = torch.clamp(reflectance_target, 0, 1)
-            
+
             illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
 
             if cfg.enable_retinex:
@@ -1046,12 +1046,17 @@ class Runner:
                 pixels.permute(0, 3, 1, 2),
             )
 
+
             con_degree = (0.5 / torch.mean(pixels).item())
-            
+
             loss_illum_smooth = loss_contrast(
                 input_image_for_net,
                 illumination_map,
                 contrast=con_degree,
+            )
+
+            low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
+                    ssim_loss_low * cfg.ssim_lambda
             )
 
             # some problems here
@@ -1063,12 +1068,17 @@ class Runner:
                 illumination_map
             )
 
-            loss = (cfg.lambda_reflect * loss_reflectance +
-                    cfg.lambda_smooth * loss_illum_smooth +
-                    cfg.lambda_low * loss_reconstruct_low
-                    + cfg.ssim_lambda * ssim_loss_low
-                    # + loss_illum_color * cfg.lambda_color)
-                    + loss_illum_exposure * cfg.lambda_exposure)
+            loss_illumination = (
+                cfg.lambda_reflect * loss_illum_smooth
+                + cfg.lambda_exposure * loss_illum_exposure
+            )
+
+            loss = (
+                cfg.lambda_reflect * loss_reflectance
+                + low_loss
+                + loss_illumination
+            )
+
 
             self.cfg.strategy.step_pre_backward(
                 params=self.splats,
