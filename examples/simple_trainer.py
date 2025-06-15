@@ -17,7 +17,7 @@ import tyro
 import viser
 import yaml
 from nerfview import CameraState, RenderTabState, apply_float_colormap
-from torch import Tensor
+from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler
 from torch.utils.tensorboard import SummaryWriter
@@ -327,6 +327,14 @@ class Runner:
             lr=1e-4 * math.sqrt(cfg.batch_size),
             weight_decay=1e-4,
         )
+        self.retinex_embed_dim = 32
+        self.retinex_embeds = nn.Embedding(len(self.trainset), self.retinex_embed_dim).to(self.device)
+        torch.nn.init.zeros_(self.retinex_embeds.weight)
+
+        self.retinex_embed_optimizer = torch.optim.Adam(
+            [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
+        )
+
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.4).to(self.device)
 
@@ -801,13 +809,17 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
+            images_ids = data["image_id"].to(device)
             pixels = data["image"].to(device) / 255.0
             input_image_for_net = pixels.permute(0, 3, 1, 2)
 
             self.retinex_optimizer.zero_grad()
+            self.retinex_embed_optimizer.zero_grad()
 
-            illumination_map = self.retinex_net(input_image_for_net)  # [B, 3, H, W]
-            illumination_map = torch.exp(illumination_map)
+            retinex_embedding = self.retinex_embeds(images_ids)
+
+            log_illumination_map = self.retinex_net(input_image_for_net, retinex_embedding)  # [B, 3, H, W]
+            illumination_map = torch.exp(log_illumination_map)
 
             loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
             loss_color_val = self.loss_color(
@@ -824,7 +836,9 @@ class Runner:
             )
 
             loss.backward()
+
             self.retinex_optimizer.step()
+            self.retinex_embed_optimizer.step()
 
             pbar.set_postfix({"loss": loss.item()})
 
@@ -959,9 +973,10 @@ class Runner:
             if cfg.pose_opt:
                 camtoworlds = self.pose_adjust(camtoworlds, image_ids)
 
+            retinex_embedding = self.retinex_embeds(image_ids)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
             log_input_image = torch.log(input_image_for_net + 1e-8)  # [1, 3, H, W]
-            log_illumination_map = self.retinex_net(input_image_for_net)  # [1, 3, H, W]
+            log_illumination_map = self.retinex_net(input_image_for_net, retinex_embedding)  # [1, 3, H, W]
             log_reflectance_target = log_input_image - log_illumination_map
 
             reflectance_target = torch.exp(log_reflectance_target)
@@ -1474,6 +1489,8 @@ class Runner:
 
             self.retinex_optimizer.step()
             self.retinex_optimizer.zero_grad()
+            self.retinex_embed_optimizer.step()
+            self.retinex_embed_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()

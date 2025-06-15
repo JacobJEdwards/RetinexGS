@@ -281,10 +281,13 @@ def apply_depth_colormap(
     return img
 
 class RetinexNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1, embed_dim=32):
         super(RetinexNet, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
+        
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
+        
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
 
@@ -295,27 +298,24 @@ class RetinexNet(nn.Module):
         self.relu = nn.ReLU()
         # self.sigmoid = nn.Sigmoid() we operate in log space, no need for sigmoid
 
-    def forward(self, x):
+    def forward(self, x, embedding):
         c1 = self.relu(self.conv1(x))
-        p1 = self.pool(c1)
-
+        
+        c1_modulated = self.film1(c1, embedding)
+        
+        p1 = self.pool(c1_modulated)
         c2 = self.relu(self.conv2(p1))
         p2 = self.pool(c2)
 
         up1 = self.upconv1(p2)
-
         up1_resized = F.interpolate(up1, size=p1.shape[2:], mode='bilinear', align_corners=False)
 
         merged = torch.cat([up1_resized, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
+        up2 = self.upconv2(c3)
+        # final_illumination = F.interpolate(log_illumination, size=x.shape[2:], mode='bilinear', align_corners=False)
 
-        log_illumination = self.upconv2(c3)
-
-        # illumination = self.sigmoid(up2)
-
-        final_illumination = F.interpolate(log_illumination, size=x.shape[2:], mode='bilinear', align_corners=False)
-
-        return final_illumination.repeat(1, 3, 1, 1)
+        return up2
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=1):
@@ -428,3 +428,21 @@ def generate_variational_intrinsics(
 
     return new_Ks
 
+
+class FiLMLayer(nn.Module):
+    """
+    Feature-wise Linear Modulation (FiLM) layer.
+    """
+    def __init__(self, embed_dim, feature_channels):
+        super(FiLMLayer, self).__init__()
+        self.generator = nn.Sequential(
+            nn.Linear(embed_dim, feature_channels * 2), 
+        )
+
+    def forward(self, features, embedding):
+
+        scale_bias = self.generator(embedding)
+        scale = scale_bias[:, :features.shape[1]].unsqueeze(-1).unsqueeze(-1) # Shape: [B, C, 1, 1]
+        bias = scale_bias[:, features.shape[1]:].unsqueeze(-1).unsqueeze(-1) # Shape: [B, C, 1, 1]
+
+        return scale * features + bias
