@@ -391,7 +391,8 @@ class TrainableMSR(nn.Module):
         for i in range(len(sigmas)):
             kernel_size = int(sigmas[i].item() * 3) // 2 * 2 + 1
 
-            illumination_log = TF.gaussian_blur(img_log, kernel_size=[kernel_size], sigma=[sigmas[i].item()])
+            illumination_log = TF.gaussian_blur(img_log, kernel_size=[kernel_size, kernel_size], sigma=[sigmas[
+                                                                                                            i].item()])
 
             reflectance_log = img_log - illumination_log
 
