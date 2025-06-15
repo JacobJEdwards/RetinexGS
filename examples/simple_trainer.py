@@ -831,15 +831,15 @@ class Runner:
             pin_memory=True,
         )
 
-        trainloader = iter(trainloader)
+        trainloader_iter = iter(trainloader)
 
         pbar = tqdm.tqdm(range(1000), desc="Pre-training RetinexNet")
         for _ in pbar:
             try:
-                data = next(trainloader)
+                data = next(trainloader_iter)
             except StopIteration:
-                trainloader = iter(trainloader)
-                data = next(trainloader)
+                trainloader_iter = iter(trainloader)
+                data = next(trainloader_iter)
 
             pixels = data["image"].to(device) / 255.0
             input_image_for_net = pixels.permute(0, 3, 1, 2)
