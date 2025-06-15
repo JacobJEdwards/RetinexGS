@@ -142,21 +142,22 @@ class AdaptiveCurveLoss(nn.Module):
         return total_loss
 
 
-# Colour Constancy Loss
 class ColourConsistencyLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, eps=1e-6):
         super(ColourConsistencyLoss, self).__init__()
+        self.eps = eps
 
     def forward(self, x):
-        mean_rgb = torch.mean(x, [2, 3], keepdim=True)
+        mean_rgb = torch.mean(x, dim=(2, 3), keepdim=True)
         mr, mg, mb = torch.split(mean_rgb, 1, dim=1)
-        Drg = torch.pow(mr - mg, 2)
-        Drb = torch.pow(mr - mb, 2)
-        Dgb = torch.pow(mb - mg, 2)
-        k = torch.pow(torch.pow(Drg, 2) + torch.pow(Drb, 2) + torch.pow(Dgb, 2), 0.5)
 
-        return k
+        Drg = (mr - mg) ** 2
+        Drb = (mr - mb) ** 2
+        Dgb = (mg - mb) ** 2
 
+        k = torch.sqrt(Drg + Drb + Dgb + self.eps)
+
+        return k.mean()
 
 # Exposure Loss, control the generated image exposure
 class ExposureLoss(nn.Module):
