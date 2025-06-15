@@ -32,7 +32,6 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
-from utils import MultiScaleRetinexNet
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
 from rendering_double import rasterization_dual
 from utils import RetinexNet, CrossAttention
@@ -322,7 +321,7 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.retinex_net = MultiScaleRetinexNet().to(self.device)
+        self.retinex_net = RetinexNet().to(self.device)
         self.retinex_optimizer = torch.optim.Adam(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
@@ -937,36 +936,14 @@ class Runner:
 
             input_image_for_net = pixels.permute(0, 3, 1, 2)
 
-            log_illumination_maps = self.retinex_net(input_image_for_net)  # [1, 3, H, W]
+            log_input_image = torch.log(input_image_for_net + 1e-8)  # [1, 3, H, W]
 
-            total_illum_smooth_loss = 0.0
-            all_reflectance_targets = []
+            log_illumination_map = self.retinex_net(input_image_for_net)  # [1, 3, H, W]
 
-            for log_illum_map in log_illumination_maps:
-                h, w = log_illum_map.shape[2:]
+            log_reflectance_target = log_input_image - log_illumination_map
 
-                scaled_log_input_image = torch.log(F.interpolate(input_image_for_net,
-                                                                 size=(h, w),
-                                                                 mode='bilinear',
-                                                                 align_corners=False) + 1e-6)
-
-                log_reflectance_target_scaled = scaled_log_input_image - log_illum_map
-
-                reflectance_target_full_res = F.interpolate(torch.exp(log_reflectance_target_scaled),
-                                                            size=(height, width),
-                                                            mode='bilinear',
-                                                            align_corners=False)
-
-                all_reflectance_targets.append(reflectance_target_full_res)
-
-                illum_map_linear = torch.exp(log_illum_map)
-                input_downsampled = F.interpolate(input_image_for_net, size=(h, w), mode='bilinear', align_corners=False)
-                total_illum_smooth_loss += loss_contrast(input_downsampled, illum_map_linear)
-
-            reflectance_target = torch.mean(torch.stack(all_reflectance_targets), dim=0)
+            reflectance_target = torch.exp(log_reflectance_target)
             reflectance_target = torch.clamp(reflectance_target, 0, 1)
-
-            loss_illum_smooth = total_illum_smooth_loss
 
             if cfg.enable_retinex:
                 renders_enh, renders_low, alphas_enh, alphas_low, info = self.rasterize_splats(
@@ -1038,6 +1015,10 @@ class Runner:
 
             loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
 
+            illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
+
+            loss_illum_smooth = loss_contrast(input_image_for_net, illumination_map)
+
             loss_reconstruct_low = F.l1_loss(colors_low, pixels)
 
             ssim_loss_low = 1.0 - self.ssim(
@@ -1051,7 +1032,7 @@ class Runner:
             #     illumination_map
             # )
             loss_illum_exposure = self.loss_exposure(
-                torch.exp(log_illumination_maps[0])
+                illumination_map
             )
 
             loss = (cfg.lambda_reflect * loss_reflectance +
