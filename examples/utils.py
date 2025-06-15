@@ -312,10 +312,10 @@ class RetinexNet(nn.Module):
 
         merged = torch.cat([up1_resized, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
-        up2 = self.upconv2(c3)
-        # final_illumination = F.interpolate(log_illumination, size=x.shape[2:], mode='bilinear', align_corners=False)
+        log_illumination = self.upconv2(c3)
+        final_illumination = F.interpolate(log_illumination, size=x.shape[2:], mode='bilinear', align_corners=False)
 
-        return up2
+        return final_illumination
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=1):
