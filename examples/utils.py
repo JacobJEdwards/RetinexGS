@@ -373,10 +373,6 @@ class TrainableMSR(nn.Module):
 
         self.weights = nn.Parameter(torch.ones(num_scales))
 
-        self.gain = nn.Parameter(torch.tensor(1.0))
-        self.offset = nn.Parameter(torch.tensor(0.0))
-        self.gamma = nn.Parameter(torch.tensor(1.0))
-
     def forward(self, img_srgb: torch.Tensor) -> torch.Tensor:
         epsilon = 1e-6
 
@@ -391,8 +387,7 @@ class TrainableMSR(nn.Module):
         for i in range(len(sigmas)):
             kernel_size = int(sigmas[i].item() * 3) // 2 * 2 + 1
 
-            illumination_log = TF.gaussian_blur(img_log, kernel_size=[kernel_size, kernel_size], sigma=[sigmas[
-                                                                                                            i].item()])
+            illumination_log = TF.gaussian_blur(img_log, kernel_size=[kernel_size], sigma=[sigmas[i].item()])
 
             reflectance_log = img_log - illumination_log
 
@@ -400,12 +395,9 @@ class TrainableMSR(nn.Module):
 
         reflectance = torch.exp(msr_log_reflectance)
 
-        enhanced_img = reflectance * self.gain + self.offset
-
-        enhanced_img = torch.clamp(enhanced_img, 0.0, 1.0)
-
-        enhanced_img = torch.pow(enhanced_img, self.gamma)
-        
+        min_val = torch.min(reflectance)
+        max_val = torch.max(reflectance)
+        enhanced_img = (reflectance - min_val) / (max_val - min_val + epsilon)
 
         return enhanced_img
     
