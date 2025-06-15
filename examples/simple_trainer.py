@@ -810,16 +810,16 @@ class Runner:
             illumination_map = torch.exp(illumination_map)
 
             loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
-            loss_color_val = self.loss_color(
-                illumination_map
-            )
+            # loss_color_val = self.loss_color(
+            #     illumination_map
+            # )
             loss_exposure_val = self.loss_exposure(
                 illumination_map
             )
 
             loss = (
                 cfg.lambda_reflect * loss_spa_val
-                + cfg.lambda_color * loss_color_val
+                # + cfg.lambda_color * loss_color_val
                 + cfg.lambda_exposure * loss_exposure_val
             )
 
@@ -833,9 +833,9 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_spatial", loss_spa_val.item(), step
                 )
-                self.writer.add_scalar(
-                    "retinex_net/loss_color", loss_color_val.item(), step
-                )
+                # self.writer.add_scalar(
+                #     "retinex_net/loss_color", loss_color_val.item(), step
+                # )
                 self.writer.add_scalar(
                     "retinex_net/loss_exposure", loss_exposure_val.item(), step
                 )
