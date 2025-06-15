@@ -801,7 +801,7 @@ class Runner:
 
         loss_contrast = SpatialLoss().to(device)
 
-        pbar = tqdm.tqdm(range(3000), desc="Pre-training RetinexNet")
+        pbar = tqdm.tqdm(range(5000), desc="Pre-training RetinexNet")
         for step in pbar:
             try:
                 data = next(trainloader_iter)
@@ -831,7 +831,7 @@ class Runner:
 
             loss = (
                 cfg.lambda_reflect * loss_spa_val
-                # + cfg.lambda_color * loss_color_val
+                + cfg.lambda_color * loss_color_val
                 + cfg.lambda_exposure * loss_exposure_val
             )
 
@@ -902,7 +902,7 @@ class Runner:
                 )
             )
 
-        # self.pre_train_retinex()
+        self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
