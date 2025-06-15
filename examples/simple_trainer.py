@@ -160,7 +160,7 @@ class Config:
 
 
     enable_retinex: bool = True
-    lambda_reflect = 0.1
+    lambda_reflect = 1.0
     lambda_smooth = 0.1
     lambda_low = 1.0
     lambda_color = 0.1
