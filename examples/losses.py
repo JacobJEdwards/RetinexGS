@@ -148,7 +148,7 @@ class ColourConsistencyLoss(nn.Module):
         self.eps = eps
 
     def forward(self, x):
-        mean_rgb = torch.mean(x, dim=(2, 3), keepdim=True)
+        mean_rgb = torch.mean(x, [2, 3], keepdim=True)
         mr, mg, mb = torch.split(mean_rgb, 1, dim=1)
 
         Drg = (mr - mg) ** 2
