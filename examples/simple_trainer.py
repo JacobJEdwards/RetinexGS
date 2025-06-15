@@ -1031,16 +1031,16 @@ class Runner:
             # loss_illum_color = self.loss_color(
             #     illumination_map
             # )
-            loss_illum_exposure = self.loss_exposure(
-                illumination_map
-            )
+            # loss_illum_exposure = self.loss_exposure(
+            #     illumination_map
+            # )
 
             loss = (cfg.lambda_reflect * loss_reflectance +
                     cfg.lambda_smooth * loss_illum_smooth +
                     cfg.lambda_low * loss_reconstruct_low
-                    + cfg.ssim_lambda * ssim_loss_low
+                    + cfg.ssim_lambda * ssim_loss_low)
                     # + loss_illum_color * cfg.lambda_color)
-                    + loss_illum_exposure * cfg.lambda_exposure)
+                    # + loss_illum_exposure * cfg.lambda_exposure)
 
             self.cfg.strategy.step_pre_backward(
                 params=self.splats,
@@ -1256,7 +1256,7 @@ class Runner:
                     f"retinex_loss={loss_reflectance.item():.3f} "
                     f"illum_smooth={loss_illum_smooth.item():.3f} "
                     # f"illum_color={loss_illum_color.item():.3f} "
-                    f"illum_exposure={loss_illum_exposure.item():.3f}"
+                    # f"illum_exposure={loss_illum_exposure.item():.3f}"
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
             if cfg.depth_loss:
@@ -1285,9 +1285,9 @@ class Runner:
                     # self.writer.add_scalar(
                     #     "train/illumination_color", loss_illum_color.item(), step
                     # )
-                    self.writer.add_scalar(
-                        "train/illumination_exposure", loss_illum_exposure.item(), step
-                    )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_exposure", loss_illum_exposure.item(), step
+                    # )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
                         "train/clipiqa_score", clipiqa_score_value.item(), step
