@@ -95,10 +95,10 @@ class Config:
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
     packed: bool = False
     sparse_grad: bool = False
-    visible_adam: bool = False
+    visible_adam: bool = True
     antialiased: bool = False
 
-    random_bkgd: bool = False
+    random_bkgd: bool = True
 
     means_lr: float = 1.6e-4
     scales_lr: float = 5e-3
@@ -110,12 +110,12 @@ class Config:
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 
-    pose_opt: bool = False
+    pose_opt: bool = True
     pose_opt_lr: float = 1e-5
     pose_opt_reg: float = 1e-6
     pose_noise: float = 0.0
 
-    app_opt: bool = False
+    app_opt: bool = True
     app_embed_dim: int = 16
     app_opt_lr: float = 1e-3
     app_opt_reg: float = 1e-6
@@ -123,7 +123,7 @@ class Config:
     use_bilateral_grid: bool = False
     bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
 
-    depth_loss: bool = False
+    depth_loss: bool = True
     depth_lambda: float = 1e-2
 
     tb_every: int = 100
@@ -159,8 +159,8 @@ class Config:
 
 
     enable_retinex: bool = True
-    lambda_reflect = 0.5
-    lambda_smooth = 0.2
+    lambda_reflect = 0.4
+    lambda_smooth = 0.1
     lambda_low = 1.0
     lambda_color = 0.1
     lambda_exposure = 0.1
@@ -810,16 +810,16 @@ class Runner:
             illumination_map = torch.exp(illumination_map)
 
             loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
-            # loss_color_val = self.loss_color(
-            #     illumination_map
-            # )
+            loss_color_val = self.loss_color(
+                illumination_map
+            )
             loss_exposure_val = self.loss_exposure(
                 illumination_map
             )
 
             loss = (
                 cfg.lambda_reflect * loss_spa_val
-                # + cfg.lambda_color * loss_color_val
+                + cfg.lambda_color * loss_color_val
                 + cfg.lambda_exposure * loss_exposure_val
             )
 
@@ -833,9 +833,9 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_spatial", loss_spa_val.item(), step
                 )
-                # self.writer.add_scalar(
-                #     "retinex_net/loss_color", loss_color_val.item(), step
-                # )
+                self.writer.add_scalar(
+                    "retinex_net/loss_color", loss_color_val.item(), step
+                )
                 self.writer.add_scalar(
                     "retinex_net/loss_exposure", loss_exposure_val.item(), step
                 )
@@ -1061,9 +1061,9 @@ class Runner:
 
             # some problems here
             # whcih is the issue ?
-            # loss_illum_color = self.loss_color(
-            #     illumination_map
-            # )
+            loss_illum_color = self.loss_color(
+                illumination_map
+            )
             loss_illum_exposure = self.loss_exposure(
                 illumination_map
             )
@@ -1071,6 +1071,7 @@ class Runner:
             loss_illumination = (
                 cfg.lambda_reflect * loss_illum_smooth
                 + cfg.lambda_exposure * loss_illum_exposure
+                + cfg.lambda_color * loss_illum_color
             )
 
             loss = (
