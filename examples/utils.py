@@ -373,6 +373,10 @@ class TrainableMSR(nn.Module):
 
         self.weights = nn.Parameter(torch.ones(num_scales))
 
+        self.gain = nn.Parameter(torch.tensor(1.0))
+        self.offset = nn.Parameter(torch.tensor(0.0))
+        self.gamma = nn.Parameter(torch.tensor(1.0))
+
     def forward(self, img_srgb: torch.Tensor) -> torch.Tensor:
         epsilon = 1e-6
 
@@ -395,9 +399,12 @@ class TrainableMSR(nn.Module):
 
         reflectance = torch.exp(msr_log_reflectance)
 
-        min_val = torch.min(reflectance)
-        max_val = torch.max(reflectance)
-        enhanced_img = (reflectance - min_val) / (max_val - min_val + epsilon)
+        enhanced_img = reflectance * self.gain + self.offset
+
+        enhanced_img = torch.clamp(enhanced_img, 0.0, 1.0)
+
+        enhanced_img = torch.pow(enhanced_img, self.gamma)
+        
 
         return enhanced_img
     
