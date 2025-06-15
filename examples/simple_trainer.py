@@ -33,7 +33,7 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
-from examples.utils import TrainableMSR
+from utils import TrainableMSR
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
 from rendering_double import rasterization_dual
 from utils import RetinexNet, CrossAttention
