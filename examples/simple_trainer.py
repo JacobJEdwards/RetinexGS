@@ -32,6 +32,7 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
+from examples.utils import MultiScaleRetinexNet
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
 from rendering_double import rasterization_dual
 from utils import RetinexNet, CrossAttention
@@ -321,7 +322,7 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.retinex_net = RetinexNet().to(self.device)
+        self.retinex_net = MultiScaleRetinexNet().to(self.device)
         self.retinex_optimizer = torch.optim.Adam(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
@@ -935,8 +936,6 @@ class Runner:
                 camtoworlds = self.pose_adjust(camtoworlds, image_ids)
 
             input_image_for_net = pixels.permute(0, 3, 1, 2)
-
-            # log_input_image = torch.log(input_image_for_net + 1e-8)  # [1, 3, H, W]
 
             log_illumination_maps = self.retinex_net(input_image_for_net)  # [1, 3, H, W]
 
