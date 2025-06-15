@@ -115,7 +115,7 @@ class Config:
     pose_opt_reg: float = 1e-6
     pose_noise: float = 0.0
 
-    app_opt: bool = True
+    app_opt: bool = False
     app_embed_dim: int = 16
     app_opt_lr: float = 1e-3
     app_opt_reg: float = 1e-6
@@ -123,7 +123,7 @@ class Config:
     use_bilateral_grid: bool = False
     bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
 
-    depth_loss: bool = False
+    depth_loss: bool = True
     depth_lambda: float = 1e-2
 
     tb_every: int = 100
