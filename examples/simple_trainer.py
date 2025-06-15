@@ -822,9 +822,9 @@ class Runner:
             illumination_map = torch.exp(log_illumination_map)
 
             loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
-            # loss_color_val = self.loss_color(
-            #     illumination_map
-            # )
+            loss_color_val = self.loss_color(
+                illumination_map
+            )
             loss_exposure_val = self.loss_exposure(
                 illumination_map
             )
