@@ -261,6 +261,14 @@ class SpatialLoss(nn.Module):
         # 
         # return torch.mean(E)
 
+class LaplacianLoss(nn.Module):
+    def __init__(self):
+        super(LaplacianLoss, self).__init__()
+        self.kernel = torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32).view(1, 1, 3, 3).cuda()
+
+    def forward(self, x):
+        laplacian = F.conv2d(x, self.kernel, padding=1)
+        return torch.mean(torch.abs(laplacian))
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light

@@ -315,6 +315,47 @@ class RetinexNet(nn.Module):
 
         return final_illumination.repeat(1, 3, 1, 1)
 
+class MultiScaleRetinexNet(nn.Module):
+    def __init__(self, in_channels=3, out_channels=1):
+        super(MultiScaleRetinexNet, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+
+        self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
+        self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
+        self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
+
+        self.map_head_half_res = nn.Conv2d(32, out_channels, kernel_size=3, padding=1)
+
+        self.relu = nn.ReLU()
+        # self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # Encoder
+        c1 = self.relu(self.conv1(x))
+        p1 = self.pool(c1)
+
+        c2 = self.relu(self.conv2(p1))
+        p2 = self.pool(c2)
+
+        up1_resized = F.interpolate(self.upconv1(p2), size=p1.shape[2:], mode='bilinear', align_corners=False)
+        merged = torch.cat([up1_resized, p1], dim=1)
+        c3 = self.relu(self.conv3(merged))
+
+        log_illumination_half_res = self.map_head_half_res(c3)
+
+        log_illumination_full_res = self.upconv2(c3)
+
+        final_illumination_full_res = F.interpolate(log_illumination_full_res, size=x.shape[2:], mode='bilinear', 
+                                                    align_corners=False).repeat(1, 3, 1, 1)
+        final_illumination_half_res = F.interpolate(log_illumination_half_res, size=(x.shape[2]//2, x.shape[3]//2), 
+                                                    mode='bilinear', align_corners=False).repeat(1, 3, 1, 1)
+
+        return [final_illumination_full_res, final_illumination_half_res]
+    
+    
 def generate_variational_intrinsics(
         base_K: Tensor,
         num_intrinsics: int,
