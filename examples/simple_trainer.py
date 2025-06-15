@@ -20,6 +20,7 @@ from fused_ssim import fused_ssim
 from nerfview import CameraState, RenderTabState, apply_float_colormap
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim.lr_scheduler import LRScheduler, ExponentialLR, ChainedScheduler
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -159,7 +160,7 @@ class Config:
 
 
     enable_retinex: bool = True
-    lambda_reflect = 1.0
+    lambda_reflect = 0.1
     lambda_smooth = 0.1
     lambda_low = 1.0
     lambda_color = 0.1
@@ -817,6 +818,43 @@ class Runner:
         return render_colors_enh, render_colors_low, render_enh_alphas, render_low_alphas, info   # return colors and alphas
 
 
+    def pre_train_retinex(self):
+        cfg = self.cfg
+        device = self.device
+
+        trainloader = torch.utils.data.DataLoader(
+            self.trainset,
+            batch_size=cfg.batch_size,
+            shuffle=True,
+            num_workers=4,
+            persistent_workers=True,
+            pin_memory=True,
+        )
+
+        trainloader = iter(trainloader)
+
+        pbar = tqdm.tqdm(range(1000), desc="Pre-training RetinexNet")
+        for _ in pbar:
+            try:
+                data = next(trainloader)
+            except StopIteration:
+                trainloader = iter(trainloader)
+                data = next(trainloader)
+
+            pixels = data["image"].to(device) / 255.0
+            input_image_for_net = pixels.permute(0, 3, 1, 2)
+
+            log_input_image = torch.log(input_image_for_net + 1e-8)
+            log_illumination_map = self.retinex_net(input_image_for_net)
+
+            loss = F.mse_loss(log_input_image, log_illumination_map)
+            self.retinex_optimizer.zero_grad()
+            loss.backward()
+            self.retinex_optimizer.step()
+
+            pbar.set_postfix({"loss": loss.item()})
+
+
 
     def train(self):
         cfg = self.cfg
@@ -833,7 +871,7 @@ class Runner:
         max_steps = cfg.max_steps
         init_step = 0
 
-        schedulers = [
+        schedulers: list[ExponentialLR | ChainedScheduler] = [
             torch.optim.lr_scheduler.ExponentialLR(
                 self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)
             ),
@@ -864,6 +902,8 @@ class Runner:
                     ]
                 )
             )
+
+        self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
