@@ -1445,7 +1445,6 @@ class Runner:
                         "train/reflectance_target",
                         reflectance_target.permute(0, 3, 1, 2),
                         step,
-                        dataformats="NCHW",
                     )
 
                 self.writer.flush()
