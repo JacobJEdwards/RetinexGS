@@ -32,6 +32,7 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
+from examples.losses import SmoothingLoss
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
 from rendering_double import rasterization_dual
 from utils import MultiScaleRetinexNet
@@ -158,13 +159,13 @@ class Config:
     principal_point_perturb_pixel: int = 10
 
     enable_retinex: bool = True
-    lambda_reflect: float = 0.6
-    lambda_smooth: float = 0.3
+    lambda_reflect: float = 0.5
+    lambda_smooth: float = 0.4
     lambda_low: float = 1.0
     lambda_color: float = 0.05
-    lambda_exposure: float = 0.05
+    lambda_exposure: float = 0.2
     pretrain_retinex: bool = True
-    pretrain_steps: int = 1000
+    pretrain_steps: int = 2000
 
     eval_niqe: bool = False
 
@@ -347,6 +348,10 @@ class Runner:
         self.loss_color.compile()
         self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.5).to(self.device)
         self.loss_exposure.compile()
+        self.loss_smooth = SmoothingLoss().to(self.device)
+        self.loss_smooth.compile()
+        self.loss_spatial = SpatialLoss().to(self.device)
+        self.loss_spatial.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -813,9 +818,6 @@ class Runner:
 
         trainloader_iter = iter(trainloader)
 
-        loss_contrast = SpatialLoss().to(device)
-        loss_contrast.compile()
-
         pbar = tqdm.tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
         for step in pbar:
             try:
@@ -838,14 +840,17 @@ class Runner:
             )  # [B, 3, H, W]
             illumination_map = torch.exp(log_illumination_map)
 
-            loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
+            loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
             loss_color_val = self.loss_color(illumination_map)
             loss_exposure_val = self.loss_exposure(illumination_map)
+            loss_smoothing = self.loss_smooth(illumination_map)
+
 
             loss = (
                 cfg.lambda_reflect * loss_spa_val
                 + cfg.lambda_color * loss_color_val
                 + cfg.lambda_exposure * loss_exposure_val
+                + cfg.lambda_smooth * loss_smoothing
             )
 
             loss.backward()
@@ -866,15 +871,15 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_exposure", loss_exposure_val.item(), step
                 )
+                self.writer.add_scalar(
+                    "retinex_net/loss_smooth", loss_smoothing.item(), step
+                )
 
     def train(self):
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
         world_size = self.world_size
-
-        loss_contrast = SpatialLoss().to(device)
-        loss_contrast.compile()
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
@@ -1076,7 +1081,7 @@ class Runner:
 
             con_degree = 0.5 / torch.mean(pixels).item()
 
-            loss_illum_smooth = loss_contrast(
+            loss_illum_contrast = self.loss_spatial(
                 input_image_for_net,
                 illumination_map,
                 contrast=con_degree,
@@ -1090,11 +1095,13 @@ class Runner:
             # whcih is the issue ?
             loss_illum_color = self.loss_color(illumination_map)
             loss_illum_exposure = self.loss_exposure(illumination_map)
+            loss_smooth = self.loss_smooth(illumination_map)
 
             loss_illumination = (
-                cfg.lambda_reflect * loss_illum_smooth
+                cfg.lambda_reflect * loss_illum_contrast
                 + cfg.lambda_exposure * loss_illum_exposure
                 + cfg.lambda_color * loss_illum_color
+                + cfg.lambda_smooth * loss_smooth
             )
 
             loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
@@ -1326,9 +1333,10 @@ class Runner:
             if cfg.enable_retinex:
                 desc_parts.append(
                     f"retinex_loss={loss_reflectance.item():.3f} "
-                    f"illum_smooth={loss_illum_smooth.item():.3f} "
+                    f"illum_smooth={loss_illum_contrast.item():.3f} "
                     f"illum_color={loss_illum_color.item():.3f} "
                     f"illum_exposure={loss_illum_exposure.item():.3f}"
+                    f"illum_smooth={loss_smooth.item():.3f}"
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
             if cfg.depth_loss:
@@ -1352,7 +1360,13 @@ class Runner:
                         "train/reflectance_loss", loss_reflectance.item(), step
                     )
                     self.writer.add_scalar(
-                        "train/illumination_smooth", loss_illum_smooth.item(), step
+                        "train/illumination_smooth", loss_illum_contrast.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_smoothing", loss_smooth.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_loss", loss_illumination.item(), step
                     )
                     self.writer.add_scalar(
                         "train/illumination_color", loss_illum_color.item(), step
