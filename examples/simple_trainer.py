@@ -762,7 +762,7 @@ class Runner:
             render_enh_alphas,
             render_low_alphas,
             info,
-        ) = rasterization_dual(
+        ) = rasterzation_dual(
             means=means,
             quats=quats,
             scales=scales,
@@ -1009,7 +1009,7 @@ class Runner:
             )
 
             if len(out) == 5:
-                renders_enh, alphas_enh, renders_low, alphas_low, info = out
+                renders_enh, renders_low, alphas_enh, alphas_low, info = out
             else:
                 renders_low, alphas_low, info = out
                 renders_enh, alphas_enh = renders_low, alphas_low
@@ -1848,7 +1848,7 @@ class Runner:
         )
         
         if len(out) == 5:
-            _, render_colors_viewer, _, render_alphas_viewer, info_viewer = out
+            render_colors_viewer, _, render_alphas_viewer, _, info_viewer = out
         else:
             render_colors_viewer, render_alphas_viewer, info_viewer = out
             
