@@ -322,7 +322,7 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         self.retinex_net = MultiScaleRetinexNet().to(self.device)
-        self.retinex_optimizer = torch.optim.Adam(
+        self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
             weight_decay=1e-4,
@@ -331,7 +331,7 @@ class Runner:
         self.retinex_embeds = nn.Embedding(len(self.trainset), self.retinex_embed_dim).to(self.device)
         torch.nn.init.zeros_(self.retinex_embeds.weight)
 
-        self.retinex_embed_optimizer = torch.optim.Adam(
+        self.retinex_embed_optimizer = torch.optim.AdamW(
             [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
         )
 
@@ -423,7 +423,7 @@ class Runner:
             self.pose_adjust = CameraOptModule(len(self.trainset)).to(self.device)
             self.pose_adjust.zero_init()
             self.pose_optimizers = [
-                torch.optim.Adam(
+                torch.optim.AdamW(
                     self.pose_adjust.parameters(),
                     lr=cfg.pose_opt_lr * math.sqrt(cfg.batch_size),
                     weight_decay=cfg.pose_opt_reg,
@@ -475,7 +475,7 @@ class Runner:
                 grid_W=cfg.bilateral_grid_shape[2],
             ).to(self.device)
             self.bil_grid_optimizers = [
-                torch.optim.Adam(
+                torch.optim.AdamW(
                     self.bil_grids.parameters(),
                     lr=2e-3 * math.sqrt(cfg.batch_size),
                     eps=1e-15,
