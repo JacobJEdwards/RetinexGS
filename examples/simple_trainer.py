@@ -656,28 +656,19 @@ class Runner:
             batch_poses = self.hard_view_candidate_poses[i : i + batch_size]
             batch_Ks = K_hard_view_batch[i : i + batch_size]
 
-            if not cfg.enable_retinex:
-                renders, _, _ = self.rasterize_splats(
-                    camtoworlds=batch_poses,
-                    Ks=batch_Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=sh_degree_to_use,
-                    render_mode="RGB",
-                    near_plane=cfg.near_plane,
-                    far_plane=cfg.far_plane,
-                )
-            else:
-                renders, _, _, _, _ = self.rasterize_splats(
-                    camtoworlds=batch_poses,
-                    Ks=batch_Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=sh_degree_to_use,
-                    render_mode="RGB",
-                    near_plane=cfg.near_plane,
-                    far_plane=cfg.far_plane,
-                )
+            out = self.rasterize_splats(
+                camtoworlds=batch_poses,
+                Ks=batch_Ks,
+                width=width,
+                height=height,
+                sh_degree=sh_degree_to_use,
+                render_mode="RGB",
+                near_plane=cfg.near_plane,
+                far_plane=cfg.far_plane,
+            )
+
+            renders = out[0]
+
             colors_nchw = renders.permute(0, 3, 1, 2).contiguous()
             colors_nchw = torch.clamp(colors_nchw, 0.0, 1.0)
             scores = self.clipiqa_model(colors_nchw)
@@ -704,7 +695,6 @@ class Runner:
         width: int,
         height: int,
         masks: Tensor | None = None,
-        rasterize_mode: Literal["classic", "antialiased"] | None = None,
         **kwargs,
     ) -> (
         tuple[Tensor, Tensor, dict[str, Any]]
@@ -728,10 +718,9 @@ class Runner:
         else:
             colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
-        if rasterize_mode is None:
-            rasterize_mode: Literal["antialiased", "classic"] = (
-                "antialiased" if self.cfg.antialiased else "classic"
-            )
+        rasterize_mode: Literal["antialiased", "classic"] = (
+            "antialiased" if self.cfg.antialiased else "classic"
+        )
 
         if not cfg.enable_retinex:
             render_colors, render_alphas, info = rasterization(
@@ -1002,35 +991,28 @@ class Runner:
 
             illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
 
-            if cfg.enable_retinex:
-                renders_enh, renders_low, alphas_enh, alphas_low, info = (
-                    self.rasterize_splats(
-                        camtoworlds=camtoworlds,
-                        Ks=Ks,
-                        width=width,
-                        height=height,
-                        sh_degree=sh_degree_to_use,
-                        near_plane=cfg.near_plane,
-                        far_plane=cfg.far_plane,
-                        image_ids=image_ids,
-                        render_mode="RGB+ED" if cfg.depth_loss else "RGB",
-                        masks=masks,
-                    )
-                )
-            else:
-                renders_low, alphas_low, info = self.rasterize_splats(
-                    camtoworlds=camtoworlds,
-                    Ks=Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=sh_degree_to_use,
-                    near_plane=cfg.near_plane,
-                    far_plane=cfg.far_plane,
-                    image_ids=image_ids,
-                    render_mode="RGB+ED" if cfg.depth_loss else "RGB",
-                    masks=masks,
-                )
+            out = self.rasterize_splats(
+                camtoworlds=camtoworlds,
+                Ks=Ks,
+                width=width,
+                height=height,
+                sh_degree=sh_degree_to_use,
+                near_plane=cfg.near_plane,
+                far_plane=cfg.far_plane,
+                image_ids=image_ids,
+                render_mode="RGB+ED" if cfg.depth_loss else "RGB",
+                masks=masks,
+            )
+
+            if cfg.enable_retinex and len(out) == 5:
+                renders_low, alphas_low, renders_enh, alphas_enh, info = out
+            elif not cfg.enable_retinex and len(out) == 3:
+                renders_low, alphas_low, info = out
                 renders_enh, alphas_enh = renders_low, alphas_low
+            else:
+                raise ValueError(
+                    f"Unexpected output length from rasterization: {len(out)}"
+                )
 
             if renders_low.shape[-1] == 4:
                 colors_low, depths_low = renders_low[..., 0:3], renders_low[..., 3:4]
@@ -1040,7 +1022,8 @@ class Runner:
                 colors_enh, depths_enh = renders_enh, None
 
             if cfg.use_bilateral_grid:
-                global slice, color_correct
+                assert slice_func is not None, "slice_func must be defined for bilateral grid slicing"
+
                 grid_y, grid_x = torch.meshgrid(
                     (torch.arange(height, device=self.device) + 0.5) / height,
                     (torch.arange(width, device=self.device) + 0.5) / width,
@@ -1048,14 +1031,14 @@ class Runner:
                 )
                 grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)
 
-                colors_low = slice(
+                colors_low = slice_func(
                     self.bil_grids,
                     grid_xy.expand(colors_low.shape[0], -1, -1, -1),
                     colors_low,
                     image_ids.unsqueeze(-1),
                 )["rgb"]
 
-                colors_enh = slice(
+                colors_enh = slice_func(
                     self.bil_grids,
                     grid_xy.expand(colors_enh.shape[0], -1, -1, -1),
                     colors_enh,
@@ -1250,6 +1233,10 @@ class Runner:
             depthloss_value = torch.tensor(0.0, device=device)
 
             if cfg.depth_loss:
+                assert depths_gt is not None, "Depth ground truth is required for depth loss"
+                assert points is not None, "Points are required for depth loss"
+                assert depths_low is not None, "Low-resolution depths are required for depth loss"
+
                 # query depths from depth map
                 points = torch.stack(
                     [
@@ -1380,7 +1367,7 @@ class Runner:
                     )
 
                     canvas_enh = (
-                        torch.cat([reflectance_target, colors_enh], dim=2)
+                        colors_enh
                         .detach()
                         .cpu()
                         .numpy()
@@ -1556,9 +1543,7 @@ class Runner:
         device = self.device
         world_rank = self.world_rank
 
-        valloader = torch.utils.data.DataLoader(
-            self.valset, batch_size=1, shuffle=False, num_workers=1
-        )
+        valloader = torch.utils.data.DataLoader(self.valset, shuffle=False, num_workers=1)
         ellipse_time_total = 0
         metrics = defaultdict(list)
         for i, data in enumerate(tqdm.tqdm(valloader, desc=f"Eval {stage}")):
@@ -1797,7 +1782,7 @@ class Runner:
         compress_dir = f"{cfg.result_dir}/compression/rank{world_rank}"
         os.makedirs(compress_dir, exist_ok=True)
 
-        self.compression_method.compress(compress_dir, self.splats)
+        self.compression_method.compress(compress_dir, self.splats.state_dict())
         splats_c = self.compression_method.decompress(compress_dir)
         for k_splat in splats_c.keys():
             self.splats[k_splat].data = splats_c[k_splat].to(self.device)
@@ -1846,7 +1831,6 @@ class Runner:
             backgrounds=torch.tensor([render_tab_state.backgrounds], device=self.device)
             / 255.0,
             render_mode=RENDER_MODE_MAP[render_tab_state.render_mode],
-            rasterize_mode=render_tab_state.rasterize_mode,
         )
         render_tab_state.total_gs_count = len(self.splats["means"])
         render_tab_state.rendered_gs_count = (
