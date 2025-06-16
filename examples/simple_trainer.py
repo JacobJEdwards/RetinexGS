@@ -166,8 +166,8 @@ class Config:
     lambda_illum_color: float = 0.8
     lambda_illum_exposure: float = 1.0
     lambda_illum_variance: float = 1.0
-    lambda_illum_contrast: float = 0.4
-    lambda_adaptive_curve: float = 0.8
+    lambda_illum_contrast: float = 0.8
+    lambda_adaptive_curve: float = 1.0
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
