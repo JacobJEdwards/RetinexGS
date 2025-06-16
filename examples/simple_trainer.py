@@ -340,7 +340,7 @@ class Runner:
         )
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.4).to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.6).to(self.device)
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
