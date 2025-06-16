@@ -32,8 +32,7 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
-from examples.losses import AdaptiveCurveLoss
-from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, SmoothingLoss
+from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, SmoothingLoss, AdaptiveCurveLoss
 from rendering_double import rasterization_dual
 from utils import MultiScaleRetinexNet
 from gsplat import export_splats
