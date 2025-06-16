@@ -907,7 +907,7 @@ class Runner:
                 )
             )
 
-        # self.pre_train_retinex()
+        self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
