@@ -1429,26 +1429,17 @@ class Runner:
                     )
 
                     canvas_enh = (
-                        torch.cat([pixels, colors_enh], dim=2).detach().cpu().numpy()
+                        torch.cat([reflectance_target, colors_enh], dim=2).detach().cpu().numpy()
                     )
                     canvas_enh = canvas_enh.reshape(-1, *canvas_enh.shape[2:])
-
                     self.writer.add_image(
-                        "train/render_enh", canvas_enh, step
+                        "train/render_enh", canvas_enh, step, dataformats="HWC"
                     )
-
                     self.writer.add_image(
                         "train/illumination_map",
                         illumination_map,
                         step,
                     )
-
-                    self.writer.add_image(
-                        "train/reflectance_target",
-                        reflectance_target_permuted,
-                        step,
-                    )
-
 
                 self.writer.flush()
 
