@@ -1459,7 +1459,13 @@ class Runner:
                         step,
                         dataformats="HWC",
                     )
-
+                    
+                    self.writer.add_image(
+                        "train/reflectance_target",
+                        reflectance_target_permuted,
+                        step,
+                        dataformats="HWC",
+                    )
 
 
                 self.writer.flush()
