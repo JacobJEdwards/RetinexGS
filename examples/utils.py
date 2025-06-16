@@ -363,11 +363,11 @@ class MultiScaleRetinexNet(nn.Module):
 
         log_illumination_full_res = self.upconv2(c3)
         final_illumination_full_res = F.interpolate(log_illumination_full_res, size=x.shape[2:], mode='bilinear',
-                                                    align_corners=False).repeat(1, 3, 1, 1)
+                                                    align_corners=False)
 
         log_illumination_medium_res = self.output_head_medium(c3)
         final_illumination_medium_res = F.interpolate(log_illumination_medium_res, size=x.shape[2:], mode='bilinear',
-                                                      align_corners=False).repeat(1, 3, 1, 1)
+                                                      align_corners=False)
 
         log_illum_coarse_res = self.output_head_coarse(p2) # [B, out_channels, H/4, W/4]
         final_log_illum_coarse_res = F.interpolate(log_illum_coarse_res, size=x.shape[2:], mode='bilinear',
@@ -375,9 +375,9 @@ class MultiScaleRetinexNet(nn.Module):
 
         concatenated_maps = torch.cat([final_log_illum_coarse_res, final_illumination_medium_res, final_illumination_full_res], dim=1)
 
-        final_illumination_full_res = self.combination_layer(concatenated_maps)
+        final_illumination = self.combination_layer(concatenated_maps)
 
-        return final_illumination_full_res
+        return final_illumination
 
 class TrainableMSR(nn.Module):
     """

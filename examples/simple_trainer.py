@@ -321,7 +321,7 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.retinex_net = MultiScaleRetinexNet().to(self.device)
+        self.retinex_net = MultiScaleRetinexNet(in_channels=3, out_channels=3, embed_dim=32).to(self.device)
         self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
