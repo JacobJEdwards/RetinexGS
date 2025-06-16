@@ -162,12 +162,12 @@ class Config:
     lambda_low: float = 1.0
 
     lambda_reflect: float = 0.6
-    lambda_smooth: float = 0.6
+    lambda_smooth: float = 1.0
     lambda_illum_color: float = 0.2
-    lambda_illum_exposure: float = 0.2
+    lambda_illum_exposure: float = 0.3
     lambda_illum_variance: float = 0.1
-    lambda_illum_contrast: float = 0.4
-    lambda_adaptive_curve: float = 0.6
+    lambda_illum_contrast: float = 0.5
+    lambda_adaptive_curve: float = 0.7
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
@@ -350,7 +350,7 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_color.compile()
-        self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.6).to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.7).to(self.device)
         self.loss_exposure.compile()
         self.loss_smooth = SmoothingLoss().to(self.device)
         self.loss_smooth.compile()
