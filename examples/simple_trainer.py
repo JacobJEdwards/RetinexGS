@@ -886,20 +886,9 @@ class Runner:
                 # draw image
                 if self.cfg.tb_save_image:
                     with torch.no_grad():
-                        log_input_image = torch.log(input_image_for_net + 1e-8)
-                        log_illumination_map = self.retinex_net(
-                            input_image_for_net, retinex_embedding
-                        )
-                        illumination_map = torch.exp(log_illumination_map)
-
                         self.writer.add_images(
                             "retinex_net/input_image",
                             input_image_for_net,
-                            step,
-                        )
-                        self.writer.add_images(
-                            "retinex_net/log_input_image",
-                            log_input_image,
                             step,
                         )
                         self.writer.add_images(
@@ -954,8 +943,8 @@ class Runner:
                 )
             )
 
-        if cfg.pretrain_retinex:
-            self.pre_train_retinex()
+        # if cfg.pretrain_retinex:
+        #     self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -1440,35 +1429,19 @@ class Runner:
                     )
 
                     self.writer.add_image(
-                        "train/render_enh", colors_enh, step, dataformats="HWC"
+                        "train/render_enh", colors_enh, step
                     )
 
                     self.writer.add_image(
                         "train/illumination_map",
                         illumination_map,
                         step,
-                        dataformats="HWC",
-                    )
-
-                    self.writer.add_image(
-                        "train/log_illumination_map",
-                        log_illumination_map,
-                        step,
-                        dataformats="HWC",
-                    )
-
-                    self.writer.add_image(
-                        "train/log_input_image",
-                        log_input_image,
-                        step,
-                        dataformats="HWC",
                     )
 
                     self.writer.add_image(
                         "train/reflectance_target",
                         reflectance_target_permuted,
                         step,
-                        dataformats="HWC",
                     )
 
 
