@@ -851,7 +851,8 @@ class Runner:
 
 
             loss = (
-                 cfg.lambda_illum_color * loss_color_val
+                cfg.lambda_illum_contrast * loss_spa_val
+                + cfg.lambda_illum_color * loss_color_val
                 + cfg.lambda_illum_exposure * loss_exposure_val
                 + cfg.lambda_smooth * loss_smoothing
                 + cfg.lambda_illum_variance * loss_variance
