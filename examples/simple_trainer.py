@@ -864,7 +864,7 @@ class Runner:
 
             pbar.set_postfix({"loss": loss.item()})
 
-            if step % 100 == 0:
+            if step % self.cfg.tb_every == 0:
                 self.writer.add_scalar("retinex_net/loss", loss.item(), step)
                 self.writer.add_scalar(
                     "retinex_net/loss_spatial", loss_spa_val.item(), step
@@ -878,6 +878,32 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_smooth", loss_smoothing.item(), step
                 )
+
+                # draw image
+                if self.cfg.tb_save_image:
+                    with torch.no_grad():
+                        log_input_image = torch.log(input_image_for_net + 1e-8)
+                        log_illumination_map = self.retinex_net(
+                            input_image_for_net, retinex_embedding
+                        )
+                        illumination_map = torch.exp(log_illumination_map)
+
+                        self.writer.add_images(
+                            "retinex_net/input_image",
+                            input_image_for_net,
+                            step,
+                        )
+                        self.writer.add_images(
+                            "retinex_net/log_input_image",
+                            log_input_image,
+                            step,
+                        )
+                        self.writer.add_images(
+                            "retinex_net/illumination_map",
+                            illumination_map,
+                            step,
+                        )
+
 
     def train(self):
         cfg = self.cfg
@@ -1409,16 +1435,32 @@ class Runner:
                         "train/render", canvas_tb, step, dataformats="HWC"
                     )
 
-                    canvas_enh = (
-                        colors_enh
-                        .detach()
-                        .cpu()
-                        .numpy()
-                    )
-                    canvas_enh = canvas_enh.reshape(-1, *canvas_enh.shape[2:])
                     self.writer.add_image(
-                        "train/render_enh", canvas_enh, step, dataformats="HWC"
+                        "train/render_enh", colors_enh, step, dataformats="HWC"
                     )
+
+                    self.writer.add_image(
+                        "train/illumination_map",
+                        illumination_map,
+                        step,
+                        dataformats="HWC",
+                    )
+
+                    self.writer.add_image(
+                        "train/log_illumination_map",
+                        log_illumination_map,
+                        step,
+                        dataformats="HWC",
+                    )
+
+                    self.writer.add_image(
+                        "train/log_input_image",
+                        log_input_image,
+                        step,
+                        dataformats="HWC",
+                    )
+
+
 
                 self.writer.flush()
 
