@@ -158,11 +158,15 @@ class Config:
     principal_point_perturb_pixel: int = 10
 
     enable_retinex: bool = True
-    lambda_reflect: float = 0.5
-    lambda_smooth: float = 0.4
+
     lambda_low: float = 1.0
-    lambda_color: float = 0.05
-    lambda_exposure: float = 0.2
+
+    lambda_reflect: float = 0.5
+    lambda_smooth: float = 0.01
+    lambda_illum_color: float = 0.2
+    lambda_illum_exposure: float = 0.15
+    lambda_illum_variance: float = 0.2
+    lambda_illum_contrast: float = 0.1
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
@@ -843,13 +847,14 @@ class Runner:
             loss_color_val = self.loss_color(illumination_map)
             loss_exposure_val = self.loss_exposure(illumination_map)
             loss_smoothing = self.loss_smooth(illumination_map)
+            loss_variance = torch.var(illumination_map)
 
 
             loss = (
-                cfg.lambda_reflect * loss_spa_val
-                + cfg.lambda_color * loss_color_val
-                + cfg.lambda_exposure * loss_exposure_val
+                 cfg.lambda_illum_color * loss_color_val
+                + cfg.lambda_illum_exposure * loss_exposure_val
                 + cfg.lambda_smooth * loss_smoothing
+                + cfg.lambda_illum_variance * loss_variance
             )
 
             loss.backward()
@@ -1094,13 +1099,15 @@ class Runner:
             # whcih is the issue ?
             loss_illum_color = self.loss_color(illumination_map)
             loss_illum_exposure = self.loss_exposure(illumination_map)
-            loss_smooth = self.loss_smooth(illumination_map)
+            loss_illum_smooth = self.loss_smooth(illumination_map)
+            loss_illum_variance = torch.var(illumination_map)
 
             loss_illumination = (
-                cfg.lambda_reflect * loss_illum_contrast
-                + cfg.lambda_exposure * loss_illum_exposure
-                + cfg.lambda_color * loss_illum_color
-                + cfg.lambda_smooth * loss_smooth
+                cfg.lambda_illum_contrast * loss_illum_contrast
+                + cfg.lambda_illum_exposure * loss_illum_exposure
+                + cfg.lambda_illum_color * loss_illum_color
+                + cfg.lambda_smooth * loss_illum_smooth
+                + cfg.lambda_illum_variance * loss_illum_variance
             )
 
             loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
@@ -1335,7 +1342,8 @@ class Runner:
                     f"illum_smooth={loss_illum_contrast.item():.3f} "
                     f"illum_color={loss_illum_color.item():.3f} "
                     f"illum_exposure={loss_illum_exposure.item():.3f}"
-                    f"illum_smooth={loss_smooth.item():.3f}"
+                    f"illum_smooth={loss_illum_smooth.item():.3f}"
+                    f"illum_variance={loss_illum_variance.item():.3f}"
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
             if cfg.depth_loss:
@@ -1362,7 +1370,10 @@ class Runner:
                         "train/illumination_smooth", loss_illum_contrast.item(), step
                     )
                     self.writer.add_scalar(
-                        "train/illumination_smoothing", loss_smooth.item(), step
+                        "train/illumination_smoothing", loss_illum_smooth.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_variance", loss_illum_variance.item(), step
                     )
                     self.writer.add_scalar(
                         "train/illumination_loss", loss_illumination.item(), step
