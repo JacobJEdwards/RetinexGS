@@ -1428,8 +1428,13 @@ class Runner:
                         "train/render", canvas_tb, step, dataformats="HWC"
                     )
 
+                    canvas_enh = (
+                        torch.cat([pixels, colors_enh], dim=2).detach().cpu().numpy()
+                    )
+                    canvas_enh = canvas_enh.reshape(-1, *canvas_enh.shape[2:])
+
                     self.writer.add_image(
-                        "train/render_enh", colors_enh, step
+                        "train/render_enh", canvas_enh, step
                     )
 
                     self.writer.add_image(
