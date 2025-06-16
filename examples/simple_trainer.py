@@ -344,7 +344,9 @@ class Runner:
         )
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
+        self.loss_color.compile()
         self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.5).to(self.device)
+        self.loss_exposure.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -812,6 +814,7 @@ class Runner:
         trainloader_iter = iter(trainloader)
 
         loss_contrast = SpatialLoss().to(device)
+        loss_contrast.compile()
 
         pbar = tqdm.tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
         for step in pbar:
@@ -871,6 +874,7 @@ class Runner:
         world_size = self.world_size
 
         loss_contrast = SpatialLoss().to(device)
+        loss_contrast.compile()
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
