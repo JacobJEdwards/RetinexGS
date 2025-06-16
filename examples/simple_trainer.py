@@ -158,11 +158,11 @@ class Config:
     principal_point_perturb_pixel: int = 10
 
     enable_retinex: bool = True
-    lambda_reflect = 0.4
-    lambda_smooth = 0.1
+    lambda_reflect = 0.6
+    lambda_smooth = 0.2
     lambda_low = 1.0
-    lambda_color = 0.1
-    lambda_exposure = 0.1
+    lambda_color = 0.05
+    lambda_exposure = 0.01
 
     eval_niqe: bool = False
 
