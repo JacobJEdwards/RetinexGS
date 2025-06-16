@@ -1439,6 +1439,7 @@ class Runner:
                         "train/illumination_map",
                         illumination_map,
                         step,
+                        dataformats="NCHW",
                     )
 
                 self.writer.flush()
