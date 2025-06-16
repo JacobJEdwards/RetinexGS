@@ -762,7 +762,7 @@ class Runner:
             render_enh_alphas,
             render_low_alphas,
             info,
-        ) = rasterzation_dual(
+        ) = rasterization_dual(
             means=means,
             quats=quats,
             scales=scales,
