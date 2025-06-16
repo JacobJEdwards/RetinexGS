@@ -326,6 +326,7 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         self.retinex_net = MultiScaleRetinexNet().to(self.device)
+        self.retinex_net.compile()
         self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
@@ -335,6 +336,7 @@ class Runner:
         self.retinex_embeds = nn.Embedding(
             len(self.trainset), self.retinex_embed_dim
         ).to(self.device)
+        self.retinex_embeds.compile()
         torch.nn.init.zeros_(self.retinex_embeds.weight)
 
         self.retinex_embed_optimizer = torch.optim.AdamW(
@@ -868,7 +870,7 @@ class Runner:
         world_rank = self.world_rank
         world_size = self.world_size
 
-        loss_contrast = SpatialLoss()
+        loss_contrast = SpatialLoss().to(device)
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:

@@ -163,55 +163,33 @@ class ColourConsistencyLoss(nn.Module):
 class ExposureLoss(nn.Module):
     def __init__(self: Self, patch_size: int, mean_val: float = 0.5) -> None:
         super(ExposureLoss, self).__init__()
-
         self.pool = nn.AvgPool2d(patch_size)
-        self.mean_val = mean_val
+        self.register_buffer('mean_val_tensor', torch.tensor([mean_val]))
 
     def forward(self: Self, x: Tensor) -> Tensor:
         x = torch.mean(x, 1, keepdim=True)
         mean = self.pool(x)
-
-        d = torch.mean(
-            torch.pow(mean - torch.FloatTensor([self.mean_val]).to(x.device), 2)
-        )
+        d = torch.mean(torch.pow(mean - self.mean_val_tensor, 2))
         return d
-
 
 # Spatial Loss, control the spatial consistency of the generated image
 class SpatialLoss(nn.Module):
     def __init__(self: Self) -> None:
         super(SpatialLoss, self).__init__()
+        # Define kernels as buffers
+        kernel_left = torch.tensor([[0,0,0],[-1,1,0],[0,0,0]], dtype=torch.float32).view(1,1,3,3)
+        kernel_right = torch.tensor([[0,0,0],[0,1,-1],[0,0,0]], dtype=torch.float32).view(1,1,3,3)
+        kernel_up = torch.tensor([[0,-1,0],[0,1,0],[0,0,0]], dtype=torch.float32).view(1,1,3,3)
+        kernel_down = torch.tensor([[0,0,0],[0,1,0],[0,-1,0]], dtype=torch.float32).view(1,1,3,3)
 
-        kernel_left = (
-            torch.FloatTensor([[0, 0, 0], [-1, 1, 0], [0, 0, 0]])
-            .cuda()
-            .unsqueeze(0)
-            .unsqueeze(0)
-        )
-        kernel_right = (
-            torch.FloatTensor([[0, 0, 0], [0, 1, -1], [0, 0, 0]])
-            .cuda()
-            .unsqueeze(0)
-            .unsqueeze(0)
-        )
-        kernel_up = (
-            torch.FloatTensor([[0, -1, 0], [0, 1, 0], [0, 0, 0]])
-            .cuda()
-            .unsqueeze(0)
-            .unsqueeze(0)
-        )
-        kernel_down = (
-            torch.FloatTensor([[0, 0, 0], [0, 1, 0], [0, -1, 0]])
-            .cuda()
-            .unsqueeze(0)
-            .unsqueeze(0)
-        )
-        self.weight_left = nn.Parameter(data=kernel_left, requires_grad=False)
-        self.weight_right = nn.Parameter(data=kernel_right, requires_grad=False)
-        self.weight_up = nn.Parameter(data=kernel_up, requires_grad=False)
-        self.weight_down = nn.Parameter(data=kernel_down, requires_grad=False)
+        # Register them as buffers (not parameters, so not trained)
+        self.register_buffer('weight_left', kernel_left)
+        self.register_buffer('weight_right', kernel_right)
+        self.register_buffer('weight_up', kernel_up)
+        self.register_buffer('weight_down', kernel_down)
+
         self.pool = nn.AvgPool2d(4)
-
+        
     def forward(self: Self, org: Tensor, enhance: Tensor, contrast: int = 8):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
@@ -220,10 +198,10 @@ class SpatialLoss(nn.Module):
         enhance_pool = self.pool(enhance_mean)
 
         def p(pool: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-            org_letf = F.conv2d(pool, self.weight_left.to(pool.device), padding=1)
-            org_right = F.conv2d(pool, self.weight_right.to(pool.device), padding=1)
-            org_up = F.conv2d(pool, self.weight_up.to(pool.device), padding=1)
-            org_down = F.conv2d(pool, self.weight_down.to(pool.device), padding=1)
+            org_letf = F.conv2d(pool, self.weight_left, padding=1)
+            org_right = F.conv2d(pool, self.weight_right, padding=1)
+            org_up = F.conv2d(pool, self.weight_up, padding=1)
+            org_down = F.conv2d(pool, self.weight_down, padding=1)
 
             return org_letf, org_right, org_up, org_down
 
@@ -236,17 +214,13 @@ class SpatialLoss(nn.Module):
         D_down = torch.pow(D_org_down * contrast - D_enhance_down, 2)
         E = D_left + D_right + D_up + D_down
 
-        return torch.mean(E)
-
+        return E.mean()
 
 class LaplacianLoss(nn.Module):
     def __init__(self: Self) -> None:
         super(LaplacianLoss, self).__init__()
-        self.kernel = (
-            torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32)
-            .view(1, 1, 3, 3)
-            .cuda()
-        )
+        kernel = torch.tensor([[0,1,0],[1,-4,1],[0,1,0]], dtype=torch.float32).view(1,1,3,3)
+        self.register_buffer('kernel', kernel)
 
     def forward(self: Self, x: Tensor) -> Tensor:
         laplacian = F.conv2d(x, self.kernel, padding=1)

@@ -370,40 +370,40 @@ class MultiScaleRetinexNet(nn.Module):
 
         # Decoder
         up1 = self.upconv1(p2)
-        up1_resized = F.interpolate(
-            up1, size=p1.shape[2:], mode="bilinear", align_corners=False
-        )
-        merged = torch.cat([up1_resized, p1], dim=1)
+        # up1_resized = F.interpolate(
+        #     up1, size=p1.shape[2:], mode="bilinear", align_corners=False
+        # )
+        merged = torch.cat([up1, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
 
         log_illumination_full_res = self.upconv2(c3)
-        final_illumination_full_res = F.interpolate(
-            log_illumination_full_res,
-            size=x.shape[2:],
-            mode="bilinear",
-            align_corners=False,
-        )
+        # final_illumination_full_res = F.interpolate(
+        #     log_illumination_full_res,
+        #     size=x.shape[2:],
+        #     mode="bilinear",
+        #     align_corners=False,
+        # )
 
         log_illumination_medium_res = self.output_head_medium(c3)
-        final_illumination_medium_res = F.interpolate(
-            log_illumination_medium_res,
-            size=x.shape[2:],
-            mode="bilinear",
-            align_corners=False,
-        )
+        # final_illumination_medium_res = F.interpolate(
+        #     log_illumination_medium_res,
+        #     size=x.shape[2:],
+        #     mode="bilinear",
+        #     align_corners=False,
+        # )
 
         log_illum_coarse_res = self.output_head_coarse(
             p2
         )  # [B, out_channels, H/4, W/4]
-        final_log_illum_coarse_res = F.interpolate(
-            log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
-        )
+        # final_log_illum_coarse_res = F.interpolate(
+        #     log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
+        # )
 
         concatenated_maps = torch.cat(
             [
-                final_log_illum_coarse_res,
-                final_illumination_medium_res,
-                final_illumination_full_res,
+                log_illum_coarse_res,
+                log_illumination_medium_res,
+                log_illumination_full_res,
             ],
             dim=1,
         )
