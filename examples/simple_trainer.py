@@ -159,17 +159,17 @@ class Config:
 
     enable_retinex: bool = True
 
-    lambda_low: float = 1.0
+    lambda_low: float = 0.8
 
-    lambda_reflect: float = 1.0
-    lambda_smooth: float = 1.0
-    lambda_illum_color: float = 0.8
-    lambda_illum_exposure: float = 0.9
-    lambda_illum_variance: float = 0.9
-    lambda_illum_contrast: float = 1.0
-    lambda_adaptive_curve: float = 1.0
+    lambda_reflect: float = 1.2
+    lambda_smooth: float = 0.5
+    lambda_illum_color: float = 0.5
+    lambda_illum_exposure: float = 0.7
+    lambda_illum_variance: float = 0.5
+    lambda_illum_contrast: float = 0.8
+    lambda_adaptive_curve: float = 1.5
     pretrain_retinex: bool = True
-    pretrain_steps: int = 2000
+    pretrain_steps: int = 4000
 
     eval_niqe: bool = False
 
@@ -350,13 +350,15 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_color.compile()
-        self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.55).to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.45).to(self.device)
         self.loss_exposure.compile()
         self.loss_smooth = SmoothingLoss().to(self.device)
         self.loss_smooth.compile()
         self.loss_spatial = SpatialLoss().to(self.device)
         self.loss_spatial.compile()
-        self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
+        self.loss_adaptive_curve = AdaptiveCurveLoss(
+            alpha=0.4, beta=0.8
+        ).to(self.device)
         self.loss_adaptive_curve.compile()
 
         feature_dim = 32 if cfg.app_opt else None
