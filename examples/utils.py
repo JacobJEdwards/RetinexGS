@@ -370,9 +370,9 @@ class MultiScaleRetinexNet(nn.Module):
 
         # Decoder
         up1 = self.upconv1(p2)
-        # up1_resized = F.interpolate(
-        #     up1, size=p1.shape[2:], mode="bilinear", align_corners=False
-        # )
+        up1 = F.interpolate(
+            up1, size=p1.shape[2:], mode="bilinear", align_corners=False
+        )
         merged = torch.cat([up1, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
 

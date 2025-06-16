@@ -326,7 +326,7 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         self.retinex_net = MultiScaleRetinexNet().to(self.device)
-        # self.retinex_net.compile()
+        self.retinex_net.compile()
         self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
@@ -336,7 +336,7 @@ class Runner:
         self.retinex_embeds = nn.Embedding(
             len(self.trainset), self.retinex_embed_dim
         ).to(self.device)
-        # self.retinex_embeds.compile()
+        self.retinex_embeds.compile()
         torch.nn.init.zeros_(self.retinex_embeds.weight)
 
         self.retinex_embed_optimizer = torch.optim.AdamW(
