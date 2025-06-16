@@ -162,11 +162,11 @@ class Config:
     lambda_low: float = 1.0
 
     lambda_reflect: float = 0.6
-    lambda_smooth: float = 0.01
+    lambda_smooth: float = 0.25
     lambda_illum_color: float = 0.2
     lambda_illum_exposure: float = 0.1
     lambda_illum_variance: float = 0.1
-    lambda_illum_contrast: float = 0.5
+    lambda_illum_contrast: float = 0.4
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
@@ -878,6 +878,9 @@ class Runner:
                 )
                 self.writer.add_scalar(
                     "retinex_net/loss_smooth", loss_smoothing.item(), step
+                )
+                self.writer.add_scalar(
+                    "retinex_net/loss_variance", loss_variance.item(), step
                 )
 
                 # draw image
