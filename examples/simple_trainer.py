@@ -32,6 +32,7 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
+from examples.losses import AdaptiveCurveLoss
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, SmoothingLoss
 from rendering_double import rasterization_dual
 from utils import MultiScaleRetinexNet
@@ -355,6 +356,8 @@ class Runner:
         self.loss_smooth.compile()
         self.loss_spatial = SpatialLoss().to(self.device)
         self.loss_spatial.compile()
+        self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
+        self.loss_adaptive_curve.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -848,6 +851,9 @@ class Runner:
             loss_exposure_val = self.loss_exposure(illumination_map)
             loss_smoothing = self.loss_smooth(illumination_map)
             loss_variance = torch.var(illumination_map)
+            loss_adaptive_curve = self.loss_adaptive_curve(
+                illumination_map
+            )
 
 
             loss = (
@@ -856,6 +862,7 @@ class Runner:
                 + cfg.lambda_illum_exposure * loss_exposure_val
                 + cfg.lambda_smooth * loss_smoothing
                 + cfg.lambda_illum_variance * loss_variance
+                + loss_adaptive_curve
             )
 
             loss.backward()
@@ -1120,6 +1127,9 @@ class Runner:
             loss_illum_exposure = self.loss_exposure(illumination_map)
             loss_illum_smooth = self.loss_smooth(illumination_map)
             loss_illum_variance = torch.var(illumination_map)
+            loss_adaptive_curve = self.loss_adaptive_curve(
+                illumination_map
+            )
 
             loss_illumination = (
                 cfg.lambda_illum_contrast * loss_illum_contrast
@@ -1127,6 +1137,7 @@ class Runner:
                 + cfg.lambda_illum_color * loss_illum_color
                 + cfg.lambda_smooth * loss_illum_smooth
                 + cfg.lambda_illum_variance * loss_illum_variance
+                + loss_adaptive_curve
             )
 
             loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
