@@ -34,7 +34,7 @@ from datasets.traj import (
 )
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss
 from rendering_double import rasterization_dual
-from utils import RetinexNet
+from utils import MultiScaleRetinexNet
 from gsplat import export_splats
 from gsplat.compression import PngCompression
 from gsplat.distributed import cli
@@ -321,7 +321,7 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.retinex_net = RetinexNet().to(self.device)
+        self.retinex_net = MultiScaleRetinexNet().to(self.device)
         self.retinex_optimizer = torch.optim.Adam(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
@@ -1368,7 +1368,7 @@ class Runner:
                     )
 
                     canvas_enh = (
-                        torch.cat([pixels, colors_enh], dim=2).detach().cpu().numpy()
+                        torch.cat([reflectance_target, colors_enh], dim=2).detach().cpu().numpy()
                     )
                     canvas_enh = canvas_enh.reshape(-1, *canvas_enh.shape[2:])
                     self.writer.add_image(

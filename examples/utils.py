@@ -1,4 +1,5 @@
 import random
+from typing import Self
 
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
@@ -12,7 +13,7 @@ import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 
 class CrossAttention(nn.Module):
-    def __init__(self, img_channels=3, hidden_dim=128, out_dim=255):
+    def __init__(self: Self, img_channels: int=3, hidden_dim: int=128, out_dim: int=255) -> None:
         super(CrossAttention, self).__init__()
 
         self.conv = nn.Sequential(
@@ -34,7 +35,7 @@ class CrossAttention(nn.Module):
         )
         self._init_weights()
 
-    def _init_weights(self):
+    def _init_weights(self: Self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -281,13 +282,13 @@ def apply_depth_colormap(
     return img
 
 class RetinexNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=1, embed_dim=32):
+    def __init__(self: Self, in_channels: int=3, out_channels: int=1, embed_dim: int=32) -> None:
         super(RetinexNet, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
-        
+
         self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
-        
+
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
 
@@ -298,11 +299,11 @@ class RetinexNet(nn.Module):
         self.relu = nn.ReLU()
         # self.sigmoid = nn.Sigmoid() we operate in log space, no need for sigmoid
 
-    def forward(self, x, embedding):
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
         c1 = self.relu(self.conv1(x))
-        
+
         c1_modulated = self.film1(c1, embedding)
-        
+
         p1 = self.pool(c1_modulated)
         c2 = self.relu(self.conv2(p1))
         p2 = self.pool(c2)
@@ -318,54 +319,72 @@ class RetinexNet(nn.Module):
         return final_illumination
 
 class MultiScaleRetinexNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self: Self, in_channels: int=3, out_channels: int=1, embed_dim: int=32) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
+        num_scales = 3
+
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
+
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
 
         self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
+
         self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
-        self.map_head_half_res = nn.Conv2d(32, out_channels, kernel_size=3, padding=1)
+        self.output_head_medium = nn.Conv2d(32, out_channels, kernel_size=3, padding=1)
+        self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+
+        self.combination_layer = nn.Conv2d(
+            in_channels=num_scales * out_channels,
+            out_channels=out_channels,
+            kernel_size=1
+        )
 
         self.relu = nn.ReLU()
         # self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x):
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
         # Encoder
         c1 = self.relu(self.conv1(x))
-        p1 = self.pool(c1)
-
+        c1_modulated = self.film1(c1, embedding)
+        p1 = self.pool(c1_modulated)
         c2 = self.relu(self.conv2(p1))
         p2 = self.pool(c2)
 
-        up1_resized = F.interpolate(self.upconv1(p2), size=p1.shape[2:], mode='bilinear', align_corners=False)
+        # Decoder
+        up1 = self.upconv1(p2)
+        up1_resized = F.interpolate(up1, size=p1.shape[2:], mode='bilinear', align_corners=False)
         merged = torch.cat([up1_resized, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
 
-        log_illumination_half_res = self.map_head_half_res(c3)
-
         log_illumination_full_res = self.upconv2(c3)
-
-        final_illumination_full_res = F.interpolate(log_illumination_full_res, size=x.shape[2:], mode='bilinear', 
+        final_illumination_full_res = F.interpolate(log_illumination_full_res, size=x.shape[2:], mode='bilinear',
                                                     align_corners=False).repeat(1, 3, 1, 1)
-        final_illumination_half_res = F.interpolate(log_illumination_half_res, size=(x.shape[2]//2, x.shape[3]//2), 
-                                                    mode='bilinear', align_corners=False).repeat(1, 3, 1, 1)
 
-        return [final_illumination_full_res, final_illumination_half_res]
+        log_illumination_medium_res = self.output_head_medium(c3)
+        final_illumination_medium_res = F.interpolate(log_illumination_medium_res, size=x.shape[2:], mode='bilinear',
+                                                      align_corners=False).repeat(1, 3, 1, 1)
 
-# retinex.py
+        log_illum_coarse_res = self.output_head_coarse(p2) # [B, out_channels, H/4, W/4]
+        final_log_illum_coarse_res = F.interpolate(log_illum_coarse_res, size=x.shape[2:], mode='bilinear',
+                                            align_corners=False)
 
+        concatenated_maps = torch.cat([final_log_illum_coarse_res, final_illumination_medium_res, final_illumination_full_res], dim=1)
+
+        final_illumination_full_res = self.combination_layer(concatenated_maps)
+
+        return final_illumination_full_res
 
 class TrainableMSR(nn.Module):
     """
     A trainable Multi-Scale Retinex module.
     It learns the sigmas for the Gaussian blurs and the weights for combining them.
     """
-    def __init__(self, num_scales=3):
+    def __init__(self: Self, num_scales: int=3) -> None:
         super().__init__()
 
         initial_sigmas = torch.tensor([15.0, 80.0, 250.0])
@@ -373,7 +392,7 @@ class TrainableMSR(nn.Module):
 
         self.weights = nn.Parameter(torch.ones(num_scales))
 
-    def forward(self, img_srgb: torch.Tensor) -> torch.Tensor:
+    def forward(self: Self, img_srgb: torch.Tensor) -> torch.Tensor:
         epsilon = 1e-6
 
         img_log = torch.log(img_srgb + epsilon)
@@ -430,19 +449,13 @@ def generate_variational_intrinsics(
 
 
 class FiLMLayer(nn.Module):
-    """
-    Feature-wise Linear Modulation (FiLM) layer.
-    """
-    def __init__(self, embed_dim, feature_channels):
+    def __init__(self: Self, embed_dim: int, feature_channels: int):
         super(FiLMLayer, self).__init__()
-        self.generator = nn.Sequential(
-            nn.Linear(embed_dim, feature_channels * 2), 
-        )
+        self.layer = nn.Linear(embed_dim, feature_channels * 2)
 
-    def forward(self, features, embedding):
+    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
+        gamma_beta = self.layer(embedding)
+        gamma_beta = gamma_beta.view(gamma_beta.size(0), -1, 1, 1)
+        gamma, beta = torch.chunk(gamma_beta, 2, dim=1)
 
-        scale_bias = self.generator(embedding)
-        scale = scale_bias[:, :features.shape[1]].unsqueeze(-1).unsqueeze(-1) # Shape: [B, C, 1, 1]
-        bias = scale_bias[:, features.shape[1]:].unsqueeze(-1).unsqueeze(-1) # Shape: [B, C, 1, 1]
-
-        return scale * features + bias
+        return gamma * x + beta
