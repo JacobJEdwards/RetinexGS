@@ -157,7 +157,6 @@ class Config:
     focal_length_perturb_factor: float = 0.1
     principal_point_perturb_pixel: int = 10
 
-
     enable_retinex: bool = True
     lambda_reflect = 0.4
     lambda_smooth = 0.1
@@ -254,12 +253,15 @@ def create_splats_with_optimizers(
         params.append(("colors", torch.nn.Parameter(colors), sh0_lr))
 
     # lumincance
-    adjust_k = torch.nn.Parameter(torch.ones_like(colors[:, :1, :]), requires_grad=True)    # enhance, for multiply
-    adjust_b = torch.nn.Parameter(torch.zeros_like(colors[:, :1, :]), requires_grad=True)   # bias, for add
+    adjust_k = torch.nn.Parameter(
+        torch.ones_like(colors[:, :1, :]), requires_grad=True
+    )  # enhance, for multiply
+    adjust_b = torch.nn.Parameter(
+        torch.zeros_like(colors[:, :1, :]), requires_grad=True
+    )  # bias, for add
 
     params.append(("adjust_k", adjust_k, sh0_lr))
     params.append(("adjust_b", adjust_b, sh0_lr))
-
 
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
 
@@ -321,14 +323,16 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.retinex_net = MultiScaleRetinexNet(in_channels=3, out_channels=3, embed_dim=32).to(self.device)
+        self.retinex_net = MultiScaleRetinexNet().to(self.device)
         self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
             lr=1e-4 * math.sqrt(cfg.batch_size),
             weight_decay=1e-4,
         )
         self.retinex_embed_dim = 32
-        self.retinex_embeds = nn.Embedding(len(self.trainset), self.retinex_embed_dim).to(self.device)
+        self.retinex_embeds = nn.Embedding(
+            len(self.trainset), self.retinex_embed_dim
+        ).to(self.device)
         torch.nn.init.zeros_(self.retinex_embeds.weight)
 
         self.retinex_embed_optimizer = torch.optim.AdamW(
@@ -702,7 +706,10 @@ class Runner:
         masks: Tensor | None = None,
         rasterize_mode: Literal["classic", "antialiased"] | None = None,
         **kwargs,
-    ) -> tuple[Tensor, Tensor, dict[str, Any]] | tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Any]]:
+    ) -> (
+        tuple[Tensor, Tensor, dict[str, Any]]
+        | tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Any]]
+    ):
         means = self.splats["means"]
         quats = self.splats["quats"]
         scales = torch.exp(self.splats["scales"])
@@ -760,7 +767,13 @@ class Runner:
 
         colors_low = colors * adjust_k + adjust_b  # least squares: x_enh=a*x+b
 
-        render_colors_enh, render_colors_low, render_enh_alphas, render_low_alphas, info = rasterization_dual(
+        (
+            render_colors_enh,
+            render_colors_low,
+            render_enh_alphas,
+            render_low_alphas,
+            info,
+        ) = rasterization_dual(
             means=means,
             quats=quats,
             scales=scales,
@@ -779,10 +792,16 @@ class Runner:
             ),
             sparse_grad=self.cfg.sparse_grad,
             rasterize_mode=rasterize_mode,
-            **kwargs,)
+            **kwargs,
+        )
 
-        return render_colors_enh, render_colors_low, render_enh_alphas, render_low_alphas, info   # return colors and alphas
-
+        return (
+            render_colors_enh,
+            render_colors_low,
+            render_enh_alphas,
+            render_low_alphas,
+            info,
+        )  # return colors and alphas
 
     def pre_train_retinex(self):
         cfg = self.cfg
@@ -818,20 +837,18 @@ class Runner:
 
             retinex_embedding = self.retinex_embeds(images_ids)
 
-            log_illumination_map = self.retinex_net(input_image_for_net, retinex_embedding)  # [B, 3, H, W]
+            log_illumination_map = self.retinex_net(
+                input_image_for_net, retinex_embedding
+            )  # [B, 3, H, W]
             illumination_map = torch.exp(log_illumination_map)
 
             loss_spa_val = loss_contrast(input_image_for_net, illumination_map)
-            # loss_color_val = self.loss_color(
-            #     illumination_map
-            # )
-            loss_exposure_val = self.loss_exposure(
-                illumination_map
-            )
+            loss_color_val = self.loss_color(illumination_map)
+            loss_exposure_val = self.loss_exposure(illumination_map)
 
             loss = (
                 cfg.lambda_reflect * loss_spa_val
-                # + cfg.lambda_color * loss_color_val
+                + cfg.lambda_color * loss_color_val
                 + cfg.lambda_exposure * loss_exposure_val
             )
 
@@ -847,13 +864,12 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_spatial", loss_spa_val.item(), step
                 )
-                # self.writer.add_scalar(
-                #     "retinex_net/loss_color", loss_color_val.item(), step
-                # )
+                self.writer.add_scalar(
+                    "retinex_net/loss_color", loss_color_val.item(), step
+                )
                 self.writer.add_scalar(
                     "retinex_net/loss_exposure", loss_exposure_val.item(), step
                 )
-
 
     def train(self):
         cfg = self.cfg
@@ -876,7 +892,7 @@ class Runner:
             ),
             torch.optim.lr_scheduler.ExponentialLR(
                 self.retinex_optimizer, gamma=0.01 ** (1.0 / max_steps)
-            )
+            ),
         ]
         if cfg.pose_opt:
             schedulers.append(
@@ -976,7 +992,9 @@ class Runner:
             retinex_embedding = self.retinex_embeds(image_ids)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
             log_input_image = torch.log(input_image_for_net + 1e-8)  # [1, 3, H, W]
-            log_illumination_map = self.retinex_net(input_image_for_net, retinex_embedding)  # [1, 3, H, W]
+            log_illumination_map = self.retinex_net(
+                input_image_for_net, retinex_embedding
+            )  # [1, 3, H, W]
             log_reflectance_target = log_input_image - log_illumination_map
 
             reflectance_target = torch.exp(log_reflectance_target)
@@ -985,17 +1003,19 @@ class Runner:
             illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
 
             if cfg.enable_retinex:
-                renders_enh, renders_low, alphas_enh, alphas_low, info = self.rasterize_splats(
-                    camtoworlds=camtoworlds,
-                    Ks=Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=sh_degree_to_use,
-                    near_plane=cfg.near_plane,
-                    far_plane=cfg.far_plane,
-                    image_ids=image_ids,
-                    render_mode="RGB+ED" if cfg.depth_loss else "RGB",
-                    masks=masks,
+                renders_enh, renders_low, alphas_enh, alphas_low, info = (
+                    self.rasterize_splats(
+                        camtoworlds=camtoworlds,
+                        Ks=Ks,
+                        width=width,
+                        height=height,
+                        sh_degree=sh_degree_to_use,
+                        near_plane=cfg.near_plane,
+                        far_plane=cfg.far_plane,
+                        image_ids=image_ids,
+                        render_mode="RGB+ED" if cfg.depth_loss else "RGB",
+                        masks=masks,
+                    )
                 )
             else:
                 renders_low, alphas_low, info = self.rasterize_splats(
@@ -1042,7 +1062,6 @@ class Runner:
                     image_ids.unsqueeze(-1),
                 )["rgb"]
 
-
             if cfg.random_bkgd:
                 bkgd = torch.rand(1, 3, device=device)
                 colors_low += bkgd * (1.0 - alphas_low)
@@ -1050,7 +1069,9 @@ class Runner:
 
             info["means2d"].retain_grad()
 
-            reflectance_target_permuted = reflectance_target.permute(0, 2, 3, 1)  # [1, H, W, 3]
+            reflectance_target_permuted = reflectance_target.permute(
+                0, 2, 3, 1
+            )  # [1, H, W, 3]
 
             loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
 
@@ -1061,8 +1082,7 @@ class Runner:
                 pixels.permute(0, 3, 1, 2),
             )
 
-
-            con_degree = (0.5 / torch.mean(pixels).item())
+            con_degree = 0.5 / torch.mean(pixels).item()
 
             loss_illum_smooth = loss_contrast(
                 input_image_for_net,
@@ -1071,30 +1091,21 @@ class Runner:
             )
 
             low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
-                    ssim_loss_low * cfg.ssim_lambda
+                ssim_loss_low * cfg.ssim_lambda
             )
 
             # some problems here
             # whcih is the issue ?
-            # loss_illum_color = self.loss_color(
-            #     illumination_map
-            # )
-            loss_illum_exposure = self.loss_exposure(
-                illumination_map
-            )
+            loss_illum_color = self.loss_color(illumination_map)
+            loss_illum_exposure = self.loss_exposure(illumination_map)
 
             loss_illumination = (
                 cfg.lambda_reflect * loss_illum_smooth
                 + cfg.lambda_exposure * loss_illum_exposure
-                # + cfg.lambda_color * loss_illum_color
+                + cfg.lambda_color * loss_illum_color
             )
 
-            loss = (
-                cfg.lambda_reflect * loss_reflectance
-                + low_loss
-                + loss_illumination
-            )
-
+            loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
 
             self.cfg.strategy.step_pre_backward(
                 params=self.splats,
@@ -1103,7 +1114,6 @@ class Runner:
                 step=step,
                 info=info,
             )
-
 
             clipiqa_loss_value = torch.tensor(0.0, device=device)
             clipiqa_score_value = torch.tensor(0.0, device=device)
@@ -1212,7 +1222,6 @@ class Runner:
                                 num_actual_views_for_clipiqa, -1, -1
                             )
 
-
                         out = self.rasterize_splats(
                             camtoworlds=novel_c2w_for_loss,
                             Ks=K_novel_for_loss,
@@ -1246,7 +1255,7 @@ class Runner:
                     [
                         points[:, :, 0] / (width - 1) * 2 - 1,
                         points[:, :, 1] / (height - 1) * 2 - 1,
-                        ],
+                    ],
                     dim=-1,
                 )  # normalize to [-1, 1]
                 grid = points.unsqueeze(2)  # [1, M, 1, 2]
@@ -1255,18 +1264,20 @@ class Runner:
                 )  # [1, 1, M, 1]
                 depths_low = depths_low.squeeze(3).squeeze(1)  # [1, M]
                 # calculate loss in disparity space
-                disp = torch.where(depths_low > 0.0, 1.0 / depths_low, torch.zeros_like(depths_low))
+                disp = torch.where(
+                    depths_low > 0.0, 1.0 / depths_low, torch.zeros_like(depths_low)
+                )
                 disp_gt = 1.0 / depths_gt  # [1, M]
                 depthloss = F.l1_loss(disp, disp_gt) * self.scene_scale
                 loss += depthloss * cfg.depth_lambda
-                
+
                 if cfg.enable_retinex:
                     # query depths from depth map
                     points = torch.stack(
                         [
                             points[:, :, 0] / (width - 1) * 2 - 1,
                             points[:, :, 1] / (height - 1) * 2 - 1,
-                            ],
+                        ],
                         dim=-1,
                     )  # normalize to [-1, 1]
                     grid = points.unsqueeze(2)  # [1, M, 1, 2]
@@ -1275,11 +1286,12 @@ class Runner:
                     )  # [1, 1, M, 1]
                     depths_enh = depths_enh.squeeze(3).squeeze(1)  # [1, M]
                     # calculate loss in disparity space
-                    disp = torch.where(depths_enh > 0.0, 1.0 / depths_enh, torch.zeros_like(depths_enh))
+                    disp = torch.where(
+                        depths_enh > 0.0, 1.0 / depths_enh, torch.zeros_like(depths_enh)
+                    )
                     disp_gt = 1.0 / depths_gt  # [1, M]
                     depthloss_enh = F.l1_loss(disp, disp_gt) * self.scene_scale
                     loss += depthloss_enh * cfg.depth_lambda
-                    
 
             tvloss_value: Tensor = torch.tensor(0.0, device=device)
             if cfg.use_bilateral_grid:
@@ -1309,7 +1321,7 @@ class Runner:
                 desc_parts.append(
                     f"retinex_loss={loss_reflectance.item():.3f} "
                     f"illum_smooth={loss_illum_smooth.item():.3f} "
-                    # f"illum_color={loss_illum_color.item():.3f} "
+                    f"illum_color={loss_illum_color.item():.3f} "
                     f"illum_exposure={loss_illum_exposure.item():.3f}"
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
@@ -1336,9 +1348,9 @@ class Runner:
                     self.writer.add_scalar(
                         "train/illumination_smooth", loss_illum_smooth.item(), step
                     )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_color", loss_illum_color.item(), step
-                    # )
+                    self.writer.add_scalar(
+                        "train/illumination_color", loss_illum_color.item(), step
+                    )
                     self.writer.add_scalar(
                         "train/illumination_exposure", loss_illum_exposure.item(), step
                     )
@@ -1368,7 +1380,10 @@ class Runner:
                     )
 
                     canvas_enh = (
-                        torch.cat([reflectance_target, colors_enh], dim=2).detach().cpu().numpy()
+                        torch.cat([reflectance_target, colors_enh], dim=2)
+                        .detach()
+                        .cpu()
+                        .numpy()
                     )
                     canvas_enh = canvas_enh.reshape(-1, *canvas_enh.shape[2:])
                     self.writer.add_image(
@@ -1494,7 +1509,6 @@ class Runner:
 
             for scheduler in schedulers:
                 scheduler.step()
-
 
             if isinstance(self.cfg.strategy, DefaultStrategy):
                 self.cfg.strategy.step_post_backward(
@@ -1729,7 +1743,6 @@ class Runner:
             cam_c2w = camtoworlds_all_torch[i : i + 1]
             cam_K = K_traj[None]
 
-
             out = self.rasterize_splats(
                 camtoworlds=cam_c2w,
                 Ks=cam_K,
@@ -1745,7 +1758,6 @@ class Runner:
                 renders_traj, _, _, _, _ = out
             else:
                 renders_traj, _, _ = out
-
 
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]

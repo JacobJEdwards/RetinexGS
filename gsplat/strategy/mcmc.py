@@ -128,7 +128,7 @@ class MCMCStrategy(Strategy):
 
         if (
             self.refine_stop_iter > step > self.refine_start_iter
-                and step % self.refine_every == 0
+            and step % self.refine_every == 0
         ):
             # teleport GSs
             n_relocated_gs = self._relocate_gs(params, optimizers, binoms)
@@ -146,9 +146,7 @@ class MCMCStrategy(Strategy):
             torch.cuda.empty_cache()
 
         # add noise to GSs
-        inject_noise_to_position(
-            params=params, scaler=lr * self.noise_lr
-        )
+        inject_noise_to_position(params=params, scaler=lr * self.noise_lr)
 
     @torch.no_grad()
     def _relocate_gs(

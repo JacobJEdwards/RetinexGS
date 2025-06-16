@@ -72,9 +72,7 @@ class Parser:
         colmap_dir = data_dir / "sparse" / "0"
         if not colmap_dir.exists():
             colmap_dir = data_dir / "sparse"
-        assert colmap_dir.exists(), (
-            f"COLMAP directory {colmap_dir} does not exist."
-        )
+        assert colmap_dir.exists(), f"COLMAP directory {colmap_dir} does not exist."
 
         manager = SceneManager(str(colmap_dir))
         manager.load_cameras()

@@ -1,3 +1,5 @@
+from typing import Self
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -79,15 +81,11 @@ class HistogramPriorLoss(nn.Module):
 
         smooth_loss = torch.mean((output[:, 1:] - output[:, :-1]) ** 2)
 
-        total_loss = (
-            cl + self.lambda_smooth * smooth_loss + 0.5 * psedo_curve_loss
-        )
+        total_loss = cl + self.lambda_smooth * smooth_loss + 0.5 * psedo_curve_loss
 
         if step >= 3000:
             total_loss = (
-                0.1 * cl
-                + self.lambda_smooth * smooth_loss
-                + 0.5 * psedo_curve_loss
+                0.1 * cl + self.lambda_smooth * smooth_loss + 0.5 * psedo_curve_loss
             )
 
         return total_loss
@@ -143,31 +141,33 @@ class AdaptiveCurveLoss(nn.Module):
 
 
 class ColourConsistencyLoss(nn.Module):
-    def __init__(self, eps=1e-6):
+    def __init__(self: Self) -> None:
         super(ColourConsistencyLoss, self).__init__()
-        self.eps = eps
 
-    def forward(self, x):
+    def forward(self: Self, x: Tensor) -> Tensor:
+        eps = torch.finfo(x.dtype).eps
+
         mean_rgb = torch.mean(x, [2, 3], keepdim=True)
-        mr, mg, mb = torch.split(mean_rgb, 1, dim=1)
+        mr, mg, mb = torch.chunk(mean_rgb, 3, dim=1)
 
         Drg = (mr - mg) ** 2
         Drb = (mr - mb) ** 2
         Dgb = (mg - mb) ** 2
 
-        k = torch.sqrt(Drg + Drb + Dgb + self.eps)
+        k = torch.sqrt(Drg + Drb + Dgb + eps)
 
         return k.mean()
 
+
 # Exposure Loss, control the generated image exposure
 class ExposureLoss(nn.Module):
-    def __init__(self, patch_size, mean_val):
+    def __init__(self: Self, patch_size: int, mean_val: float = 0.5) -> None:
         super(ExposureLoss, self).__init__()
 
         self.pool = nn.AvgPool2d(patch_size)
         self.mean_val = mean_val
 
-    def forward(self, x):
+    def forward(self: Self, x: Tensor) -> Tensor:
         x = torch.mean(x, 1, keepdim=True)
         mean = self.pool(x)
 
@@ -179,7 +179,7 @@ class ExposureLoss(nn.Module):
 
 # Spatial Loss, control the spatial consistency of the generated image
 class SpatialLoss(nn.Module):
-    def __init__(self):
+    def __init__(self: Self) -> None:
         super(SpatialLoss, self).__init__()
 
         kernel_left = (
@@ -212,65 +212,46 @@ class SpatialLoss(nn.Module):
         self.weight_down = nn.Parameter(data=kernel_down, requires_grad=False)
         self.pool = nn.AvgPool2d(4)
 
-    def forward(self, org, enhance, contrast=8):
-        org_mean = torch.mean(org,1,keepdim=True)
-        enhance_mean = torch.mean(enhance,1,keepdim=True)
+    def forward(self: Self, org: Tensor, enhance: Tensor, contrast: int = 8):
+        org_mean = torch.mean(org, 1, keepdim=True)
+        enhance_mean = torch.mean(enhance, 1, keepdim=True)
 
-        org_pool =  self.pool(org_mean)
+        org_pool = self.pool(org_mean)
         enhance_pool = self.pool(enhance_mean)
 
-        D_org_letf = F.conv2d(org_pool , self.weight_left.to(org_pool.device), padding=1)
-        D_org_right = F.conv2d(org_pool , self.weight_right.to(org_pool.device), padding=1)
-        D_org_up = F.conv2d(org_pool , self.weight_up.to(org_pool.device), padding=1)
-        D_org_down = F.conv2d(org_pool , self.weight_down.to(org_pool.device), padding=1)
+        def p(pool: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+            org_letf = F.conv2d(pool, self.weight_left.to(pool.device), padding=1)
+            org_right = F.conv2d(pool, self.weight_right.to(pool.device), padding=1)
+            org_up = F.conv2d(pool, self.weight_up.to(pool.device), padding=1)
+            org_down = F.conv2d(pool, self.weight_down.to(pool.device), padding=1)
 
-        D_enhance_letf = F.conv2d(enhance_pool , self.weight_left.to(org_pool.device), padding=1)
-        D_enhance_right = F.conv2d(enhance_pool , self.weight_right.to(org_pool.device), padding=1)
-        D_enhance_up = F.conv2d(enhance_pool , self.weight_up.to(org_pool.device), padding=1)
-        D_enhance_down = F.conv2d(enhance_pool , self.weight_down.to(org_pool.device), padding=1)
+            return org_letf, org_right, org_up, org_down
 
-        D_left = torch.pow(D_org_letf * contrast - D_enhance_letf,2)
-        D_right = torch.pow(D_org_right * contrast - D_enhance_right,2)
-        D_up = torch.pow(D_org_up * contrast - D_enhance_up,2)
-        D_down = torch.pow(D_org_down * contrast - D_enhance_down,2)
-        E = (D_left + D_right + D_up +D_down)
+        D_org_letf, D_org_right, D_org_up, D_org_down = p(org_pool)
+        D_enhance_letf, D_enhance_right, D_enhance_up, D_enhance_down = p(enhance_pool)
 
+        D_left = torch.pow(D_org_letf * contrast - D_enhance_letf, 2)
+        D_right = torch.pow(D_org_right * contrast - D_enhance_right, 2)
+        D_up = torch.pow(D_org_up * contrast - D_enhance_up, 2)
+        D_down = torch.pow(D_org_down * contrast - D_enhance_down, 2)
+        E = D_left + D_right + D_up + D_down
 
         return torch.mean(E)
-        
-        # org_mean = torch.mean(org, 1, keepdim=True)
-        # enhance_mean = torch.mean(enhance, 1, keepdim=True)
-        # 
-        # org_pool = self.pool(org_mean)
-        # enhance_pool = self.pool(enhance_mean)
-        # 
-        # def p(pool: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        #     org_letf = F.conv2d(pool, self.weight_left.to(pool.device), padding=1)
-        #     org_right = F.conv2d(pool, self.weight_right.to(pool.device), padding=1)
-        #     org_up = F.conv2d(pool, self.weight_up.to(pool.device), padding=1)
-        #     org_down = F.conv2d(pool, self.weight_down.to(pool.device), padding=1)
-        # 
-        #     return org_letf, org_right, org_up, org_down
-        # 
-        # D_org_letf, D_org_right, D_org_up, D_org_down = p(org_pool)
-        # D_enhance_letf, D_enhance_right, D_enhance_up, D_enhance_down = p(enhance_pool)
-        # 
-        # D_left = torch.pow(D_org_letf * contrast - D_enhance_letf, 2)
-        # D_right = torch.pow(D_org_right * contrast - D_enhance_right, 2)
-        # D_up = torch.pow(D_org_up * contrast - D_enhance_up, 2)
-        # D_down = torch.pow(D_org_down * contrast - D_enhance_down, 2)
-        # E = D_left + D_right + D_up + D_down
-        # 
-        # return torch.mean(E)
+
 
 class LaplacianLoss(nn.Module):
-    def __init__(self):
+    def __init__(self: Self) -> None:
         super(LaplacianLoss, self).__init__()
-        self.kernel = torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32).view(1, 1, 3, 3).cuda()
+        self.kernel = (
+            torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32)
+            .view(1, 1, 3, 3)
+            .cuda()
+        )
 
-    def forward(self, x):
+    def forward(self: Self, x: Tensor) -> Tensor:
         laplacian = F.conv2d(x, self.kernel, padding=1)
         return torch.mean(torch.abs(laplacian))
+
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light

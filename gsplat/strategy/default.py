@@ -146,9 +146,9 @@ class DefaultStrategy(Strategy):
         info: Dict[str, Any],
     ):
         """Callback function to be executed before the `loss.backward()` call."""
-        assert (
-            self.key_for_gradient in info
-        ), "The 2D means of the Gaussians is required but missing."
+        assert self.key_for_gradient in info, (
+            "The 2D means of the Gaussians is required but missing."
+        )
         info[self.key_for_gradient].retain_grad()
 
     def step_post_backward(

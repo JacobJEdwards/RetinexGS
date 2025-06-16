@@ -301,9 +301,9 @@ def rasterization(
             and colors.shape[:-1] == batch_dims + (C, N)
         ), colors.shape
         if distributed:
-            assert (
-                colors.dim() == num_batch_dims + 2
-            ), "Distributed mode only supports per-Gaussian colors."
+            assert colors.dim() == num_batch_dims + 2, (
+                "Distributed mode only supports per-Gaussian colors."
+            )
     else:
         # treat colors as SH coefficients, should be in shape [..., N, K, 3] or [..., C, N, K, 3]
         # Allowing for activating partial SH bands
@@ -318,9 +318,9 @@ def rasterization(
         ), colors.shape
         assert (sh_degree + 1) ** 2 <= colors.shape[-2], colors.shape
         if distributed:
-            assert (
-                colors.dim() == num_batch_dims + 3
-            ), "Distributed mode only supports per-Gaussian colors."
+            assert colors.dim() == num_batch_dims + 3, (
+                "Distributed mode only supports per-Gaussian colors."
+            )
 
     if absgrad:
         assert not distributed, "AbsGrad is not supported in distributed mode."
@@ -331,23 +331,23 @@ def rasterization(
         or thin_prism_coeffs is not None
         or rolling_shutter != RollingShutterType.GLOBAL
     ):
-        assert (
-            with_ut
-        ), "Distortion and rolling shutter are only supported with `with_ut=True`."
+        assert with_ut, (
+            "Distortion and rolling shutter are only supported with `with_ut=True`."
+        )
 
     if rolling_shutter != RollingShutterType.GLOBAL:
-        assert (
-            viewmats_rs is not None
-        ), "Rolling shutter requires to provide viewmats_rs."
+        assert viewmats_rs is not None, (
+            "Rolling shutter requires to provide viewmats_rs."
+        )
     else:
-        assert (
-            viewmats_rs is None
-        ), "viewmats_rs should be None for global rolling shutter."
+        assert viewmats_rs is None, (
+            "viewmats_rs should be None for global rolling shutter."
+        )
 
     if with_ut or with_eval3d:
-        assert (quats is not None) and (
-            scales is not None
-        ), "UT and eval3d requires to provide quats and scales."
+        assert (quats is not None) and (scales is not None), (
+            "UT and eval3d requires to provide quats and scales."
+        )
         assert packed is False, "Packed mode is not supported with UT."
         assert sparse_grad is False, "Sparse grad is not supported with UT."
 
@@ -1405,7 +1405,9 @@ def rasterization_2dgs(
             "ED",
             "RGB+D",
             "RGB+ED",
-        ], f"distloss requires depth rendering, render_mode should be D, ED, RGB+D, RGB+ED, but got {render_mode}"
+        ], (
+            f"distloss requires depth rendering, render_mode should be D, ED, RGB+D, RGB+ED, but got {render_mode}"
+        )
 
     if sh_degree is None:
         # treat colors as post-activation values, should be in shape [..., N, D] or [..., C, N, D]

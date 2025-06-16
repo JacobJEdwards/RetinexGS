@@ -350,7 +350,7 @@ def sample_add(
 @torch.no_grad()
 def inject_noise_to_position(
     params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
-        scaler: float,
+    scaler: float,
 ):
     opacities = torch.sigmoid(params["opacities"].flatten())
     scales = torch.exp(params["scales"])

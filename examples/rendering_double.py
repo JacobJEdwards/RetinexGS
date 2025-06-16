@@ -14,30 +14,29 @@ from gsplat.cuda._wrapper import (
 
 
 def rasterization_dual(
-        means: Tensor,  # [N, 3]
-        quats: Tensor,  # [N, 4]
-        scales: Tensor,  # [N, 3]
-        opacities: Tensor,  # [N]
-        colors: Tensor,  # [N, D] or [N, K, 3]
-        colors_low: Tensor,  # [N, D] or [N, K, 3]
-        viewmats: Tensor,  # [C, 4, 4]
-        Ks: Tensor,  # [C, 3, 3]
-        width: int,
-        height: int,
-        near_plane: float = 0.01,
-        far_plane: float = 1e10,
-        radius_clip: float = 0.0,
-        eps2d: float = 0.3,
-        sh_degree: Optional[int] = None,
-        packed: bool = True,
-        tile_size: int = 16,
-        backgrounds: Optional[Tensor] = None,
-        render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
-        sparse_grad: bool = False,
-        absgrad: bool = False,
-        rasterize_mode: Literal["classic", "antialiased"] = "classic",
+    means: Tensor,  # [N, 3]
+    quats: Tensor,  # [N, 4]
+    scales: Tensor,  # [N, 3]
+    opacities: Tensor,  # [N]
+    colors: Tensor,  # [N, D] or [N, K, 3]
+    colors_low: Tensor,  # [N, D] or [N, K, 3]
+    viewmats: Tensor,  # [C, 4, 4]
+    Ks: Tensor,  # [C, 3, 3]
+    width: int,
+    height: int,
+    near_plane: float = 0.01,
+    far_plane: float = 1e10,
+    radius_clip: float = 0.0,
+    eps2d: float = 0.3,
+    sh_degree: Optional[int] = None,
+    packed: bool = True,
+    tile_size: int = 16,
+    backgrounds: Optional[Tensor] = None,
+    render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
+    sparse_grad: bool = False,
+    absgrad: bool = False,
+    rasterize_mode: Literal["classic", "antialiased"] = "classic",
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, dict]:
-
     batch_dims = means.shape[:-2]
     num_batch_dims = len(batch_dims)
     B = math.prod(batch_dims)
@@ -52,17 +51,17 @@ def rasterization_dual(
     assert Ks.shape == (C, 3, 3), Ks.shape
     assert render_mode in ["RGB", "D", "ED", "RGB+D", "RGB+ED"], render_mode
 
-    if sh_degree is None:   # None
+    if sh_degree is None:  # None
         # treat colors as post-activation values
         # colors should be in shape [N, D] or (C, N, D) (silently support)
         assert (colors.dim() == 2 and colors.shape[0] == N) or (
-                colors.dim() == 3 and colors.shape[:2] == (C, N)
+            colors.dim() == 3 and colors.shape[:2] == (C, N)
         ), colors.shape
     else:
         # treat colors as SH coefficients. Allowing for activating partial SH bands
-        assert (
-                colors.dim() == 3 and colors.shape[0] == N and colors.shape[2] == 3
-        ), colors.shape
+        assert colors.dim() == 3 and colors.shape[0] == N and colors.shape[2] == 3, (
+            colors.shape
+        )
         assert (sh_degree + 1) ** 2 <= colors.shape[1], colors.shape
 
     # Project Gaussians to 2D. Directly pass in {quats, scales} is faster than precomputing covars.
@@ -125,13 +124,15 @@ def rasterization_dual(
     # TODO: SH also suport N-D.
     # Compute the per-view colors
     if not (
-            colors.dim() == 3 and sh_degree is None
+        colors.dim() == 3 and sh_degree is None
     ):  # silently support [C, N, D] color.
         colors = (
             colors[gaussian_ids] if packed else colors.expand(C, *([-1] * colors.dim()))
         )  # [nnz, D] or [C, N, 3]
         colors_low = (
-            colors_low[gaussian_ids] if packed else colors_low.expand(C, *([-1] * colors_low.dim()))
+            colors_low[gaussian_ids]
+            if packed
+            else colors_low.expand(C, *([-1] * colors_low.dim()))
         )  # [nnz, D] or [C, N, 3]
 
     else:
@@ -155,7 +156,6 @@ def rasterization_dual(
         colors = torch.clamp_min(colors + 0.5, 0.0)
         colors_low = torch.clamp_min(colors_low + 0.5, 0.0)
 
-
     # Rasterize to pixels
     if render_mode in ["RGB+D", "RGB+ED"]:  # Here, RGB only
         colors = torch.cat((colors, depths[..., None]), dim=-1)
@@ -166,7 +166,7 @@ def rasterization_dual(
     else:  # RGB
         pass
 
-    if colors.shape[-1] > 32:   # False
+    if colors.shape[-1] > 32:  # False
         # slice into 32-channel chunks
         n_chunks = (colors.shape[-1] + 31) // 32
         render_colors = []
@@ -246,20 +246,20 @@ def rasterization_dual(
             absgrad=absgrad,
         )
 
-    if render_mode in ["ED", "RGB+ED"]: # False
+    if render_mode in ["ED", "RGB+ED"]:  # False
         # normalize the accumulated depth to get the expected depth
         render_colors = torch.cat(
             [
                 render_colors[..., :-1],
                 render_colors[..., -1:] / render_alphas.clamp(min=1e-10),
-                ],
+            ],
             dim=-1,
         )
         render_low_colors = torch.cat(
             [
                 render_low_colors[..., :-1],
                 render_low_colors[..., -1:] / render_low_alphas.clamp(min=1e-10),
-                ],
+            ],
             dim=-1,
         )
 
@@ -283,5 +283,5 @@ def rasterization_dual(
         "n_cameras": C,
         "n_batches": B,
     }
-    
+
     return render_colors, render_low_colors, render_alphas, render_low_alphas, meta

@@ -10,20 +10,21 @@ import einops
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.transforms.functional as TF
+
 
 class CrossAttention(nn.Module):
-    def __init__(self: Self, img_channels: int=3, hidden_dim: int=128, out_dim: int=255) -> None:
+    def __init__(
+        self: Self, img_channels: int = 3, hidden_dim: int = 128, out_dim: int = 255
+    ) -> None:
         super(CrossAttention, self).__init__()
 
         self.conv = nn.Sequential(
             nn.Conv2d(img_channels, 64, kernel_size=3, padding=1),  # (1, 64, H, W)
             nn.ReLU(),
             nn.MaxPool2d(2, 2),  # (1, 64, H/2, W/2)
-
             nn.Conv2d(64, 128, kernel_size=3, padding=1),  # (1, 128, H/2, W/2)
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((4, 4))  # (1, 128, 4, 4)
+            nn.AdaptiveAvgPool2d((4, 4)),  # (1, 128, 4, 4)
         )
 
         self.query_fc = nn.Linear(4 * 4, hidden_dim)  # embedding -> query
@@ -38,7 +39,7 @@ class CrossAttention(nn.Module):
     def _init_weights(self: Self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
@@ -47,10 +48,9 @@ class CrossAttention(nn.Module):
                     nn.init.zeros_(m.bias)
 
     def forward(self, image, embedding):
-
         img_feat = self.conv(image)
 
-        img_feat = einops.rearrange(img_feat, 'b c h w -> b (h w) c')
+        img_feat = einops.rearrange(img_feat, "b c h w -> b (h w) c")
 
         embed_flat = embedding.view(1, -1)  # (1, 16)
         query = self.query_fc(embed_flat).unsqueeze(1)  # (1, 1, hidden_dim)
@@ -58,7 +58,9 @@ class CrossAttention(nn.Module):
         key = self.key_fc(img_feat)  # (1, 16, hidden_dim)
         value = self.value_fc(img_feat)  # (1, 16, hidden_dim)
 
-        attention_scores = torch.bmm(query, key.transpose(1, 2)) / (128 ** 0.5)  # (1, 1, 16)
+        attention_scores = torch.bmm(query, key.transpose(1, 2)) / (
+            128**0.5
+        )  # (1, 1, 16)
         attention_weights = F.softmax(attention_scores, dim=-1)  # (1, 1, 16)
 
         context = torch.bmm(attention_weights, value)  # (1, 1, hidden_dim)
@@ -196,6 +198,7 @@ def rotation_6d_to_matrix(d6: Tensor) -> Tensor:
     b3 = torch.cross(b1, b2, dim=-1)
     return torch.stack((b1, b2, b3), dim=-2)
 
+
 def knn(x: Tensor, K: int = 4) -> Tensor:
     x_np = x.cpu().numpy()
     model = NearestNeighbors(n_neighbors=K, metric="euclidean").fit(x_np)
@@ -259,7 +262,7 @@ def apply_depth_colormap(
     depth: torch.Tensor,
     acc: torch.Tensor | None = None,
     near_plane: float | None = None,
-    far_plane: float| None = None,
+    far_plane: float | None = None,
 ) -> torch.Tensor:
     """Converts a depth image to color for easier analysis.
 
@@ -281,8 +284,11 @@ def apply_depth_colormap(
         img = img * acc + (1.0 - acc)
     return img
 
+
 class RetinexNet(nn.Module):
-    def __init__(self: Self, in_channels: int=3, out_channels: int=1, embed_dim: int=32) -> None:
+    def __init__(
+        self: Self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
+    ) -> None:
         super(RetinexNet, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
@@ -309,17 +315,24 @@ class RetinexNet(nn.Module):
         p2 = self.pool(c2)
 
         up1 = self.upconv1(p2)
-        up1_resized = F.interpolate(up1, size=p1.shape[2:], mode='bilinear', align_corners=False)
+        up1_resized = F.interpolate(
+            up1, size=p1.shape[2:], mode="bilinear", align_corners=False
+        )
 
         merged = torch.cat([up1_resized, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
         log_illumination = self.upconv2(c3)
-        final_illumination = F.interpolate(log_illumination, size=x.shape[2:], mode='bilinear', align_corners=False)
+        final_illumination = F.interpolate(
+            log_illumination, size=x.shape[2:], mode="bilinear", align_corners=False
+        )
 
         return final_illumination
 
+
 class MultiScaleRetinexNet(nn.Module):
-    def __init__(self: Self, in_channels: int=3, out_channels: int=3, embed_dim: int=32) -> None:
+    def __init__(
+        self: Self, in_channels: int = 3, out_channels: int = 3, embed_dim: int = 32
+    ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
         num_scales = 3
@@ -341,7 +354,7 @@ class MultiScaleRetinexNet(nn.Module):
         self.combination_layer = nn.Conv2d(
             in_channels=num_scales * out_channels,
             out_channels=out_channels,
-            kernel_size=1
+            kernel_size=1,
         )
 
         self.relu = nn.ReLU()
@@ -357,74 +370,54 @@ class MultiScaleRetinexNet(nn.Module):
 
         # Decoder
         up1 = self.upconv1(p2)
-        up1_resized = F.interpolate(up1, size=p1.shape[2:], mode='bilinear', align_corners=False)
+        up1_resized = F.interpolate(
+            up1, size=p1.shape[2:], mode="bilinear", align_corners=False
+        )
         merged = torch.cat([up1_resized, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
 
         log_illumination_full_res = self.upconv2(c3)
-        final_illumination_full_res = F.interpolate(log_illumination_full_res, size=x.shape[2:], mode='bilinear',
-                                                    align_corners=False)
+        final_illumination_full_res = F.interpolate(
+            log_illumination_full_res,
+            size=x.shape[2:],
+            mode="bilinear",
+            align_corners=False,
+        )
 
         log_illumination_medium_res = self.output_head_medium(c3)
-        final_illumination_medium_res = F.interpolate(log_illumination_medium_res, size=x.shape[2:], mode='bilinear',
-                                                      align_corners=False)
+        final_illumination_medium_res = F.interpolate(
+            log_illumination_medium_res,
+            size=x.shape[2:],
+            mode="bilinear",
+            align_corners=False,
+        )
 
-        log_illum_coarse_res = self.output_head_coarse(p2) # [B, out_channels, H/4, W/4]
-        final_log_illum_coarse_res = F.interpolate(log_illum_coarse_res, size=x.shape[2:], mode='bilinear',
-                                            align_corners=False)
+        log_illum_coarse_res = self.output_head_coarse(
+            p2
+        )  # [B, out_channels, H/4, W/4]
+        final_log_illum_coarse_res = F.interpolate(
+            log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
+        )
 
-        concatenated_maps = torch.cat([final_log_illum_coarse_res, final_illumination_medium_res, final_illumination_full_res], dim=1)
+        concatenated_maps = torch.cat(
+            [
+                final_log_illum_coarse_res,
+                final_illumination_medium_res,
+                final_illumination_full_res,
+            ],
+            dim=1,
+        )
 
         final_illumination = self.combination_layer(concatenated_maps)
 
         return final_illumination
 
-class TrainableMSR(nn.Module):
-    """
-    A trainable Multi-Scale Retinex module.
-    It learns the sigmas for the Gaussian blurs and the weights for combining them.
-    """
-    def __init__(self: Self, num_scales: int=3) -> None:
-        super().__init__()
 
-        initial_sigmas = torch.tensor([15.0, 80.0, 250.0])
-        self.log_sigmas = nn.Parameter(torch.log(initial_sigmas))
-
-        self.weights = nn.Parameter(torch.ones(num_scales))
-
-    def forward(self: Self, img_srgb: torch.Tensor) -> torch.Tensor:
-        epsilon = 1e-6
-
-        img_log = torch.log(img_srgb + epsilon)
-
-        msr_log_reflectance = torch.zeros_like(img_log)
-
-        normalized_weights = F.softmax(self.weights, dim=0)
-
-        sigmas = torch.exp(self.log_sigmas)
-
-        for i in range(len(sigmas)):
-            kernel_size = int(sigmas[i].item() * 3) // 2 * 2 + 1
-
-            illumination_log = TF.gaussian_blur(img_log, kernel_size=kernel_size, sigma=[sigmas[i].item()])
-
-            reflectance_log = img_log - illumination_log
-
-            msr_log_reflectance += normalized_weights[i] * reflectance_log
-
-        reflectance = torch.exp(msr_log_reflectance)
-
-        min_val = torch.min(reflectance)
-        max_val = torch.max(reflectance)
-        enhanced_img = (reflectance - min_val) / (max_val - min_val + epsilon)
-
-        return enhanced_img
-    
 def generate_variational_intrinsics(
-        base_K: Tensor,
-        num_intrinsics: int,
-        focal_perturb_factor: float,
-        principal_point_perturb_pixel: int,
+    base_K: Tensor,
+    num_intrinsics: int,
+    focal_perturb_factor: float,
+    principal_point_perturb_pixel: int,
 ) -> Tensor:
     device = base_K.device
     fx_base, fy_base = base_K[0, 0], base_K[1, 1]
@@ -433,15 +426,15 @@ def generate_variational_intrinsics(
     new_Ks = base_K.unsqueeze(0).repeat(num_intrinsics, 1, 1)
 
     focal_perturb = (
-            1.0
-            + (torch.rand(num_intrinsics, 2, device=device) * 2 - 1) * focal_perturb_factor
+        1.0
+        + (torch.rand(num_intrinsics, 2, device=device) * 2 - 1) * focal_perturb_factor
     )
     new_Ks[:, 0, 0] = fx_base * focal_perturb[:, 0]
     new_Ks[:, 1, 1] = fy_base * focal_perturb[:, 1]
 
     principal_point_perturb = (
-                                      torch.rand(num_intrinsics, 2, device=device) * 2 - 1
-                              ) * principal_point_perturb_pixel
+        torch.rand(num_intrinsics, 2, device=device) * 2 - 1
+    ) * principal_point_perturb_pixel
     new_Ks[:, 0, 2] = cx_base + principal_point_perturb[:, 0]
     new_Ks[:, 1, 2] = cy_base + principal_point_perturb[:, 1]
 
@@ -453,7 +446,7 @@ class FiLMLayer(nn.Module):
         super(FiLMLayer, self).__init__()
         self.layer = nn.Linear(embed_dim, feature_channels * 2)
 
-    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
         gamma_beta = self.layer(embedding)
         gamma_beta = gamma_beta.view(gamma_beta.size(0), -1, 1, 1)
         gamma, beta = torch.chunk(gamma_beta, 2, dim=1)

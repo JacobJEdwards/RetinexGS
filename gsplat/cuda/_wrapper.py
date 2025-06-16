@@ -608,12 +608,12 @@ def rasterize_to_pixels(
         padded_channels = 0
 
     tile_height, tile_width = isect_offsets.shape[-2:]
-    assert (
-        tile_height * tile_size >= image_height
-    ), f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
-    assert (
-        tile_width * tile_size >= image_width
-    ), f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    assert tile_height * tile_size >= image_height, (
+        f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
+    )
+    assert tile_width * tile_size >= image_width, (
+        f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    )
 
     render_colors, render_alphas = _RasterizeToPixels.apply(
         means2d.contiguous(),
@@ -688,9 +688,9 @@ def rasterize_to_pixels_eval3d(
     assert colors.ndim in (num_batch_dims + 2, num_batch_dims + 3), colors.shape
     if colors.ndim == num_batch_dims + 2:
         raise NotImplementedError("packed mode is not supported yet")
-        assert (
-            colors.shape[:-2] == batch_dims and colors.shape[-1] == channels
-        ), colors.shape
+        assert colors.shape[:-2] == batch_dims and colors.shape[-1] == channels, (
+            colors.shape
+        )
     else:
         assert colors.shape == batch_dims + (C, N, channels), colors.shape
     assert opacities.shape == colors.shape[:-1], opacities.shape
@@ -769,12 +769,12 @@ def rasterize_to_pixels_eval3d(
         padded_channels = 0
 
     tile_height, tile_width = isect_offsets.shape[-2:]
-    assert (
-        tile_height * tile_size >= image_height
-    ), f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
-    assert (
-        tile_width * tile_size >= image_width
-    ), f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    assert tile_height * tile_size >= image_height, (
+        f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
+    )
+    assert tile_width * tile_size >= image_width, (
+        f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    )
 
     render_colors, render_alphas = _RasterizeToPixelsEval3D.apply(
         means.contiguous(),
@@ -865,12 +865,12 @@ def rasterize_to_indices_in_range(
         tile_height,
         tile_width,
     ), isect_offsets.shape
-    assert (
-        tile_height * tile_size >= image_height
-    ), f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
-    assert (
-        tile_width * tile_size >= image_width
-    ), f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    assert tile_height * tile_size >= image_height, (
+        f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
+    )
+    assert tile_width * tile_size >= image_width, (
+        f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    )
 
     out_gauss_ids, out_indices = _make_lazy_cuda_func("rasterize_to_indices_3dgs")(
         range_start,
@@ -1446,9 +1446,13 @@ class _RasterizeToPixelsEval3D(torch.autograd.Function):
         camera_model_type = ctx.camera_model_type
         tile_size = ctx.tile_size
 
-        (v_means, v_quats, v_scales, v_colors, v_opacities,) = _make_lazy_cuda_func(
-            "rasterize_to_pixels_from_world_3dgs_bwd"
-        )(
+        (
+            v_means,
+            v_quats,
+            v_scales,
+            v_colors,
+            v_opacities,
+        ) = _make_lazy_cuda_func("rasterize_to_pixels_from_world_3dgs_bwd")(
             means,
             quats,
             scales,
@@ -2243,12 +2247,12 @@ def rasterize_to_pixels_2dgs(
     else:
         padded_channels = 0
     tile_height, tile_width = isect_offsets.shape[-2:]
-    assert (
-        tile_height * tile_size >= image_height
-    ), f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
-    assert (
-        tile_width * tile_size >= image_width
-    ), f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    assert tile_height * tile_size >= image_height, (
+        f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
+    )
+    assert tile_width * tile_size >= image_width, (
+        f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    )
 
     (
         render_colors,
@@ -2342,12 +2346,12 @@ def rasterize_to_indices_in_range_2dgs(
         tile_height,
         tile_width,
     ), isect_offsets.shape
-    assert (
-        tile_height * tile_size >= image_height
-    ), f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
-    assert (
-        tile_width * tile_size >= image_width
-    ), f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    assert tile_height * tile_size >= image_height, (
+        f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
+    )
+    assert tile_width * tile_size >= image_width, (
+        f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+    )
 
     out_gauss_ids, out_indices = _make_lazy_cuda_func("rasterize_to_indices_2dgs")(
         range_start,
@@ -2453,7 +2457,6 @@ class _RasterizeToPixels2DGS(torch.autograd.Function):
         v_render_distort: Tensor,
         v_render_median: Tensor,
     ):
-
         (
             means2d,
             ray_transforms,

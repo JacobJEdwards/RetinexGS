@@ -161,9 +161,9 @@ def depth_to_points(
         4,
     ), f"Invalid viewmats shape: {camtoworlds.shape}"
     assert Ks.shape[-2:] == (3, 3), f"Invalid Ks shape: {Ks.shape}"
-    assert (
-        depths.shape[:-3] == camtoworlds.shape[:-2] == Ks.shape[:-2]
-    ), f"Shape mismatch! depths: {depths.shape}, viewmats: {camtoworlds.shape}, Ks: {Ks.shape}"
+    assert depths.shape[:-3] == camtoworlds.shape[:-2] == Ks.shape[:-2], (
+        f"Shape mismatch! depths: {depths.shape}, viewmats: {camtoworlds.shape}, Ks: {Ks.shape}"
+    )
 
     device = depths.device
     height, width = depths.shape[-3:-1]
