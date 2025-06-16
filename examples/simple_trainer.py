@@ -161,12 +161,12 @@ class Config:
 
     lambda_low: float = 1.0
 
-    lambda_reflect: float = 0.5
+    lambda_reflect: float = 0.6
     lambda_smooth: float = 0.01
     lambda_illum_color: float = 0.2
-    lambda_illum_exposure: float = 0.15
-    lambda_illum_variance: float = 0.2
-    lambda_illum_contrast: float = 0.1
+    lambda_illum_exposure: float = 0.1
+    lambda_illum_variance: float = 0.1
+    lambda_illum_contrast: float = 0.5
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
@@ -1459,7 +1459,7 @@ class Runner:
                         step,
                         dataformats="HWC",
                     )
-                    
+
                     self.writer.add_image(
                         "train/reflectance_target",
                         reflectance_target_permuted,
