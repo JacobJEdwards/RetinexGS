@@ -159,11 +159,11 @@ class Config:
 
     enable_retinex: bool = True
     lambda_reflect: float = 0.6
-    lambda_smooth: float = 0.2
+    lambda_smooth: float = 0.3
     lambda_low: float = 1.0
     lambda_color: float = 0.05
-    lambda_exposure: float = 0.01
-    pretrain_retinex: bool = False
+    lambda_exposure: float = 0.05
+    pretrain_retinex: bool = True
     pretrain_steps: int = 1000
 
     eval_niqe: bool = False
@@ -260,7 +260,7 @@ def create_splats_with_optimizers(
     )  # enhance, for multiply
     adjust_b = torch.nn.Parameter(
         torch.zeros_like(colors[:, :1, :]), requires_grad=True
-    )  # bias, for add
+    )  # bias, for add,
 
     params.append(("adjust_k", adjust_k, sh0_lr))
     params.append(("adjust_b", adjust_b, sh0_lr))
