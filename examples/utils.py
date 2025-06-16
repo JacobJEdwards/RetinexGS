@@ -352,7 +352,8 @@ class MultiScaleRetinexNet(nn.Module):
         self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
 
         self.combination_layer = nn.Conv2d(
-            in_channels=num_scales * out_channels,
+            # in_channels=num_scales * out_channels,
+            in_channels=out_channels,
             out_channels=out_channels,
             kernel_size=1,
         )
@@ -377,36 +378,37 @@ class MultiScaleRetinexNet(nn.Module):
         c3 = self.relu(self.conv3(merged))
 
         log_illumination_full_res = self.upconv2(c3)
-        # final_illumination_full_res = F.interpolate(
-        #     log_illumination_full_res,
-        #     size=x.shape[2:],
-        #     mode="bilinear",
-        #     align_corners=False,
-        # )
+        log_illumination_full_res = F.interpolate(
+            log_illumination_full_res,
+            size=x.shape[2:],
+            mode="bilinear",
+            align_corners=False,
+        )
 
         log_illumination_medium_res = self.output_head_medium(c3)
-        # final_illumination_medium_res = F.interpolate(
-        #     log_illumination_medium_res,
-        #     size=x.shape[2:],
-        #     mode="bilinear",
-        #     align_corners=False,
-        # )
+        log_illumination_medium_res = F.interpolate(
+            log_illumination_medium_res,
+            size=x.shape[2:],
+            mode="bilinear",
+            align_corners=False,
+        )
 
         log_illum_coarse_res = self.output_head_coarse(
             p2
         )  # [B, out_channels, H/4, W/4]
-        # final_log_illum_coarse_res = F.interpolate(
-        #     log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
-        # )
-
-        concatenated_maps = torch.cat(
-            [
-                log_illum_coarse_res,
-                log_illumination_medium_res,
-                log_illumination_full_res,
-            ],
-            dim=1,
+        log_illum_coarse_res = F.interpolate(
+            log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
         )
+
+        # concatenated_maps = torch.add(
+        #     [
+        #         log_illum_coarse_res,
+        #         log_illumination_medium_res,
+        #         log_illumination_full_res,
+        #     ],
+        #     dim=1,
+        # )
+        concatenated_maps = log_illum_coarse_res + log_illumination_medium_res + log_illumination_full_res 
 
         final_illumination = self.combination_layer(concatenated_maps)
 
