@@ -319,7 +319,7 @@ class RetinexNet(nn.Module):
         return final_illumination
 
 class MultiScaleRetinexNet(nn.Module):
-    def __init__(self: Self, in_channels: int=3, out_channels: int=1, embed_dim: int=32) -> None:
+    def __init__(self: Self, in_channels: int=3, out_channels: int=3, embed_dim: int=32) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
         num_scales = 3
