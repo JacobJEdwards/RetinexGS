@@ -158,11 +158,13 @@ class Config:
     principal_point_perturb_pixel: int = 10
 
     enable_retinex: bool = True
-    lambda_reflect = 0.6
-    lambda_smooth = 0.2
-    lambda_low = 1.0
-    lambda_color = 0.05
-    lambda_exposure = 0.01
+    lambda_reflect: float = 0.6
+    lambda_smooth: float = 0.2
+    lambda_low: float = 1.0
+    lambda_color: float = 0.05
+    lambda_exposure: float = 0.01
+    pretrain_retinex: bool = False
+    pretrain_steps: int = 1000
 
     eval_niqe: bool = False
 
@@ -809,7 +811,7 @@ class Runner:
 
         loss_contrast = SpatialLoss().to(device)
 
-        pbar = tqdm.tqdm(range(5000), desc="Pre-training RetinexNet")
+        pbar = tqdm.tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
         for step in pbar:
             try:
                 data = next(trainloader_iter)
@@ -907,7 +909,8 @@ class Runner:
                 )
             )
 
-        # self.pre_train_retinex()
+        if cfg.pretrain_retinex:
+            self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
