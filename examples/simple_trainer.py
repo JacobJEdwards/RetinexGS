@@ -164,9 +164,10 @@ class Config:
     lambda_reflect: float = 0.6
     lambda_smooth: float = 0.6
     lambda_illum_color: float = 0.2
-    lambda_illum_exposure: float = 0.1
+    lambda_illum_exposure: float = 0.2
     lambda_illum_variance: float = 0.1
     lambda_illum_contrast: float = 0.4
+    lambda_adaptive_curve: float = 0.6
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
@@ -349,7 +350,7 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_color.compile()
-        self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.5).to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.6).to(self.device)
         self.loss_exposure.compile()
         self.loss_smooth = SmoothingLoss().to(self.device)
         self.loss_smooth.compile()
@@ -861,7 +862,7 @@ class Runner:
                 + cfg.lambda_illum_exposure * loss_exposure_val
                 + cfg.lambda_smooth * loss_smoothing
                 + cfg.lambda_illum_variance * loss_variance
-                + loss_adaptive_curve
+                + cfg.lambda_adaptive_curve * loss_adaptive_curve
             )
 
             loss.backward()
@@ -887,6 +888,9 @@ class Runner:
                 )
                 self.writer.add_scalar(
                     "retinex_net/loss_variance", loss_variance.item(), step
+                )
+                self.writer.add_scalar(
+                    "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
                 )
 
                 # draw image
@@ -1120,8 +1124,6 @@ class Runner:
                 ssim_loss_low * cfg.ssim_lambda
             )
 
-            # some problems here
-            # whcih is the issue ?
             loss_illum_color = self.loss_color(illumination_map)
             loss_illum_exposure = self.loss_exposure(illumination_map)
             loss_illum_smooth = self.loss_smooth(illumination_map)
@@ -1136,7 +1138,7 @@ class Runner:
                 + cfg.lambda_illum_color * loss_illum_color
                 + cfg.lambda_smooth * loss_illum_smooth
                 + cfg.lambda_illum_variance * loss_illum_variance
-                + loss_adaptive_curve
+                + cfg.lambda_adaptive_curve * loss_adaptive_curve
             )
 
             loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
@@ -1368,11 +1370,11 @@ class Runner:
             if cfg.enable_retinex:
                 desc_parts.append(
                     f"retinex_loss={loss_reflectance.item():.3f} "
-                    f"illum_smooth={loss_illum_contrast.item():.3f} "
-                    f"illum_color={loss_illum_color.item():.3f} "
-                    f"illum_exposure={loss_illum_exposure.item():.3f}"
-                    f"illum_smooth={loss_illum_smooth.item():.3f}"
-                    f"illum_variance={loss_illum_variance.item():.3f}"
+                    # f"illum_smooth={loss_illum_contrast.item():.3f} "
+                    # f"illum_color={loss_illum_color.item():.3f} "
+                    # f"illum_exposure={loss_illum_exposure.item():.3f}"
+                    # f"illum_smooth={loss_illum_smooth.item():.3f}"
+                    # f"illum_variance={loss_illum_variance.item():.3f}"
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
             if cfg.depth_loss:
@@ -1412,6 +1414,10 @@ class Runner:
                     )
                     self.writer.add_scalar(
                         "train/illumination_exposure", loss_illum_exposure.item(), step
+                    )
+                    self.writer.add_scalar("train/loss_reconstruct_low", low_loss.item(), step)
+                    self.writer.add_scalar(
+                        "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
                     )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
