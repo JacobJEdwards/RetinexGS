@@ -1443,7 +1443,7 @@ class Runner:
                     )
                     self.writer.add_image(
                         "train/reflectance_target",
-                        reflectance_target.permute(0, 3, 1, 2),
+                        reflectance_target
                         step,
                         dataformats="NCHW",
                     )
