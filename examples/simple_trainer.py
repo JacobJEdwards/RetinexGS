@@ -907,7 +907,7 @@ class Runner:
                 )
             )
 
-        self.pre_train_retinex()
+        # self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -927,7 +927,8 @@ class Runner:
                 while self.viewer.state == "paused":
                     time.sleep(0.01)
                 self.viewer.lock.acquire()
-                tic = time.time()
+
+            tic = time.time()
 
             try:
                 data = next(trainloader_iter)
@@ -970,6 +971,9 @@ class Runner:
             if cfg.depth_loss:
                 points = data["points"].to(device)
                 depths_gt = data["depths"].to(device)
+            else:
+                points = None
+                depths_gt = None
 
             height, width = pixels.shape[1:3]
 
@@ -1004,15 +1008,11 @@ class Runner:
                 masks=masks,
             )
 
-            if cfg.enable_retinex and len(out) == 5:
-                renders_low, alphas_low, renders_enh, alphas_enh, info = out
-            elif not cfg.enable_retinex and len(out) == 3:
+            if len(out) == 5:
+                renders_enh, alphas_enh, renders_low, alphas_low, info = out
+            else:
                 renders_low, alphas_low, info = out
                 renders_enh, alphas_enh = renders_low, alphas_low
-            else:
-                raise ValueError(
-                    f"Unexpected output length from rasterization: {len(out)}"
-                )
 
             if renders_low.shape[-1] == 4:
                 colors_low, depths_low = renders_low[..., 0:3], renders_low[..., 3:4]
@@ -1216,10 +1216,14 @@ class Runner:
                             far_plane=cfg.far_plane,
                         )
 
-                        if cfg.enable_retinex:
+                        if cfg.enable_retinex and len(out) == 5:
                             novel_renders, _, _, _, _ = out
-                        else:
+                        elif not cfg.enable_retinex and len(out) == 3:
                             novel_renders, _, _ = out
+                        else:
+                            raise ValueError(
+                                f"Unexpected output length from rasterization: {len(out)}"
+                            )
 
                         colors_nchw = novel_renders.permute(0, 3, 1, 2).contiguous()
                         colors_nchw = torch.clamp(colors_nchw, 0.0, 1.0)
@@ -1259,6 +1263,8 @@ class Runner:
                 loss += depthloss * cfg.depth_lambda
 
                 if cfg.enable_retinex:
+                    assert depths_enh is not None, "Enhanced depths are required for enhanced depth loss"
+
                     # query depths from depth map
                     points = torch.stack(
                         [
@@ -1282,6 +1288,10 @@ class Runner:
 
             tvloss_value: Tensor = torch.tensor(0.0, device=device)
             if cfg.use_bilateral_grid:
+                global total_variation_loss
+
+                assert total_variation_loss is not None
+
                 tvloss_value = cast(
                     Tensor, 10 * total_variation_loss(self.bil_grids.grids)
                 )
@@ -1467,11 +1477,13 @@ class Runner:
             if cfg.visible_adam:
                 if cfg.packed:
                     visibility_mask = torch.zeros_like(
-                        self.splats["opacities"], dtype=bool
+                        self.splats["opacities"], dtype=torch.bool
                     )
                     visibility_mask.scatter_(0, info["gaussian_ids"], 1)
                 else:
                     visibility_mask = (info["radii"] > 0).all(-1).any(0)
+            else:
+                visibility_mask = None
 
             for optimizer in self.optimizers.values():
                 if cfg.visible_adam:
@@ -1568,8 +1580,8 @@ class Runner:
                 masks=masks,
             )
 
-            if cfg.enable_retinex:
-                colors, _, alphas, _, info = out
+            if len(out) == 5:
+                _, colors, _, alphas, info = out
             else:
                 colors, alphas, info = out
 
@@ -1600,6 +1612,7 @@ class Runner:
 
                 if cfg.use_bilateral_grid:
                     global color_correct
+                    assert color_correct is not None
                     cc_colors = color_correct(colors, pixels)
                     cc_colors_p = cc_colors.permute(0, 3, 1, 2)
                     metrics["cc_psnr"].append(self.psnr(cc_colors_p, pixels_p))
@@ -1739,10 +1752,12 @@ class Runner:
                 render_mode="RGB+ED",
             )
 
-            if cfg.enable_retinex:
+            if cfg.enable_retinex and len(out) == 5:
                 renders_traj, _, _, _, _ = out
-            else:
+            elif not cfg.enable_retinex and len(out) == 3:
                 renders_traj, _, _ = out
+            else:
+                raise ValueError(f"Unexpected output length from rasterization: {len(out)}")
 
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
@@ -1817,8 +1832,7 @@ class Runner:
             "depth(expected)": "ED",
             "alpha": "RGB",
         }
-
-        render_colors_viewer, render_alphas_viewer, info_viewer = self.rasterize_splats(
+        out = self.rasterize_splats(
             camtoworlds=c2w[None],
             Ks=K_viewer[None],
             width=width,
@@ -1829,12 +1843,18 @@ class Runner:
             radius_clip=render_tab_state.radius_clip,
             eps2d=render_tab_state.eps2d,
             backgrounds=torch.tensor([render_tab_state.backgrounds], device=self.device)
-            / 255.0,
+                        / 255.0,
             render_mode=RENDER_MODE_MAP[render_tab_state.render_mode],
         )
+        
+        if len(out) == 5:
+            _, render_colors_viewer, _, render_alphas_viewer, info_viewer = out
+        else:
+            render_colors_viewer, render_alphas_viewer, info_viewer = out
+            
         render_tab_state.total_gs_count = len(self.splats["means"])
         render_tab_state.rendered_gs_count = (
-            (info_viewer["radii"] > 0).all(-1).sum().item()
+            int((info_viewer["radii"] > 0).all(-1).sum().item())
         )
 
         renders_final = None
