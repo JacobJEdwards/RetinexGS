@@ -715,7 +715,8 @@ class Runner:
                 #     illumination_map
                 # )
 
-                loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=1.0)
+                con_degree = 0.5 / torch.mean(pixels).item()
+                loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
 
 
                 loss = (
