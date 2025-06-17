@@ -706,9 +706,9 @@ class Runner:
                 loss_exposure_val = self.loss_exposure(illumination_map)
                 loss_smoothing = self.loss_smooth(illumination_map)
                 loss_variance = torch.var(illumination_map)
-                loss_adaptive_curve = self.loss_adaptive_curve(
-                    illumination_map
-                )
+                # loss_adaptive_curve = self.loss_adaptive_curve(
+                #     illumination_map
+                # )
 
 
                 loss = (
@@ -717,7 +717,7 @@ class Runner:
                     + cfg.lambda_illum_exposure * loss_exposure_val
                     + cfg.lambda_smooth * loss_smoothing
                     + cfg.lambda_illum_variance * loss_variance
-                    + cfg.lambda_adaptive_curve * loss_adaptive_curve
+                    # + cfg.lambda_adaptive_curve * loss_adaptive_curve
                 )
 
             scaler.scale(loss).backward()
@@ -746,9 +746,9 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_variance", loss_variance.item(), step
                 )
-                self.writer.add_scalar(
-                    "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
-                )
+                # self.writer.add_scalar(
+                #     "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
+                # )
 
                 # draw image
                 if self.cfg.tb_save_image:
@@ -978,9 +978,9 @@ class Runner:
                 loss_illum_exposure = self.loss_exposure(illumination_map)
                 loss_illum_smooth = self.loss_smooth(illumination_map)
                 loss_illum_variance = torch.var(illumination_map)
-                loss_adaptive_curve = self.loss_adaptive_curve(
-                    illumination_map
-                )
+                # loss_adaptive_curve = self.loss_adaptive_curve(
+                #     illumination_map
+                # )
 
                 loss_illumination = (
                     cfg.lambda_illum_contrast * loss_illum_contrast
@@ -988,7 +988,7 @@ class Runner:
                     + cfg.lambda_illum_color * loss_illum_color
                     + cfg.lambda_smooth * loss_illum_smooth
                     + cfg.lambda_illum_variance * loss_illum_variance
-                    + cfg.lambda_adaptive_curve * loss_adaptive_curve
+                    # + cfg.lambda_adaptive_curve * loss_adaptive_curve
                 )
 
                 loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
@@ -1280,9 +1280,9 @@ class Runner:
                         "train/illumination_exposure", loss_illum_exposure.item(), step
                     )
                     self.writer.add_scalar("train/loss_reconstruct_low", low_loss.item(), step)
-                    self.writer.add_scalar(
-                        "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
-                    )
+                    # self.writer.add_scalar(
+                    #     "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
+                    # )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
                         "train/clipiqa_score", clipiqa_score_value.item(), step
