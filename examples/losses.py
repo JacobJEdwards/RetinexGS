@@ -227,7 +227,8 @@ class LaplacianLoss(nn.Module):
         self.register_buffer('kernel', kernel)
 
     def forward(self: Self, x: Tensor) -> Tensor:
-        laplacian = F.conv2d(x, self.kernel, padding=1)
+        x_gray = torch.mean(x, dim=1, keepdim=True)
+        laplacian = F.conv2d(x_gray, self.kernel, padding=1)
         return torch.mean(torch.abs(laplacian))
 
 class SmoothingLoss(nn.Module):
