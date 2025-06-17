@@ -727,10 +727,10 @@ class Runner:
                     # + cfg.lambda_adaptive_curve * loss_adaptive_curve
                 )
 
-                print("Spatial reflectance loss:", loss_reflectance_spa.item())
+                # print("Spatial reflectance loss:", loss_reflectance_spa.item())
                 # print("Color loss:", loss_color_val.item())
                 # print("Exposure loss:", loss_exposure_val.item())
-                print("Smoothing loss:", loss_smoothing.item())
+                # print("Smoothing loss:", loss_smoothing.item())
                 # print("Variance loss:", loss_variance.item())
 
 
