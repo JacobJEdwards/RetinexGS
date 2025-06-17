@@ -749,7 +749,7 @@ class Runner:
                 scales=scales,
                 opacities=opacities,
                 colors=colors,
-                viewmats=torch.linalg.inv(camtoworlds),
+                viewmats=torch.linalg.inv(camtoworlds.float()),
                 Ks=Ks,
                 width=width,
                 height=height,
@@ -789,7 +789,7 @@ class Runner:
             opacities=opacities,
             colors=colors,
             colors_low=colors_low,
-            viewmats=torch.linalg.inv(camtoworlds),  # [C, 4, 4]
+            viewmats=torch.linalg.inv(camtoworlds.float()),  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=width,
             height=height,
