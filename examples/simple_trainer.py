@@ -753,6 +753,11 @@ class Runner:
                 # draw image
                 if self.cfg.tb_save_image:
                     with torch.no_grad():
+                        log_input_image = torch.log(input_image_for_net + 1e-8)
+                        target_reflectance = torch.exp(
+                            log_input_image - log_illumination_map
+                        )
+
                         self.writer.add_images(
                             "retinex_net/input_image",
                             input_image_for_net,
@@ -761,6 +766,11 @@ class Runner:
                         self.writer.add_images(
                             "retinex_net/illumination_map",
                             illumination_map,
+                            step,
+                        )
+                        self.writer.add_images(
+                            "retinex_net/target_reflectance",
+                            target_reflectance,
                             step,
                         )
 
