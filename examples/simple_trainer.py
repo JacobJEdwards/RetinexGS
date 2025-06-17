@@ -990,7 +990,7 @@ class Runner:
                 )
                 loss_illum_color = self.loss_color(illumination_map)
                 loss_illum_exposure = self.loss_exposure(illumination_map)
-                loss_illum_smooth = self.loss_smooth(illumination_map.permute(0, 3, 1, 2))
+                loss_illum_smooth = self.loss_smooth(illumination_map)
                 loss_illum_variance = torch.var(illumination_map)
                 # loss_adaptive_curve = self.loss_adaptive_curve(
                 #     illumination_map
