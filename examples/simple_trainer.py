@@ -708,9 +708,9 @@ class Runner:
 
                 # loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
                 loss_color_val = self.loss_color(illumination_map)
-                loss_exposure_val = self.loss_exposure(illumination_map)
+                # loss_exposure_val = self.loss_exposure(illumination_map)
                 loss_smoothing = self.loss_smooth(illumination_map)
-                loss_variance = torch.var(illumination_map)
+                # loss_variance = torch.var(illumination_map)
                 # loss_adaptive_curve = self.loss_adaptive_curve(
                 #     illumination_map
                 # )
