@@ -95,9 +95,9 @@ class HistogramPriorLoss(nn.Module):
 class AdaptiveCurveLoss(nn.Module):
     def __init__(
         self: Self,
-        alpha: float=1.0,
-        beta: float=1.0,
-        low_thresh: float=0.2,
+        alpha: float=0.4,
+        beta: float=0.6,
+        low_thresh: float=0.3,
         high_thresh: float=0.6,
         lambda1: float=1.0,
         lambda2: float=1.0,
