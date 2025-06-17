@@ -815,6 +815,7 @@ class Runner:
     def pre_train_retinex(self):
         cfg = self.cfg
         device = self.device
+        scaler = GradScaler()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -835,40 +836,45 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
-            images_ids = data["image_id"].to(device)
-            pixels = data["image"].to(device) / 255.0
-            input_image_for_net = pixels.permute(0, 3, 1, 2)
+            with autocast():
 
-            self.retinex_optimizer.zero_grad()
-            self.retinex_embed_optimizer.zero_grad()
+                images_ids = data["image_id"].to(device)
+                pixels = data["image"].to(device) / 255.0
+                input_image_for_net = pixels.permute(0, 3, 1, 2)
 
-            retinex_embedding = self.retinex_embeds(images_ids)
+                self.retinex_optimizer.zero_grad()
+                self.retinex_embed_optimizer.zero_grad()
 
-            log_illumination_map = self.retinex_net(
-                input_image_for_net, retinex_embedding
-            )  # [B, 3, H, W]
-            illumination_map = torch.exp(log_illumination_map)
+                retinex_embedding = self.retinex_embeds(images_ids)
 
-            loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
-            loss_color_val = self.loss_color(illumination_map)
-            loss_exposure_val = self.loss_exposure(illumination_map)
-            loss_smoothing = self.loss_smooth(illumination_map)
-            loss_variance = torch.var(illumination_map)
-            loss_adaptive_curve = self.loss_adaptive_curve(
-                illumination_map
-            )
+                log_illumination_map = self.retinex_net(
+                    input_image_for_net, retinex_embedding
+                )  # [B, 3, H, W]
+                illumination_map = torch.exp(log_illumination_map)
+
+                loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
+                loss_color_val = self.loss_color(illumination_map)
+                loss_exposure_val = self.loss_exposure(illumination_map)
+                loss_smoothing = self.loss_smooth(illumination_map)
+                loss_variance = torch.var(illumination_map)
+                loss_adaptive_curve = self.loss_adaptive_curve(
+                    illumination_map
+                )
 
 
-            loss = (
-                cfg.lambda_illum_contrast * loss_spa_val
-                + cfg.lambda_illum_color * loss_color_val
-                + cfg.lambda_illum_exposure * loss_exposure_val
-                + cfg.lambda_smooth * loss_smoothing
-                + cfg.lambda_illum_variance * loss_variance
-                + cfg.lambda_adaptive_curve * loss_adaptive_curve
-            )
+                loss = (
+                    cfg.lambda_illum_contrast * loss_spa_val
+                    + cfg.lambda_illum_color * loss_color_val
+                    + cfg.lambda_illum_exposure * loss_exposure_val
+                    + cfg.lambda_smooth * loss_smoothing
+                    + cfg.lambda_illum_variance * loss_variance
+                    + cfg.lambda_adaptive_curve * loss_adaptive_curve
+                )
 
-            loss.backward()
+            scaler.scale(loss).backward()
+
+            scaler.unscale_(self.retinex_optimizer)
+            scaler.unscale_(self.retinex_embed_optimizer)
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
@@ -1372,7 +1378,9 @@ class Runner:
             for optimizer in self.optimizers.values():
                 scaler.unscale_(optimizer)
 
-            scaler.unscale_(self.retinex_optimizer)
+            if cfg.enable_retinex:
+                scaler.unscale_(self.retinex_optimizer)
+                scaler.unscale_(self.retinex_embed_optimizer)
             if cfg.pose_opt:
                 for optimizer in self.pose_optimizers:
                     scaler.unscale_(optimizer)
