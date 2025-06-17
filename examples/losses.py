@@ -128,17 +128,18 @@ class AdaptiveCurveLoss(nn.Module):
 
         high_mask = (output > self.high_thresh).float()
         high_light_loss = torch.mean(high_mask * torch.abs(output - self.beta))
-
-        smooth_loss = torch.mean((output[:, 1:] - output[:, :-1]) ** 2)
+        
+        grad_y = (output[:, :, 1:, :] - output[:, :, :-1, :]) ** 2
+        grad_x = (output[:, :, :, 1:] - output[:, :, :, :-1]) ** 2
+        smooth_loss = torch.mean(grad_x) + torch.mean(grad_y)
 
         total_loss = (
-            self.lambda1 * low_light_loss
-            + self.lambda2 * high_light_loss
-            + self.lambda3 * smooth_loss
+                self.lambda1 * low_light_loss
+                + self.lambda2 * high_light_loss
+                + self.lambda3 * smooth_loss
         )
 
         return total_loss
-
 
 class ColourConsistencyLoss(nn.Module):
     def __init__(self: Self) -> None:
