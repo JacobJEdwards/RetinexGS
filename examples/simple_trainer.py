@@ -24,6 +24,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal, assert_never
+from torch.cuda.amp import GradScaler, autocast
 
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
@@ -70,7 +71,7 @@ class Config:
 
     port: int = 4000
 
-    batch_size: int = 1
+    batch_size: int = 4
     steps_scaler: float = 1.0
 
     max_steps: int = 30_000
@@ -916,6 +917,8 @@ class Runner:
         world_rank = self.world_rank
         world_size = self.world_size
 
+        scaler = GradScaler()
+
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
                 yaml.dump(vars(cfg), f)
@@ -996,329 +999,307 @@ class Runner:
             sh_degree_to_use = min(
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
-            if (
-                cfg.enable_hard_view_mining
-                and cfg.enable_clipiqa_loss
-                and self.clipiqa_model is not None
-                and step > 0
-                and step % cfg.hard_view_mining_every == 0
-            ):
-                self.find_hard_views(sh_degree_to_use=sh_degree_to_use)
 
-            camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
-            Ks = data["K"].to(device)
+            with autocast(enabled=True):
+                if (
+                    cfg.enable_hard_view_mining
+                    and cfg.enable_clipiqa_loss
+                    and self.clipiqa_model is not None
+                    and step > 0
+                    and step % cfg.hard_view_mining_every == 0
+                ):
+                    self.find_hard_views(sh_degree_to_use=sh_degree_to_use)
 
-            pixels = data["image"].to(device) / 255.0
+                camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
+                Ks = data["K"].to(device)
 
-            num_train_rays_per_step = (
-                pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
-            )
+                pixels = data["image"].to(device) / 255.0
 
-            image_ids = data["image_id"].to(device)
-            masks = data["mask"].to(device) if "mask" in data else None
-
-            if cfg.depth_loss:
-                points = data["points"].to(device)
-                depths_gt = data["depths"].to(device)
-            else:
-                points = None
-                depths_gt = None
-
-            height, width = pixels.shape[1:3]
-
-            if cfg.pose_noise:
-                camtoworlds = self.pose_perturb(camtoworlds, image_ids)
-            if cfg.pose_opt:
-                camtoworlds = self.pose_adjust(camtoworlds, image_ids)
-
-            retinex_embedding = self.retinex_embeds(image_ids)
-            input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net + 1e-8)  # [1, 3, H, W]
-            log_illumination_map = self.retinex_net(
-                input_image_for_net, retinex_embedding
-            )  # [1, 3, H, W]
-            log_reflectance_target = log_input_image - log_illumination_map
-
-            reflectance_target = torch.exp(log_reflectance_target)
-            reflectance_target = torch.clamp(reflectance_target, 0, 1)
-
-            illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
-
-            out = self.rasterize_splats(
-                camtoworlds=camtoworlds,
-                Ks=Ks,
-                width=width,
-                height=height,
-                sh_degree=sh_degree_to_use,
-                near_plane=cfg.near_plane,
-                far_plane=cfg.far_plane,
-                image_ids=image_ids,
-                render_mode="RGB+ED" if cfg.depth_loss else "RGB",
-                masks=masks,
-            )
-
-            if len(out) == 5:
-                renders_enh, renders_low, alphas_enh, alphas_low, info = out
-            else:
-                renders_low, alphas_low, info = out
-                renders_enh, alphas_enh = renders_low, alphas_low
-
-            if renders_low.shape[-1] == 4:
-                colors_low, depths_low = renders_low[..., 0:3], renders_low[..., 3:4]
-                colors_enh, depths_enh = renders_enh[..., 0:3], renders_enh[..., 3:4]
-            else:
-                colors_low, depths_low = renders_low, None
-                colors_enh, depths_enh = renders_enh, None
-
-            if cfg.use_bilateral_grid:
-                assert slice_func is not None, "slice_func must be defined for bilateral grid slicing"
-
-                grid_y, grid_x = torch.meshgrid(
-                    (torch.arange(height, device=self.device) + 0.5) / height,
-                    (torch.arange(width, device=self.device) + 0.5) / width,
-                    indexing="ij",
+                num_train_rays_per_step = (
+                    pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
                 )
-                grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)
 
-                colors_low = slice_func(
-                    self.bil_grids,
-                    grid_xy.expand(colors_low.shape[0], -1, -1, -1),
-                    colors_low,
-                    image_ids.unsqueeze(-1),
-                )["rgb"]
+                image_ids = data["image_id"].to(device)
+                masks = data["mask"].to(device) if "mask" in data else None
 
-                colors_enh = slice_func(
-                    self.bil_grids,
-                    grid_xy.expand(colors_enh.shape[0], -1, -1, -1),
-                    colors_enh,
-                    image_ids.unsqueeze(-1),
-                )["rgb"]
-
-            if cfg.random_bkgd:
-                bkgd = torch.rand(1, 3, device=device)
-                colors_low += bkgd * (1.0 - alphas_low)
-                colors_enh += bkgd * (1.0 - alphas_enh)
-
-            info["means2d"].retain_grad()
-
-            reflectance_target_permuted = reflectance_target.permute(
-                0, 2, 3, 1
-            )  # [1, H, W, 3]
-
-            loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
-
-            loss_reconstruct_low = F.l1_loss(colors_low, pixels)
-
-            ssim_loss_low = 1.0 - self.ssim(
-                colors_low.permute(0, 3, 1, 2),
-                pixels.permute(0, 3, 1, 2),
-            )
-
-            con_degree = 0.5 / torch.mean(pixels).item()
-
-            loss_illum_contrast = self.loss_spatial(
-                input_image_for_net,
-                illumination_map,
-                contrast=con_degree,
-            )
-
-            low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
-                ssim_loss_low * cfg.ssim_lambda
-            )
-
-            loss_illum_color = self.loss_color(illumination_map)
-            loss_illum_exposure = self.loss_exposure(illumination_map)
-            loss_illum_smooth = self.loss_smooth(illumination_map)
-            loss_illum_variance = torch.var(illumination_map)
-            loss_adaptive_curve = self.loss_adaptive_curve(
-                illumination_map
-            )
-
-            loss_illumination = (
-                cfg.lambda_illum_contrast * loss_illum_contrast
-                + cfg.lambda_illum_exposure * loss_illum_exposure
-                + cfg.lambda_illum_color * loss_illum_color
-                + cfg.lambda_smooth * loss_illum_smooth
-                + cfg.lambda_illum_variance * loss_illum_variance
-                + cfg.lambda_adaptive_curve * loss_adaptive_curve
-            )
-
-            loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
-
-            self.cfg.strategy.step_pre_backward(
-                params=self.splats,
-                optimizers=self.optimizers,
-                state=self.strategy_state,
-                step=step,
-                info=info,
-            )
-
-            clipiqa_loss_value = torch.tensor(0.0, device=device)
-            clipiqa_score_value = torch.tensor(0.0, device=device)
-
-            apply_clipiqa_novel_view_loss = (
-                cfg.enable_clipiqa_loss
-                and self.clipiqa_model is not None
-                and current_clipiqa_lambda > 0
-                and step % cfg.clipiqa_novel_view_frequency == 0
-            )
-
-            if apply_clipiqa_novel_view_loss:
-                if not self.parser.Ks_dict or not self.parser.imsize_dict:
-                    if world_rank == 0:
-                        print(
-                            f"Step {step}: Warning: Ks_dict or imsize_dict is empty. Skipping CLIPIQA novel view loss."
-                        )
+                if cfg.depth_loss:
+                    points = data["points"].to(device)
+                    depths_gt = data["depths"].to(device)
                 else:
-                    first_cam_key = list(self.parser.Ks_dict.keys())[0]
-                    K_novel_base = (
-                        torch.from_numpy(self.parser.Ks_dict[first_cam_key])
-                        .float()
-                        .to(device)
+                    points = None
+                    depths_gt = None
+
+                height, width = pixels.shape[1:3]
+
+                if cfg.pose_noise:
+                    camtoworlds = self.pose_perturb(camtoworlds, image_ids)
+                if cfg.pose_opt:
+                    camtoworlds = self.pose_adjust(camtoworlds, image_ids)
+
+                retinex_embedding = self.retinex_embeds(image_ids)
+                input_image_for_net = pixels.permute(0, 3, 1, 2)
+                log_input_image = torch.log(input_image_for_net + 1e-8)  # [1, 3, H, W]
+                log_illumination_map = self.retinex_net(
+                    input_image_for_net, retinex_embedding
+                )  # [1, 3, H, W]
+                log_reflectance_target = log_input_image - log_illumination_map
+
+                reflectance_target = torch.exp(log_reflectance_target)
+                reflectance_target = torch.clamp(reflectance_target, 0, 1)
+
+                illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
+
+                out = self.rasterize_splats(
+                    camtoworlds=camtoworlds,
+                    Ks=Ks,
+                    width=width,
+                    height=height,
+                    sh_degree=sh_degree_to_use,
+                    near_plane=cfg.near_plane,
+                    far_plane=cfg.far_plane,
+                    image_ids=image_ids,
+                    render_mode="RGB+ED" if cfg.depth_loss else "RGB",
+                    masks=masks,
+                )
+
+                if len(out) == 5:
+                    renders_enh, renders_low, alphas_enh, alphas_low, info = out
+                else:
+                    renders_low, alphas_low, info = out
+                    renders_enh, alphas_enh = renders_low, alphas_low
+
+                if renders_low.shape[-1] == 4:
+                    colors_low, depths_low = renders_low[..., 0:3], renders_low[..., 3:4]
+                    colors_enh, depths_enh = renders_enh[..., 0:3], renders_enh[..., 3:4]
+                else:
+                    colors_low, depths_low = renders_low, None
+                    colors_enh, depths_enh = renders_enh, None
+
+                if cfg.use_bilateral_grid:
+                    assert slice_func is not None, "slice_func must be defined for bilateral grid slicing"
+
+                    grid_y, grid_x = torch.meshgrid(
+                        (torch.arange(height, device=self.device) + 0.5) / height,
+                        (torch.arange(width, device=self.device) + 0.5) / width,
+                        indexing="ij",
                     )
-                    width_novel, height_novel = self.parser.imsize_dict[first_cam_key]
+                    grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)
 
-                    novel_c2w_for_loss = None
-                    num_actual_views_for_clipiqa = 0
+                    colors_low = slice_func(
+                        self.bil_grids,
+                        grid_xy.expand(colors_low.shape[0], -1, -1, -1),
+                        colors_low,
+                        image_ids.unsqueeze(-1),
+                    )["rgb"]
 
-                    if (
-                        cfg.enable_hard_view_mining
-                        and self.hard_view_candidate_poses is not None
-                        and self.hard_view_indices is not None
-                        and len(self.hard_view_indices) > 0
-                    ):
-                        num_to_sample = min(
-                            cfg.hard_view_mining_batch_size, len(self.hard_view_indices)
-                        )
-                        selected_indices = self.hard_view_indices[:num_to_sample]
-                        novel_c2w_for_loss = self.hard_view_candidate_poses[
-                            selected_indices
-                        ]
-                        num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[0]
-                        if world_rank == 0 and step % (cfg.tb_every * 10) == 0:
+                    colors_enh = slice_func(
+                        self.bil_grids,
+                        grid_xy.expand(colors_enh.shape[0], -1, -1, -1),
+                        colors_enh,
+                        image_ids.unsqueeze(-1),
+                    )["rgb"]
+
+                if cfg.random_bkgd:
+                    bkgd = torch.rand(1, 3, device=device)
+                    colors_low += bkgd * (1.0 - alphas_low)
+                    colors_enh += bkgd * (1.0 - alphas_enh)
+
+                info["means2d"].retain_grad()
+
+                reflectance_target_permuted = reflectance_target.permute(
+                    0, 2, 3, 1
+                )  # [1, H, W, 3]
+
+                loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
+
+                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
+
+                ssim_loss_low = 1.0 - self.ssim(
+                    colors_low.permute(0, 3, 1, 2),
+                    pixels.permute(0, 3, 1, 2),
+                )
+
+                con_degree = 0.5 / torch.mean(pixels).item()
+
+                loss_illum_contrast = self.loss_spatial(
+                    input_image_for_net,
+                    illumination_map,
+                    contrast=con_degree,
+                )
+
+                low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
+                    ssim_loss_low * cfg.ssim_lambda
+                )
+
+                loss_illum_color = self.loss_color(illumination_map)
+                loss_illum_exposure = self.loss_exposure(illumination_map)
+                loss_illum_smooth = self.loss_smooth(illumination_map)
+                loss_illum_variance = torch.var(illumination_map)
+                loss_adaptive_curve = self.loss_adaptive_curve(
+                    illumination_map
+                )
+
+                loss_illumination = (
+                    cfg.lambda_illum_contrast * loss_illum_contrast
+                    + cfg.lambda_illum_exposure * loss_illum_exposure
+                    + cfg.lambda_illum_color * loss_illum_color
+                    + cfg.lambda_smooth * loss_illum_smooth
+                    + cfg.lambda_illum_variance * loss_illum_variance
+                    + cfg.lambda_adaptive_curve * loss_adaptive_curve
+                )
+
+                loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
+
+                self.cfg.strategy.step_pre_backward(
+                    params=self.splats,
+                    optimizers=self.optimizers,
+                    state=self.strategy_state,
+                    step=step,
+                    info=info,
+                )
+
+                clipiqa_loss_value = torch.tensor(0.0, device=device)
+                clipiqa_score_value = torch.tensor(0.0, device=device)
+
+                apply_clipiqa_novel_view_loss = (
+                    cfg.enable_clipiqa_loss
+                    and self.clipiqa_model is not None
+                    and current_clipiqa_lambda > 0
+                    and step % cfg.clipiqa_novel_view_frequency == 0
+                )
+
+                if apply_clipiqa_novel_view_loss:
+                    if not self.parser.Ks_dict or not self.parser.imsize_dict:
+                        if world_rank == 0:
                             print(
-                                f"Step {step}: Using {num_actual_views_for_clipiqa} hard views for CLIPIQA loss."
+                                f"Step {step}: Warning: Ks_dict or imsize_dict is empty. Skipping CLIPIQA novel view loss."
                             )
+                    else:
+                        first_cam_key = list(self.parser.Ks_dict.keys())[0]
+                        K_novel_base = (
+                            torch.from_numpy(self.parser.Ks_dict[first_cam_key])
+                            .float()
+                            .to(device)
+                        )
+                        width_novel, height_novel = self.parser.imsize_dict[first_cam_key]
 
-                    if novel_c2w_for_loss is None or num_actual_views_for_clipiqa == 0:
-                        base_poses_np = np.copy(self.parser.camtoworlds)
-                        if base_poses_np.shape[0] > 0:
-                            if (
-                                base_poses_np.shape[1] == 3
-                                and base_poses_np.shape[2] == 4
-                            ):
-                                bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
-                                repeated_bottom_row = np.repeat(
-                                    bottom_row, len(base_poses_np), axis=0
-                                )
-                                base_poses_np = np.concatenate(
-                                    [base_poses_np, repeated_bottom_row], axis=1
-                                )
+                        novel_c2w_for_loss = None
+                        num_actual_views_for_clipiqa = 0
 
-                        if base_poses_np.shape[1:] == (4, 4):
-                            novel_c2w_np = generate_novel_views(
-                                base_poses=base_poses_np,
-                                num_novel_views=cfg.num_novel_to_render,
-                                translation_perturbation=cfg.novel_view_translation_pertube,
-                                rotation_perturbation=cfg.novel_view_rotation_pertube,
+                        if (
+                            cfg.enable_hard_view_mining
+                            and self.hard_view_candidate_poses is not None
+                            and self.hard_view_indices is not None
+                            and len(self.hard_view_indices) > 0
+                        ):
+                            num_to_sample = min(
+                                cfg.hard_view_mining_batch_size, len(self.hard_view_indices)
                             )
-                            if novel_c2w_np.size > 0:
-                                novel_c2w_for_loss = (
-                                    torch.from_numpy(novel_c2w_np).float().to(device)
+                            selected_indices = self.hard_view_indices[:num_to_sample]
+                            novel_c2w_for_loss = self.hard_view_candidate_poses[
+                                selected_indices
+                            ]
+                            num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[0]
+                            if world_rank == 0 and step % (cfg.tb_every * 10) == 0:
+                                print(
+                                    f"Step {step}: Using {num_actual_views_for_clipiqa} hard views for CLIPIQA loss."
                                 )
-                                num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[
-                                    0
-                                ]
-                                if world_rank == 0 and step % (cfg.tb_every * 10) == 0:
+
+                        if novel_c2w_for_loss is None or num_actual_views_for_clipiqa == 0:
+                            base_poses_np = np.copy(self.parser.camtoworlds)
+                            if base_poses_np.shape[0] > 0:
+                                if (
+                                    base_poses_np.shape[1] == 3
+                                    and base_poses_np.shape[2] == 4
+                                ):
+                                    bottom_row = np.array([[[0.0, 0.0, 0.0, 1.0]]])
+                                    repeated_bottom_row = np.repeat(
+                                        bottom_row, len(base_poses_np), axis=0
+                                    )
+                                    base_poses_np = np.concatenate(
+                                        [base_poses_np, repeated_bottom_row], axis=1
+                                    )
+
+                            if base_poses_np.shape[1:] == (4, 4):
+                                novel_c2w_np = generate_novel_views(
+                                    base_poses=base_poses_np,
+                                    num_novel_views=cfg.num_novel_to_render,
+                                    translation_perturbation=cfg.novel_view_translation_pertube,
+                                    rotation_perturbation=cfg.novel_view_rotation_pertube,
+                                )
+                                if novel_c2w_np.size > 0:
+                                    novel_c2w_for_loss = (
+                                        torch.from_numpy(novel_c2w_np).float().to(device)
+                                    )
+                                    num_actual_views_for_clipiqa = novel_c2w_for_loss.shape[
+                                        0
+                                    ]
+                                    if world_rank == 0 and step % (cfg.tb_every * 10) == 0:
+                                        print(
+                                            f"Step {step}: Generated {num_actual_views_for_clipiqa} novel views for CLIPIQA loss."
+                                        )
+                            else:
+                                if world_rank == 0:
                                     print(
-                                        f"Step {step}: Generated {num_actual_views_for_clipiqa} novel views for CLIPIQA loss."
+                                        f"Step {step}: Warning: Base poses for novel view generation are not 4x4. Skipping CLIPIQA."
                                     )
                         else:
                             if world_rank == 0:
                                 print(
-                                    f"Step {step}: Warning: Base poses for novel view generation are not 4x4. Skipping CLIPIQA."
+                                    f"Step {step}: Warning: No base poses available. Skipping CLIPIQA."
                                 )
-                    else:
-                        if world_rank == 0:
-                            print(
-                                f"Step {step}: Warning: No base poses available. Skipping CLIPIQA."
+
+                        if (
+                            novel_c2w_for_loss is not None
+                            and num_actual_views_for_clipiqa > 0
+                        ):
+                            if cfg.enable_variational_intrinsics:
+                                K_novel_for_loss = generate_variational_intrinsics(
+                                    K_novel_base,
+                                    num_intrinsics=num_actual_views_for_clipiqa,
+                                    focal_perturb_factor=cfg.focal_length_perturb_factor,
+                                    principal_point_perturb_pixel=cfg.principal_point_perturb_pixel,
+                                )
+                            else:
+                                K_novel_for_loss = K_novel_base.unsqueeze(0).expand(
+                                    num_actual_views_for_clipiqa, -1, -1
+                                )
+
+                            out = self.rasterize_splats(
+                                camtoworlds=novel_c2w_for_loss,
+                                Ks=K_novel_for_loss,
+                                width=width_novel,
+                                height=height_novel,
+                                sh_degree=sh_degree_to_use,
+                                render_mode="RGB",
+                                near_plane=cfg.near_plane,
+                                far_plane=cfg.far_plane,
                             )
 
-                    if (
-                        novel_c2w_for_loss is not None
-                        and num_actual_views_for_clipiqa > 0
-                    ):
-                        if cfg.enable_variational_intrinsics:
-                            K_novel_for_loss = generate_variational_intrinsics(
-                                K_novel_base,
-                                num_intrinsics=num_actual_views_for_clipiqa,
-                                focal_perturb_factor=cfg.focal_length_perturb_factor,
-                                principal_point_perturb_pixel=cfg.principal_point_perturb_pixel,
-                            )
-                        else:
-                            K_novel_for_loss = K_novel_base.unsqueeze(0).expand(
-                                num_actual_views_for_clipiqa, -1, -1
-                            )
+                            if cfg.enable_retinex and len(out) == 5:
+                                novel_renders, _, _, _, _ = out
+                            elif not cfg.enable_retinex and len(out) == 3:
+                                novel_renders, _, _ = out
+                            else:
+                                raise ValueError(
+                                    f"Unexpected output length from rasterization: {len(out)}"
+                                )
 
-                        out = self.rasterize_splats(
-                            camtoworlds=novel_c2w_for_loss,
-                            Ks=K_novel_for_loss,
-                            width=width_novel,
-                            height=height_novel,
-                            sh_degree=sh_degree_to_use,
-                            render_mode="RGB",
-                            near_plane=cfg.near_plane,
-                            far_plane=cfg.far_plane,
-                        )
+                            colors_nchw = novel_renders.permute(0, 3, 1, 2).contiguous()
+                            colors_nchw = torch.clamp(colors_nchw, 0.0, 1.0)
 
-                        if cfg.enable_retinex and len(out) == 5:
-                            novel_renders, _, _, _, _ = out
-                        elif not cfg.enable_retinex and len(out) == 3:
-                            novel_renders, _, _ = out
-                        else:
-                            raise ValueError(
-                                f"Unexpected output length from rasterization: {len(out)}"
-                            )
+                            current_clipiqa_score = self.clipiqa_model(colors_nchw).mean()
+                            clipiqa_score_value = current_clipiqa_score
+                            temp_clipiqa_loss_value = -clipiqa_score_value
+                            loss = loss + current_clipiqa_lambda * temp_clipiqa_loss_value
+                            clipiqa_loss_value = temp_clipiqa_loss_value
 
-                        colors_nchw = novel_renders.permute(0, 3, 1, 2).contiguous()
-                        colors_nchw = torch.clamp(colors_nchw, 0.0, 1.0)
+                depthloss_value = torch.tensor(0.0, device=device)
 
-                        current_clipiqa_score = self.clipiqa_model(colors_nchw).mean()
-                        clipiqa_score_value = current_clipiqa_score
-                        temp_clipiqa_loss_value = -clipiqa_score_value
-                        loss = loss + current_clipiqa_lambda * temp_clipiqa_loss_value
-                        clipiqa_loss_value = temp_clipiqa_loss_value
-
-            depthloss_value = torch.tensor(0.0, device=device)
-
-            if cfg.depth_loss:
-                assert depths_gt is not None, "Depth ground truth is required for depth loss"
-                assert points is not None, "Points are required for depth loss"
-                assert depths_low is not None, "Low-resolution depths are required for depth loss"
-
-                # query depths from depth map
-                points = torch.stack(
-                    [
-                        points[:, :, 0] / (width - 1) * 2 - 1,
-                        points[:, :, 1] / (height - 1) * 2 - 1,
-                    ],
-                    dim=-1,
-                )  # normalize to [-1, 1]
-                grid = points.unsqueeze(2)  # [1, M, 1, 2]
-                depths_low = F.grid_sample(
-                    depths_low.permute(0, 3, 1, 2), grid, align_corners=True
-                )  # [1, 1, M, 1]
-                depths_low = depths_low.squeeze(3).squeeze(1)  # [1, M]
-                # calculate loss in disparity space
-                disp = torch.where(
-                    depths_low > 0.0, 1.0 / depths_low, torch.zeros_like(depths_low)
-                )
-                disp_gt = 1.0 / depths_gt  # [1, M]
-                depthloss = F.l1_loss(disp, disp_gt) * self.scene_scale
-                loss += depthloss * cfg.depth_lambda
-
-                if cfg.enable_retinex:
-                    assert depths_enh is not None, "Enhanced depths are required for enhanced depth loss"
+                if cfg.depth_loss:
+                    assert depths_gt is not None, "Depth ground truth is required for depth loss"
+                    assert points is not None, "Points are required for depth loss"
+                    assert depths_low is not None, "Low-resolution depths are required for depth loss"
 
                     # query depths from depth map
                     points = torch.stack(
@@ -1329,40 +1310,76 @@ class Runner:
                         dim=-1,
                     )  # normalize to [-1, 1]
                     grid = points.unsqueeze(2)  # [1, M, 1, 2]
-                    depths_enh = F.grid_sample(
-                        depths_enh.permute(0, 3, 1, 2), grid, align_corners=True
+                    depths_low = F.grid_sample(
+                        depths_low.permute(0, 3, 1, 2), grid, align_corners=True
                     )  # [1, 1, M, 1]
-                    depths_enh = depths_enh.squeeze(3).squeeze(1)  # [1, M]
+                    depths_low = depths_low.squeeze(3).squeeze(1)  # [1, M]
                     # calculate loss in disparity space
                     disp = torch.where(
-                        depths_enh > 0.0, 1.0 / depths_enh, torch.zeros_like(depths_enh)
+                        depths_low > 0.0, 1.0 / depths_low, torch.zeros_like(depths_low)
                     )
                     disp_gt = 1.0 / depths_gt  # [1, M]
-                    depthloss_enh = F.l1_loss(disp, disp_gt) * self.scene_scale
-                    loss += depthloss_enh * cfg.depth_lambda
+                    depthloss = F.l1_loss(disp, disp_gt) * self.scene_scale
+                    loss += depthloss * cfg.depth_lambda
 
-            tvloss_value: Tensor = torch.tensor(0.0, device=device)
+                    if cfg.enable_retinex:
+                        assert depths_enh is not None, "Enhanced depths are required for enhanced depth loss"
+
+                        # query depths from depth map
+                        points = torch.stack(
+                            [
+                                points[:, :, 0] / (width - 1) * 2 - 1,
+                                points[:, :, 1] / (height - 1) * 2 - 1,
+                            ],
+                            dim=-1,
+                        )  # normalize to [-1, 1]
+                        grid = points.unsqueeze(2)  # [1, M, 1, 2]
+                        depths_enh = F.grid_sample(
+                            depths_enh.permute(0, 3, 1, 2), grid, align_corners=True
+                        )  # [1, 1, M, 1]
+                        depths_enh = depths_enh.squeeze(3).squeeze(1)  # [1, M]
+                        # calculate loss in disparity space
+                        disp = torch.where(
+                            depths_enh > 0.0, 1.0 / depths_enh, torch.zeros_like(depths_enh)
+                        )
+                        disp_gt = 1.0 / depths_gt  # [1, M]
+                        depthloss_enh = F.l1_loss(disp, disp_gt) * self.scene_scale
+                        loss += depthloss_enh * cfg.depth_lambda
+
+                tvloss_value: Tensor = torch.tensor(0.0, device=device)
+                if cfg.use_bilateral_grid:
+                    global total_variation_loss
+
+                    assert total_variation_loss is not None
+
+                    tvloss_value = cast(
+                        Tensor, 10 * total_variation_loss(self.bil_grids.grids)
+                    )
+                    loss += tvloss_value
+
+                if cfg.opacity_reg > 0.0:
+                    loss += (
+                        cfg.opacity_reg
+                        * torch.abs(torch.sigmoid(self.splats["opacities"])).mean()
+                    )
+                if cfg.scale_reg > 0.0:
+                    loss += (
+                        cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean()
+                    )
+
+            scaler.scale(loss).backward()
+
+            for optimizer in self.optimizers.values():
+                scaler.unscale_(optimizer)
+
+            scaler.unscale_(self.retinex_optimizer)
+            if cfg.pose_opt:
+                for optimizer in self.pose_optimizers:
+                    scaler.unscale_(optimizer)
+
             if cfg.use_bilateral_grid:
-                global total_variation_loss
-
-                assert total_variation_loss is not None
-
-                tvloss_value = cast(
-                    Tensor, 10 * total_variation_loss(self.bil_grids.grids)
-                )
-                loss += tvloss_value
-
-            if cfg.opacity_reg > 0.0:
-                loss += (
-                    cfg.opacity_reg
-                    * torch.abs(torch.sigmoid(self.splats["opacities"])).mean()
-                )
-            if cfg.scale_reg > 0.0:
-                loss += (
-                    cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean()
-                )
-
-            loss.backward()
+                for optimizer in self.bil_grid_optimizers:
+                    scaler.unscale_(optimizer)
 
             desc_parts = [f"loss={loss.item():.3f}"]
             if cfg.enable_clipiqa_loss and clipiqa_score_value.item() != 0.0:
@@ -1584,6 +1601,8 @@ class Runner:
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.step()
             self.retinex_embed_optimizer.zero_grad()
+
+            scaler.update()
 
             for scheduler in schedulers:
                 scheduler.step()
