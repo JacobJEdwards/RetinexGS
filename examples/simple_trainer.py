@@ -707,7 +707,7 @@ class Runner:
 
 
                 # loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
-                loss_color_val = self.loss_color(illumination_map)
+                # loss_color_val = self.loss_color(illumination_map)
                 # loss_exposure_val = self.loss_exposure(illumination_map)
                 loss_smoothing = self.loss_smooth(illumination_map)
                 # loss_variance = torch.var(illumination_map)
@@ -721,17 +721,17 @@ class Runner:
 
                 loss = (
                     cfg.lambda_reflect * loss_reflectance_spa
-                    + cfg.lambda_illum_color * loss_color_val
+                    # + cfg.lambda_illum_color * loss_color_val
                     # + cfg.lambda_illum_exposure * loss_exposure_val
                     + cfg.lambda_smooth * loss_smoothing
                     # + cfg.lambda_illum_variance * loss_variance
                     # + cfg.lambda_adaptive_curve * loss_adaptive_curve
                 )
 
-                # print("Spatial reflectance loss:", loss_reflectance_spa.item())
+                print("Spatial reflectance loss:", loss_reflectance_spa.item())
                 # print("Color loss:", loss_color_val.item())
                 # print("Exposure loss:", loss_exposure_val.item())
-                # print("Smoothing loss:", loss_smoothing.item())
+                print("Smoothing loss:", loss_smoothing.item())
                 # print("Variance loss:", loss_variance.item())
 
 
@@ -749,18 +749,18 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_spatial", loss_reflectance_spa.item(), step
                 )
-                self.writer.add_scalar(
-                    "retinex_net/loss_color", loss_color_val.item(), step
-                )
-                self.writer.add_scalar(
-                    "retinex_net/loss_exposure", loss_exposure_val.item(), step
-                )
+                # self.writer.add_scalar(
+                #     "retinex_net/loss_color", loss_color_val.item(), step
+                # )
+                # self.writer.add_scalar(
+                #     "retinex_net/loss_exposure", loss_exposure_val.item(), step
+                # )
                 self.writer.add_scalar(
                     "retinex_net/loss_smooth", loss_smoothing.item(), step
                 )
-                self.writer.add_scalar(
-                    "retinex_net/loss_variance", loss_variance.item(), step
-                )
+                # self.writer.add_scalar(
+                #     "retinex_net/loss_variance", loss_variance.item(), step
+                # )
                 # self.writer.add_scalar(
                 #     "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
                 # )
