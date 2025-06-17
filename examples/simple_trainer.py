@@ -159,7 +159,7 @@ class Config:
     principal_point_perturb_pixel: int = 10
 
     enable_retinex: bool = True
-    multi_scale_retinex: bool = False
+    multi_scale_retinex: bool = True
 
     lambda_low: float = 0.8
 
@@ -859,7 +859,7 @@ class Runner:
                 illumination_map = torch.exp(log_illumination_map)
 
                 loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
-                # loss_color_val = self.loss_color(illumination_map)
+                loss_color_val = self.loss_color(illumination_map)
                 loss_exposure_val = self.loss_exposure(illumination_map)
                 loss_smoothing = self.loss_smooth(illumination_map)
                 loss_variance = torch.var(illumination_map)
@@ -870,7 +870,7 @@ class Runner:
 
                 loss = (
                     cfg.lambda_illum_contrast * loss_spa_val
-                    # + cfg.lambda_illum_color * loss_color_val
+                    + cfg.lambda_illum_color * loss_color_val
                     + cfg.lambda_illum_exposure * loss_exposure_val
                     + cfg.lambda_smooth * loss_smoothing
                     + cfg.lambda_illum_variance * loss_variance
@@ -891,9 +891,9 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_spatial", loss_spa_val.item(), step
                 )
-                # self.writer.add_scalar(
-                #     "retinex_net/loss_color", loss_color_val.item(), step
-                # )
+                self.writer.add_scalar(
+                    "retinex_net/loss_color", loss_color_val.item(), step
+                )
                 self.writer.add_scalar(
                     "retinex_net/loss_exposure", loss_exposure_val.item(), step
                 )
@@ -1142,7 +1142,7 @@ class Runner:
                     ssim_loss_low * cfg.ssim_lambda
                 )
 
-                # loss_illum_color = self.loss_color(illumination_map)
+                loss_illum_color = self.loss_color(illumination_map)
                 loss_illum_exposure = self.loss_exposure(illumination_map)
                 loss_illum_smooth = self.loss_smooth(illumination_map)
                 loss_illum_variance = torch.var(illumination_map)
@@ -1153,7 +1153,7 @@ class Runner:
                 loss_illumination = (
                     cfg.lambda_illum_contrast * loss_illum_contrast
                     + cfg.lambda_illum_exposure * loss_illum_exposure
-                    # + cfg.lambda_illum_color * loss_illum_color
+                    + cfg.lambda_illum_color * loss_illum_color
                     + cfg.lambda_smooth * loss_illum_smooth
                     + cfg.lambda_illum_variance * loss_illum_variance
                     + cfg.lambda_adaptive_curve * loss_adaptive_curve
@@ -1441,9 +1441,9 @@ class Runner:
                     self.writer.add_scalar(
                         "train/illumination_loss", loss_illumination.item(), step
                     )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_color", loss_illum_color.item(), step
-                    # )
+                    self.writer.add_scalar(
+                        "train/illumination_color", loss_illum_color.item(), step
+                    )
                     self.writer.add_scalar(
                         "train/illumination_exposure", loss_illum_exposure.item(), step
                     )
