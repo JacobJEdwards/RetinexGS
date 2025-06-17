@@ -715,7 +715,7 @@ class Runner:
                 #     illumination_map
                 # )
 
-                loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map)
+                loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=1.0)
 
 
                 loss = (
