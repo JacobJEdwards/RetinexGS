@@ -836,7 +836,7 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
-            with autocast():
+            with autocast(device_type=device):
 
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
@@ -1006,7 +1006,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with autocast(enabled=True):
+            with autocast(device_type=device):
                 if (
                     cfg.enable_hard_view_mining
                     and cfg.enable_clipiqa_loss
