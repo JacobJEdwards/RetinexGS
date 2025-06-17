@@ -873,11 +873,10 @@ class Runner:
 
             scaler.scale(loss).backward()
 
-            scaler.unscale_(self.retinex_optimizer)
-            scaler.unscale_(self.retinex_embed_optimizer)
+            scaler.step(self.retinex_optimizer)
+            scaler.step(self.retinex_embed_optimizer)
 
-            self.retinex_optimizer.step()
-            self.retinex_embed_optimizer.step()
+            scaler.update()
 
             pbar.set_postfix({"loss": loss.item()})
 
@@ -1591,23 +1590,23 @@ class Runner:
 
             for optimizer in self.optimizers.values():
                 if cfg.visible_adam:
-                    optimizer.step(visibility_mask)
+                    scaler.step(optimizer, visibility_mask)
                 else:
-                    optimizer.step()
+                    scaler.step(optimizer)
                 optimizer.zero_grad()
             for optimizer in self.pose_optimizers:
-                optimizer.step()
+                scaler.step(optimizer)
                 optimizer.zero_grad()
             for optimizer in self.app_optimizers:
-                optimizer.step()
+                scaler.step(optimizer)
                 optimizer.zero_grad()
             for optimizer in self.bil_grid_optimizers:
-                optimizer.step()
+                scaler.step(optimizer)
                 optimizer.zero_grad()
 
-            self.retinex_optimizer.step()
+            scaler.step(self.retinex_optimizer)
             self.retinex_optimizer.zero_grad()
-            self.retinex_embed_optimizer.step()
+            scaler.step(self.retinex_embed_optimizer)
             self.retinex_embed_optimizer.zero_grad()
 
             scaler.update()
