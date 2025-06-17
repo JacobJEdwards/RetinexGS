@@ -173,6 +173,11 @@ class ExposureLoss(nn.Module):
         return d
 
 class SpatialLoss(nn.Module):
+    weight_left: Tensor
+    weight_right: Tensor
+    weight_up: Tensor
+    weight_down: Tensor
+    
     def __init__(self: Self) -> None:
         super(SpatialLoss, self).__init__()
         kernel_left = torch.tensor([[0,0,0],[-1,1,0],[0,0,0]], dtype=torch.float32).view(1,1,3,3)
@@ -214,6 +219,8 @@ class SpatialLoss(nn.Module):
         return E.mean()
 
 class LaplacianLoss(nn.Module):
+    kernel: Tensor
+    
     def __init__(self: Self) -> None:
         super(LaplacianLoss, self).__init__()
         kernel = torch.tensor([[0,1,0],[1,-4,1],[0,1,0]], dtype=torch.float32).view(1,1,3,3)
@@ -224,6 +231,11 @@ class LaplacianLoss(nn.Module):
         return torch.mean(torch.abs(laplacian))
 
 class SmoothingLoss(nn.Module):
+    weight_left: Tensor
+    weight_right: Tensor
+    weight_up: Tensor
+    weight_down: Tensor
+    
     def __init__(self: Self) -> None:
         super(SmoothingLoss, self).__init__()
         kernel_left = torch.tensor([[0,0,0],[-1,1,0],[0,0,0]], dtype=torch.float32).view(1,1,3,3)
@@ -264,4 +276,4 @@ if __name__ == "__main__":
 
     curve_1 = torch.linspace(0, 1, 255).unsqueeze(0)
     curve_2 = gamma_curve(curve_1, 1.0)
-    curve_3 = s_curve(curve_2, alpha=1.0, beta=1.0)
+    curve_3 = s_curve(curve_2, alpha=1.0)

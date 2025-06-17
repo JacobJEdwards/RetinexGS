@@ -3,8 +3,6 @@ import math
 import os
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import cast, Any
 
 import imageio
@@ -14,9 +12,7 @@ import torch
 import torch.nn.functional as F
 import tqdm
 import tyro
-import viser
 import yaml
-from nerfview import CameraState, RenderTabState, apply_float_colormap
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler
@@ -33,16 +29,15 @@ from datasets.traj import (
     generate_spiral_path,
     generate_novel_views,
 )
+from config import Config
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, SmoothingLoss, AdaptiveCurveLoss
 from rendering_double import rasterization_dual
-from utils import MultiScaleRetinexNet, RetinexNet
 from gsplat import export_splats
 from gsplat.compression import PngCompression
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
 from gsplat.rendering import rasterization
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
-from gsplat_viewer import GsplatViewer, GsplatRenderTabState
 from utils import (
     AppearanceOptModule,
     CameraOptModule,
@@ -51,150 +46,7 @@ from utils import (
     set_random_seed,
     generate_variational_intrinsics,
 )
-
-
-@dataclass
-class Config:
-    disable_viewer: bool = True
-    ckpt: list[str] | None = None
-    compression: Literal["png"] | None = None
-    render_traj_path: str = "interp"
-
-    data_dir: Path = Path("../../colmap")
-    data_factor: int = 1
-    result_dir: Path = Path("../../result")
-    test_every: int = 8
-    patch_size: int | None = None
-    global_scale: float = 1.0
-    normalize_world_space: bool = True
-    camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
-
-    port: int = 4000
-
-    batch_size: int = 1
-    steps_scaler: float = 1.0
-
-    max_steps: int = 30_000
-    eval_steps: list[int] = field(default_factory=lambda: [3000, 7_000, 14_000, 30_000])
-    save_steps: list[int] = field(default_factory=lambda: [3000, 7_000, 14_000, 30_000])
-    save_ply: bool = True
-    ply_steps: list[int] = field(default_factory=lambda: [3000, 7_000, 14_000, 30_000])
-    disable_video: bool = False
-
-    init_type: str = "sfm"
-    init_num_pts: int = 100_000
-    init_extent: float = 3.0
-    sh_degree: int = 3
-    sh_degree_interval: int = 1000
-    init_opa: float = 0.1
-    init_scale: float = 1.0
-    ssim_lambda: float = 0.2
-
-    near_plane: float = 0.01
-    far_plane: float = 1e10
-
-    strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
-    packed: bool = False
-    sparse_grad: bool = False
-    visible_adam: bool = True
-    antialiased: bool = False
-
-    random_bkgd: bool = True
-
-    means_lr: float = 1.6e-4
-    scales_lr: float = 5e-3
-    opacities_lr: float = 5e-2
-    quats_lr: float = 1e-3
-    sh0_lr: float = 2.5e-3
-    shN_lr: float = 2.5e-3 / 20
-
-    opacity_reg: float = 0.0
-    scale_reg: float = 0.0
-
-    pose_opt: bool = True
-    pose_opt_lr: float = 1e-5
-    pose_opt_reg: float = 1e-6
-    pose_noise: float = 0.0
-
-    app_opt: bool = False
-    app_embed_dim: int = 16
-    app_opt_lr: float = 1e-3
-    app_opt_reg: float = 1e-6
-
-    use_bilateral_grid: bool = False
-    bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
-
-    depth_loss: bool = True
-    depth_lambda: float = 1e-2
-
-    tb_every: int = 100
-    tb_save_image: bool = True
-
-    lpips_net: Literal["vgg", "alex"] = "alex"
-
-    with_ut: bool = False
-    with_eval3d: bool = False
-
-    use_fused_bilagrid: bool = False
-
-    enable_clipiqa_loss: bool = False
-    clipiqa_lambda: float = 10
-    clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
-    num_novel_views: int = 100
-    num_novel_to_render: int = 4
-    novel_view_translation_pertube: float = 0.5
-    novel_view_rotation_pertube: float = 20.0
-    enable_loss_schedule: bool = True
-    clipiqa_lambda_start_factor: float = 0.01
-    clipiqa_lambda_warmup_steps: int = 5000
-    clipiqa_novel_view_frequency: int = 8
-
-    enable_hard_view_mining: bool = False
-    hard_view_mining_pool_size: int = 200
-    hard_view_mining_every: int = 1000
-    hard_view_mining_batch_size: int = 4
-
-    enable_variational_intrinsics: bool = False
-    focal_length_perturb_factor: float = 0.1
-    principal_point_perturb_pixel: int = 10
-
-    enable_retinex: bool = True
-    multi_scale_retinex: bool = True
-
-    lambda_low: float = 0.8
-
-
-    lambda_reflect: float = 1.2
-    lambda_smooth: float = 0.5
-    lambda_illum_color: float = 0.5
-    lambda_illum_exposure: float = 0.5
-    lambda_illum_variance: float = 0.5
-    lambda_illum_contrast: float = 0.8
-    lambda_adaptive_curve: float = 2.0
-    pretrain_retinex: bool = True
-    pretrain_steps: int = 4000
-
-    eval_niqe: bool = False
-
-    def adjust_steps(self, factor: float) -> None:
-        self.eval_steps = [int(i * factor) for i in self.eval_steps]
-        self.save_steps = [int(i * factor) for i in self.save_steps]
-        self.ply_steps = [int(i * factor) for i in self.ply_steps]
-        self.max_steps = int(self.max_steps * factor)
-        self.sh_degree_interval = int(self.sh_degree_interval * factor)
-
-        strategy = self.strategy
-        if isinstance(strategy, DefaultStrategy):
-            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
-            strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
-            strategy.reset_every = int(strategy.reset_every * factor)
-            strategy.refine_every = int(strategy.refine_every * factor)
-        elif isinstance(strategy, MCMCStrategy):
-            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
-            strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
-            strategy.refine_every = int(strategy.refine_every * factor)
-        else:
-            assert_never(strategy)
+from retinex import RetinexNet, MultiScaleRetinexNet
 
 
 def create_splats_with_optimizers(
@@ -357,14 +209,14 @@ class Runner:
 
             self.loss_color = ColourConsistencyLoss().to(self.device)
             self.loss_color.compile()
-            self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.40).to(self.device)
+            self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.5).to(self.device)
             self.loss_exposure.compile()
             self.loss_smooth = SmoothingLoss().to(self.device)
             self.loss_smooth.compile()
             self.loss_spatial = SpatialLoss().to(self.device)
             self.loss_spatial.compile()
             self.loss_adaptive_curve = AdaptiveCurveLoss(
-                alpha=0.4, beta=0.4, lambda1=10.0, lambda2=5.0, low_thresh=0.1, high_thresh=0.9
+                alpha=0.6, beta=0.4, lambda1=10.0, lambda2=5.0,
             ).to(self.device)
             self.loss_adaptive_curve.compile()
 
@@ -536,15 +388,6 @@ class Runner:
                     f"Error initializing BRISQUE: {e}. BRISQUE evaluation will be skipped."
                 )
                 cfg.eval_niqe = False
-
-        if not self.cfg.disable_viewer:
-            self.server = viser.ViserServer(port=cfg.port, verbose=False)
-            self.viewer = GsplatViewer(
-                server=self.server,
-                render_fn=self._viewer_render_fn,
-                output_dir=Path(cfg.result_dir),
-                mode="training",
-            )
 
         # Running stats for prunning & growing.
         n_gauss = len(self.splats["means"])
@@ -748,7 +591,7 @@ class Runner:
             "antialiased" if self.cfg.antialiased else "classic"
         )
 
-        if not cfg.enable_retinex:
+        if not self.cfg.enable_retinex:
             render_colors, render_alphas, info = rasterization(
                 means=means,
                 quats=quats,
@@ -986,13 +829,6 @@ class Runner:
 
         pbar = tqdm.tqdm(range(init_step, max_steps))
         for step in pbar:
-            if not cfg.disable_viewer:
-                while self.viewer.state == "paused":
-                    time.sleep(0.01)
-                self.viewer.lock.acquire()
-
-            tic = time.time()
-
             try:
                 data = next(trainloader_iter)
             except StopIteration:
@@ -1025,10 +861,6 @@ class Runner:
                 Ks = data["K"].to(device)
 
                 pixels = data["image"].to(device) / 255.0
-
-                num_train_rays_per_step = (
-                    pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
-                )
 
                 image_ids = data["image_id"].to(device)
                 masks = data["mask"].to(device) if "mask" in data else None
@@ -1648,17 +1480,6 @@ class Runner:
             if cfg.compression is not None and step in [i - 1 for i in cfg.eval_steps]:
                 self.run_compression(step=step)
 
-            if not cfg.disable_viewer:
-                self.viewer.lock.release()
-                num_train_steps_per_sec = 1.0 / (max(time.time() - tic, 1e-10))
-                num_train_rays_per_sec = (
-                    num_train_rays_per_step * num_train_steps_per_sec
-                )
-                self.viewer.render_tab_state.num_train_rays_per_sec = (
-                    num_train_rays_per_sec
-                )
-                self.viewer.update(step, num_train_rays_per_step)
-
     @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
         print(f"Running evaluation for step {step} on '{stage}' set...")
@@ -1905,7 +1726,7 @@ class Runner:
         print("Running compression...")
         world_rank = self.world_rank
 
-        compress_dir = f"{cfg.result_dir}/compression/rank{world_rank}"
+        compress_dir = f"{self.cfg.result_dir}/compression/rank{world_rank}"
         os.makedirs(compress_dir, exist_ok=True)
 
         self.compression_method.compress(compress_dir, self.splats.state_dict())
@@ -1913,100 +1734,6 @@ class Runner:
         for k_splat in splats_c.keys():
             self.splats[k_splat].data = splats_c[k_splat].to(self.device)
         self.eval(step=step, stage="compress")
-
-    @torch.no_grad()
-    def _viewer_render_fn(
-        self, camera_state: CameraState, render_tab_state: RenderTabState
-    ):
-        assert isinstance(render_tab_state, GsplatRenderTabState)
-        width = (
-            render_tab_state.render_width
-            if render_tab_state.preview_render
-            else render_tab_state.viewer_width
-        )
-        height = (
-            render_tab_state.render_height
-            if render_tab_state.preview_render
-            else render_tab_state.viewer_height
-        )
-
-        c2w = torch.from_numpy(camera_state.c2w).float().to(self.device)
-        K_viewer = (
-            torch.from_numpy(camera_state.get_K((width, height)))
-            .float()
-            .to(self.device)
-        )
-
-        RENDER_MODE_MAP = {
-            "rgb": "RGB",
-            "depth(accumulated)": "D",
-            "depth(expected)": "ED",
-            "alpha": "RGB",
-        }
-        out = self.rasterize_splats(
-            camtoworlds=c2w[None],
-            Ks=K_viewer[None],
-            width=width,
-            height=height,
-            sh_degree=min(render_tab_state.max_sh_degree, self.cfg.sh_degree),
-            near_plane=render_tab_state.near_plane,
-            far_plane=render_tab_state.far_plane,
-            radius_clip=render_tab_state.radius_clip,
-            eps2d=render_tab_state.eps2d,
-            backgrounds=torch.tensor([render_tab_state.backgrounds], device=self.device)
-                        / 255.0,
-            render_mode=RENDER_MODE_MAP[render_tab_state.render_mode],
-        )
-        
-        if len(out) == 5:
-            render_colors_viewer, _, render_alphas_viewer, _, info_viewer = out
-        else:
-            render_colors_viewer, render_alphas_viewer, info_viewer = out
-            
-        render_tab_state.total_gs_count = len(self.splats["means"])
-        render_tab_state.rendered_gs_count = (
-            int((info_viewer["radii"] > 0).all(-1).sum().item())
-        )
-
-        renders_final = None
-        if render_tab_state.render_mode == "rgb":
-            renders_final = render_colors_viewer[0, ..., 0:3].clamp(0, 1).cpu().numpy()
-        elif render_tab_state.render_mode in ["depth(accumulated)", "depth(expected)"]:
-            depth_viewer = render_colors_viewer[0, ..., 0:1]
-            near_plane_norm = (
-                render_tab_state.near_plane
-                if render_tab_state.normalize_nearfar
-                else depth_viewer.min()
-            )
-            far_plane_norm = (
-                render_tab_state.far_plane
-                if render_tab_state.normalize_nearfar
-                else depth_viewer.max()
-            )
-            depth_norm = torch.clip(
-                (depth_viewer - near_plane_norm)
-                / (far_plane_norm - near_plane_norm + 1e-10),
-                0,
-                1,
-            )
-            if render_tab_state.inverse:
-                depth_norm = 1 - depth_norm
-            renders_final = (
-                apply_float_colormap(depth_norm, render_tab_state.colormap)
-                .cpu()
-                .numpy()
-            )
-        elif render_tab_state.render_mode == "alpha":
-            alpha_viewer = render_alphas_viewer[0, ..., 0:1]
-            if render_tab_state.inverse:
-                alpha_viewer = 1 - alpha_viewer
-            renders_final = (
-                apply_float_colormap(alpha_viewer, render_tab_state.colormap)
-                .cpu()
-                .numpy()
-            )
-        return renders_final
-
 
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     if world_size > 1 and not cfg_param.disable_viewer:
@@ -2023,9 +1750,7 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         if ckpts_loaded:
             if len(cfg_param.ckpt) > 1 and world_size > 1:
                 for k_splat in runner.splats.keys():
-                    runner.splats[k_splat].data = torch.cat(
-                        [c["splats"][k_splat] for c in ckpts_loaded], dim=0
-                    )
+                    runner.splats[k_splat].data = torch.cat([c["splats"][k_splat] for c in ckpts_loaded])
             else:
                 runner.splats.load_state_dict(ckpts_loaded[0]["splats"])
 
@@ -2051,16 +1776,6 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     else:
         runner.train()
 
-    if not cfg_param.disable_viewer and world_rank == 0:
-        runner.viewer.complete()
-        print("Viewer running... Ctrl+C to exit.")
-        try:
-            while True:
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            print("Exiting viewer.")
-
-
 BilateralGrid = None
 color_correct = None
 slice_func = None
@@ -2083,12 +1798,12 @@ if __name__ == "__main__":
             ),
         ),
     }
-    cfg = tyro.extras.overridable_config_cli(configs)
-    cfg.adjust_steps(cfg.steps_scaler)
+    config = tyro.extras.overridable_config_cli(configs)
+    config.adjust_steps(config.steps_scaler)
 
-    if cfg.use_bilateral_grid or cfg.use_fused_bilagrid:
-        if cfg.use_fused_bilagrid:
-            cfg.use_bilateral_grid = True
+    if config.use_bilateral_grid or config.use_fused_bilagrid:
+        if config.use_fused_bilagrid:
+            config.use_bilateral_grid = True
             try:
                 from fused_bilagrid import (
                     BilateralGrid as FusedBilateralGrid,
@@ -2107,12 +1822,12 @@ if __name__ == "__main__":
                     "Fused Bilateral Grid components not found. Please ensure it's installed."
                 )
         else:
-            cfg.use_bilateral_grid = True
+            config.use_bilateral_grid = True
             try:
                 from lib_bilagrid import (
                     BilateralGrid as LibBilateralGrid,
                     color_correct as lib_color_correct,
-                    slice as lib_slice,
+                    bi_slice as lib_slice,
                     total_variation_loss as lib_total_variation_loss,
                 )
 
@@ -2126,7 +1841,7 @@ if __name__ == "__main__":
                     "Standard Bilateral Grid (lib_bilagrid) components not found."
                 )
 
-    if cfg.compression == "png":
+    if config.compression == "png":
         try:
             import plas
             import torchpq
@@ -2137,7 +1852,7 @@ if __name__ == "__main__":
                 "plas: pip install git+https://github.com/fraunhoferhhi/PLAS.git"
             )
 
-    if cfg.with_ut:
-        assert cfg.with_eval3d, "Training with UT requires setting `with_eval3d` flag."
+    if config.with_ut:
+        assert config.with_eval3d, "Training with UT requires setting `with_eval3d` flag."
 
-    cli(main, cfg, verbose=True)
+    cli(main, config, verbose=True)

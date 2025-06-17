@@ -1,0 +1,149 @@
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal, assert_never
+
+from gsplat import DefaultStrategy, MCMCStrategy
+
+
+@dataclass
+class Config:
+    disable_viewer: bool = True
+    ckpt: list[str] | None = None
+    compression: Literal["png"] | None = None
+    render_traj_path: str = "interp"
+
+    data_dir: Path = Path("../../colmap")
+    data_factor: int = 1
+    result_dir: Path = Path("../../result")
+    test_every: int = 8
+    patch_size: int | None = None
+    global_scale: float = 1.0
+    normalize_world_space: bool = True
+    camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
+
+    port: int = 4000
+
+    batch_size: int = 1
+    steps_scaler: float = 1.0
+
+    max_steps: int = 30_000
+    eval_steps: list[int] = field(default_factory=lambda: [3000, 7_000, 14_000, 30_000])
+    save_steps: list[int] = field(default_factory=lambda: [3000, 7_000, 14_000, 30_000])
+    save_ply: bool = True
+    ply_steps: list[int] = field(default_factory=lambda: [3000, 7_000, 14_000, 30_000])
+    disable_video: bool = False
+
+    init_type: str = "sfm"
+    init_num_pts: int = 100_000
+    init_extent: float = 3.0
+    sh_degree: int = 3
+    sh_degree_interval: int = 1000
+    init_opa: float = 0.1
+    init_scale: float = 1.0
+    ssim_lambda: float = 0.2
+
+    near_plane: float = 0.01
+    far_plane: float = 1e10
+
+    strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
+    packed: bool = False
+    sparse_grad: bool = False
+    visible_adam: bool = True
+    antialiased: bool = False
+
+    random_bkgd: bool = True
+
+    means_lr: float = 1.6e-4
+    scales_lr: float = 5e-3
+    opacities_lr: float = 5e-2
+    quats_lr: float = 1e-3
+    sh0_lr: float = 2.5e-3
+    shN_lr: float = 2.5e-3 / 20
+
+    opacity_reg: float = 0.0
+    scale_reg: float = 0.0
+
+    pose_opt: bool = True
+    pose_opt_lr: float = 1e-5
+    pose_opt_reg: float = 1e-6
+    pose_noise: float = 0.0
+
+    app_opt: bool = False
+    app_embed_dim: int = 16
+    app_opt_lr: float = 1e-3
+    app_opt_reg: float = 1e-6
+
+    use_bilateral_grid: bool = False
+    bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
+
+    depth_loss: bool = True
+    depth_lambda: float = 1e-2
+
+    tb_every: int = 100
+    tb_save_image: bool = True
+
+    lpips_net: Literal["vgg", "alex"] = "alex"
+
+    with_ut: bool = False
+    with_eval3d: bool = False
+
+    use_fused_bilagrid: bool = False
+
+    enable_clipiqa_loss: bool = False
+    clipiqa_lambda: float = 10
+    clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
+    num_novel_views: int = 100
+    num_novel_to_render: int = 4
+    novel_view_translation_pertube: float = 0.5
+    novel_view_rotation_pertube: float = 20.0
+    enable_loss_schedule: bool = True
+    clipiqa_lambda_start_factor: float = 0.01
+    clipiqa_lambda_warmup_steps: int = 5000
+    clipiqa_novel_view_frequency: int = 8
+
+    enable_hard_view_mining: bool = False
+    hard_view_mining_pool_size: int = 200
+    hard_view_mining_every: int = 1000
+    hard_view_mining_batch_size: int = 4
+
+    enable_variational_intrinsics: bool = False
+    focal_length_perturb_factor: float = 0.1
+    principal_point_perturb_pixel: int = 10
+
+    enable_retinex: bool = True
+    multi_scale_retinex: bool = True
+
+    lambda_low: float = 0.8
+
+    lambda_reflect: float = 1.2
+    lambda_smooth: float = 0.5
+    lambda_illum_color: float = 0.5
+    lambda_illum_exposure: float = 0.5
+    lambda_illum_variance: float = 0.5
+    lambda_illum_contrast: float = 0.8
+    lambda_adaptive_curve: float = 4.0
+    pretrain_retinex: bool = True
+    pretrain_steps: int = 4000
+
+    eval_niqe: bool = False
+
+    def adjust_steps(self, factor: float) -> None:
+        self.eval_steps = [int(i * factor) for i in self.eval_steps]
+        self.save_steps = [int(i * factor) for i in self.save_steps]
+        self.ply_steps = [int(i * factor) for i in self.ply_steps]
+        self.max_steps = int(self.max_steps * factor)
+        self.sh_degree_interval = int(self.sh_degree_interval * factor)
+
+        strategy = self.strategy
+
+        if isinstance(strategy, DefaultStrategy):
+            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
+            strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
+            strategy.reset_every = int(strategy.reset_every * factor)
+            strategy.refine_every = int(strategy.refine_every * factor)
+        elif isinstance(strategy, MCMCStrategy):
+            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
+            strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
+            strategy.refine_every = int(strategy.refine_every * factor)
+        else:
+            assert_never(strategy)

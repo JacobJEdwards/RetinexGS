@@ -45,13 +45,9 @@ Below is the API reference.
 
 """
 
-import tensorly as tl
 import torch
 import torch.nn.functional as F
 from torch import nn
-
-tl.set_backend("pytorch")
-
 
 def color_correct(
     img: torch.Tensor, ref: torch.Tensor, num_iters: int = 5, eps: float = 0.5 / 255
@@ -177,7 +173,7 @@ def total_variation_loss(x):  # noqa: F811
     return tv / batch_size
 
 
-def slice(bil_grids, xy, rgb, grid_idx):
+def bi_slice(bil_grids, xy, rgb, grid_idx):
     """Slices a batch of 3D bilateral grids by pixel coordinates `xy` and gray-scale guidances of pixel colors `rgb`.
 
     Supports 2-D, 3-D, and 4-D input shapes. The first dimension of the input is the batch size
@@ -323,11 +319,10 @@ class BilateralGrid(nn.Module):
             Sliced affine matrices of shape $(..., 3, 4)$.
         """
 
-        grids = self.grids
         input_ndims = len(grid_xy.shape)
         assert len(rgb.shape) == input_ndims
 
-        if input_ndims > 1 and input_ndims < 5:
+        if 1 < input_ndims < 5:
             # Convert input into 5D
             for i in range(5 - input_ndims):
                 grid_xy = grid_xy.unsqueeze(1)
@@ -351,9 +346,7 @@ class BilateralGrid(nn.Module):
         # exit()
         grid_xyz = torch.cat([grid_xy, grid_z], dim=-1)  # (N, m, h, w, 3)
 
-        affine_mats = F.grid_sample(
-            grids, grid_xyz, mode="bilinear", align_corners=True, padding_mode="border"
-        )  # (N, 12, m, h, w)
+        affine_mats = F.grid_sample(grids, grid_xyz, align_corners=True, padding_mode="border")  # (N, 12, m, h, w)
         affine_mats = affine_mats.permute(0, 2, 3, 4, 1)  # (N, m, h, w, 12)
         affine_mats = affine_mats.reshape(
             *affine_mats.shape[:-1], 3, 4
@@ -475,7 +468,7 @@ class BilateralGridCP4D(nn.Module):
                         for layer in range(1, self.gray_mlp_depth)
                         for nn_module in [rgb2gray_mlp_actfn, rgb2gray_mlp_linear]
                     ]
-                    + [_ScaledTanh(2.0)]
+                    + [_ScaledTanh()]
                 )
             )
         else:
@@ -554,7 +547,7 @@ class BilateralGridCP4D(nn.Module):
         xyz = xyz.reshape(-1, 3)  # flatten (N, 3)
         rgb = rgb.reshape(-1, 3)  # flatten (N, 3)
 
-        xyz = xyz / self.bound
+        xyz /= self.bound
         assert self.rgb2gray is not None
         gray = self.rgb2gray(rgb)
         xyzw = torch.cat([xyz, gray], dim=-1)  # (N, 4)
@@ -565,7 +558,7 @@ class BilateralGridCP4D(nn.Module):
         coef = 1.0
         for i in range(1, self.num_facs):
             fac = self.get_parameter(f"fac_{i}") + self.get_buffer(f"fac_{i}_init")
-            coef = coef * F.grid_sample(
+            coef *= F.grid_sample(
                 fac, coords[[i - 1]], align_corners=True, padding_mode="border"
             )  # [1, rank, 1, N]
         coef = coef.squeeze([0, 2]).transpose(0, 1)  # (N, rank) #type: ignore
