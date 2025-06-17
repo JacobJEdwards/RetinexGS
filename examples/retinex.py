@@ -5,10 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import kornia.filters as K
-from torch import finfo, Tensor, autocast, GradScaler
-from tqdm import tqdm
+from torch import finfo, Tensor
 
-from simple_trainer import Runner
 from utils import FiLMLayer
 
 
@@ -337,95 +335,3 @@ class MultiScaleRetinexNet(nn.Module):
         final_illumination = self.combination_layer(concatenated_maps)
 
         return final_illumination
-
-class RetinexTrainer:
-    def __init__(self: Self, runner: Runner):
-        self.runner = runner
-        self.cfg = runner.cfg
-        self.device = runner.device
-        self.trainset = runner.trainset
-        self.retinex_net = runner.retinex_net
-        self.retinex_embeds = runner.retinex_embeds
-        self.retinex_optimizer = runner.retinex_optimizer
-        self.retinex_embed_optimizer = runner.retinex_embed_optimizer
-        self.writer = runner.writer
-        self.loss_spatial = runner.loss_spatial
-        self.loss_color = runner.loss_color
-        self.loss_exposure = runner.loss_exposure
-        self.loss_smooth = runner.loss_smooth
-        self.loss_adaptive_curve = runner.loss_adaptive_curve
-
-    def train(self: Self):
-        scaler = GradScaler()
-        trainloader = torch.utils.data.DataLoader(
-            self.trainset,
-            batch_size=self.cfg.batch_size,
-            shuffle=True,
-            num_workers=4,
-            persistent_workers=True,
-            pin_memory=True,
-        )
-        trainloader_iter = iter(trainloader)
-        pbar = tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
-
-        for step in pbar:
-            try:
-                data = next(trainloader_iter)
-            except StopIteration:
-                trainloader_iter = iter(trainloader)
-                data = next(trainloader_iter)
-
-            with autocast(device_type=self.device):
-                images_ids = data["image_id"].to(self.device)
-                pixels = data["image"].to(self.device) / 255.0
-                input_image_for_net = pixels.permute(0, 3, 1, 2)
-
-                self.retinex_optimizer.zero_grad()
-                self.retinex_embed_optimizer.zero_grad()
-
-                retinex_embedding = self.retinex_embeds(images_ids)
-                log_illumination_map = self.retinex_net(input_image_for_net, retinex_embedding)
-                illumination_map = torch.exp(log_illumination_map)
-
-                loss = self._calculate_retinex_loss(input_image_for_net, illumination_map)
-
-            scaler.scale(loss).backward()
-            scaler.step(self.retinex_optimizer)
-            scaler.step(self.retinex_embed_optimizer)
-            scaler.update()
-
-            pbar.set_postfix({"loss": loss.item()})
-            if step % self.cfg.tb_every == 0:
-                self._log_retinex_tb(step, loss, illumination_map, input_image_for_net)
-
-    def _calculate_retinex_loss(self: Self, input_image_for_net: Tensor, illumination_map: Tensor) -> Tensor:
-        loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
-        loss_color_val = self.loss_color(illumination_map)
-        loss_exposure_val = self.loss_exposure(illumination_map)
-        loss_smoothing = self.loss_smooth(illumination_map)
-        loss_variance = torch.var(illumination_map)
-        loss_adaptive_curve = self.loss_adaptive_curve(illumination_map)
-
-        loss = (
-                self.cfg.lambda_illum_contrast * loss_spa_val
-                + self.cfg.lambda_illum_color * loss_color_val
-                + self.cfg.lambda_illum_exposure * loss_exposure_val
-                + self.cfg.lambda_smooth * loss_smoothing
-                + self.cfg.lambda_illum_variance * loss_variance
-                + self.cfg.lambda_adaptive_curve * loss_adaptive_curve
-        )
-        return loss
-
-    def _log_retinex_tb(self: Self, step: int, loss: Tensor, illumination_map: Tensor, input_image_for_net: Tensor) -> None:
-        self.writer.add_scalar("retinex_net/loss", loss.item(), step)
-        self.writer.add_scalar("retinex_net/loss_spatial", self.loss_spatial(input_image_for_net, illumination_map).item(), step)
-        self.writer.add_scalar("retinex_net/loss_color", self.loss_color(illumination_map).item(), step)
-        self.writer.add_scalar("retinex_net/loss_exposure", self.loss_exposure(illumination_map).item(), step)
-        self.writer.add_scalar("retinex_net/loss_smooth", self.loss_smooth(illumination_map).item(), step)
-        self.writer.add_scalar("retinex_net/loss_variance", torch.var(illumination_map).item(), step)
-        self.writer.add_scalar("retinex_net/loss_adaptive_curve", self.loss_adaptive_curve(illumination_map).item(), step)
-
-        if self.cfg.tb_save_image:
-            with torch.no_grad():
-                self.writer.add_images("retinex_net/input_image", input_image_for_net, step)
-                self.writer.add_images("retinex_net/illumination_map", illumination_map, step)
