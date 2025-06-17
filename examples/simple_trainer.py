@@ -24,7 +24,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal, assert_never
-from torch.amp import GradScaler, autocast
+from torch.amp.grad_scaler import GradScaler
 
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
@@ -35,7 +35,7 @@ from datasets.traj import (
 )
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, SmoothingLoss, AdaptiveCurveLoss
 from rendering_double import rasterization_dual
-from utils import MultiScaleRetinexNet
+from utils import MultiScaleRetinexNet, RetinexNet
 from gsplat import export_splats
 from gsplat.compression import PngCompression
 from gsplat.distributed import cli
@@ -159,8 +159,10 @@ class Config:
     principal_point_perturb_pixel: int = 10
 
     enable_retinex: bool = True
+    multi_scale_retinex: bool = False
 
     lambda_low: float = 0.8
+
 
     lambda_reflect: float = 1.2
     lambda_smooth: float = 0.5
@@ -331,36 +333,40 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.retinex_net = MultiScaleRetinexNet().to(self.device)
-        self.retinex_net.compile()
-        self.retinex_optimizer = torch.optim.AdamW(
-            self.retinex_net.parameters(),
-            lr=1e-4 * math.sqrt(cfg.batch_size),
-            weight_decay=1e-4,
-        )
-        self.retinex_embed_dim = 32
-        self.retinex_embeds = nn.Embedding(
-            len(self.trainset), self.retinex_embed_dim
-        ).to(self.device)
-        self.retinex_embeds.compile()
-        torch.nn.init.zeros_(self.retinex_embeds.weight)
+        if cfg.enable_retinex:
+            if cfg.multi_scale_retinex:
+                self.retinex_net = MultiScaleRetinexNet().to(self.device)
+            else:
+                self.retinex_net = RetinexNet().to(self.device)
+            self.retinex_net.compile()
+            self.retinex_optimizer = torch.optim.AdamW(
+                self.retinex_net.parameters(),
+                lr=1e-4 * math.sqrt(cfg.batch_size),
+                weight_decay=1e-4,
+            )
+            self.retinex_embed_dim = 32
+            self.retinex_embeds = nn.Embedding(
+                len(self.trainset), self.retinex_embed_dim
+            ).to(self.device)
+            self.retinex_embeds.compile()
+            torch.nn.init.zeros_(self.retinex_embeds.weight)
 
-        self.retinex_embed_optimizer = torch.optim.AdamW(
-            [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
-        )
+            self.retinex_embed_optimizer = torch.optim.AdamW(
+                [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
+            )
 
-        self.loss_color = ColourConsistencyLoss().to(self.device)
-        self.loss_color.compile()
-        self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.40).to(self.device)
-        self.loss_exposure.compile()
-        self.loss_smooth = SmoothingLoss().to(self.device)
-        self.loss_smooth.compile()
-        self.loss_spatial = SpatialLoss().to(self.device)
-        self.loss_spatial.compile()
-        self.loss_adaptive_curve = AdaptiveCurveLoss(
-            alpha=0.4, beta=0.4, lambda1=10.0, lambda2=5.0, low_thresh=0.1, high_thresh=0.9
-        ).to(self.device)
-        self.loss_adaptive_curve.compile()
+            self.loss_color = ColourConsistencyLoss().to(self.device)
+            self.loss_color.compile()
+            self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.40).to(self.device)
+            self.loss_exposure.compile()
+            self.loss_smooth = SmoothingLoss().to(self.device)
+            self.loss_smooth.compile()
+            self.loss_spatial = SpatialLoss().to(self.device)
+            self.loss_spatial.compile()
+            self.loss_adaptive_curve = AdaptiveCurveLoss(
+                alpha=0.4, beta=0.4, lambda1=10.0, lambda2=5.0, low_thresh=0.1, high_thresh=0.9
+            ).to(self.device)
+            self.loss_adaptive_curve.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -836,7 +842,7 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
-            with autocast(device_type=device):
+            with torch.autocast(device_type=device):
 
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
@@ -963,8 +969,8 @@ class Runner:
                 )
             )
 
-        # if cfg.pretrain_retinex:
-        #     self.pre_train_retinex()
+        if cfg.pretrain_retinex:
+            self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -1005,7 +1011,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with autocast(device_type=device):
+            with torch.autocast(device_type=device):
                 if (
                     cfg.enable_hard_view_mining
                     and cfg.enable_clipiqa_loss
