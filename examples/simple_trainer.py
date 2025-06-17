@@ -726,13 +726,13 @@ class Runner:
                     + cfg.lambda_illum_variance * loss_variance
                     # + cfg.lambda_adaptive_curve * loss_adaptive_curve
                 )
-                
+
                 print("Spatial reflectance loss:", loss_reflectance_spa.item())
                 print("Color loss:", loss_color_val.item())
                 print("Exposure loss:", loss_exposure_val.item())
                 print("Smoothing loss:", loss_smoothing.item())
                 print("Variance loss:", loss_variance.item())
-                
+
 
             scaler.scale(loss).backward()
 
@@ -746,7 +746,7 @@ class Runner:
             if step % self.cfg.tb_every == 0:
                 self.writer.add_scalar("retinex_net/loss", loss.item(), step)
                 self.writer.add_scalar(
-                    "retinex_net/loss_spatial", loss_spa_val.item(), step
+                    "retinex_net/loss_spatial", loss_reflectance_spa.item(), step
                 )
                 self.writer.add_scalar(
                     "retinex_net/loss_color", loss_color_val.item(), step
