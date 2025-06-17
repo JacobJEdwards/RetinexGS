@@ -24,7 +24,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal, assert_never
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
@@ -71,7 +71,7 @@ class Config:
 
     port: int = 4000
 
-    batch_size: int = 4
+    batch_size: int = 1
     steps_scaler: float = 1.0
 
     max_steps: int = 30_000
