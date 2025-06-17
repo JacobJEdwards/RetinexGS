@@ -756,9 +756,9 @@ class Runner:
                 self.writer.add_scalar(
                     "retinex_net/loss_smooth", loss_smoothing.item(), step
                 )
-                # self.writer.add_scalar(
-                #     "retinex_net/loss_variance", loss_variance.item(), step
-                # )
+                self.writer.add_scalar(
+                    "retinex_net/loss_variance", loss_variance.item(), step
+                )
                 # self.writer.add_scalar(
                 #     "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
                 # )
