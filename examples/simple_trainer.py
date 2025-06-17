@@ -209,7 +209,7 @@ class Runner:
 
             self.loss_color = ColourConsistencyLoss().to(self.device)
             self.loss_color.compile()
-            self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.5).to(self.device)
+            self.loss_exposure = ExposureLoss(patch_size=32, mean_val=0.6).to(self.device)
             self.loss_exposure.compile()
             self.loss_smooth = SmoothingLoss().to(self.device)
             self.loss_smooth.compile()
