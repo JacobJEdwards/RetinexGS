@@ -972,7 +972,6 @@ class Runner:
                 )  # [1, H, W, 3]
 
                 loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
-
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
 
                 ssim_loss_low = 1.0 - self.ssim(
@@ -980,18 +979,14 @@ class Runner:
                     pixels.permute(0, 3, 1, 2),
                 )
 
-                con_degree = 0.5 / torch.mean(pixels).item()
-
-                loss_illum_contrast = self.loss_spatial(
-                    input_image_for_net,
-                    illumination_map,
-                    contrast=con_degree,
-                )
 
                 low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
                     ssim_loss_low * cfg.ssim_lambda
                 )
 
+                loss_illum_contrast = self.loss_spatial(
+                    input_image_for_net, reflectance_target, contrast=1.0
+                )
                 loss_illum_color = self.loss_color(illumination_map)
                 loss_illum_exposure = self.loss_exposure(illumination_map)
                 loss_illum_smooth = self.loss_smooth(illumination_map)
@@ -1001,13 +996,13 @@ class Runner:
                 # )
 
                 loss_illumination = (
-                    cfg.lambda_illum_contrast * loss_illum_contrast
+                    cfg.lambda_reflect * loss_illum_contrast
                     + cfg.lambda_illum_exposure * loss_illum_exposure
                     + cfg.lambda_illum_color * loss_illum_color
                     + cfg.lambda_smooth * loss_illum_smooth
                     + cfg.lambda_illum_variance * loss_illum_variance
                     # + cfg.lambda_adaptive_curve * loss_adaptive_curve
-                )
+                ) * 0.3 # reduced as we pretrain retinex
 
                 loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
 
@@ -1280,7 +1275,7 @@ class Runner:
                         "train/reflectance_loss", loss_reflectance.item(), step
                     )
                     self.writer.add_scalar(
-                        "train/illumination_smooth", loss_illum_contrast.item(), step
+                        "train/illumination_spatial", loss_illum_contrast.item(), step
                     )
                     self.writer.add_scalar(
                         "train/illumination_smoothing", loss_illum_smooth.item(), step
