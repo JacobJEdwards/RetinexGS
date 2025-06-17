@@ -699,9 +699,14 @@ class Runner:
                 log_illumination_map = self.retinex_net(
                     input_image_for_net, retinex_embedding
                 )  # [B, 3, H, W]
-                illumination_map = torch.exp(log_illumination_map)
 
-                loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
+                illumination_map = torch.exp(log_illumination_map)
+                illumination_map = torch.clamp(illumination_map, min=1e-5)
+
+                reflectance_map = input_image_for_net / illumination_map
+
+
+                # loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
                 loss_color_val = self.loss_color(illumination_map)
                 loss_exposure_val = self.loss_exposure(illumination_map)
                 loss_smoothing = self.loss_smooth(illumination_map)
@@ -710,15 +715,24 @@ class Runner:
                 #     illumination_map
                 # )
 
+                loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map)
+
 
                 loss = (
-                    cfg.lambda_illum_contrast * loss_spa_val
+                    cfg.lambda_reflect * loss_reflectance_spa
                     + cfg.lambda_illum_color * loss_color_val
                     + cfg.lambda_illum_exposure * loss_exposure_val
                     + cfg.lambda_smooth * loss_smoothing
                     + cfg.lambda_illum_variance * loss_variance
                     # + cfg.lambda_adaptive_curve * loss_adaptive_curve
                 )
+                
+                print("Spatial reflectance loss:", loss_reflectance_spa.item())
+                print("Color loss:", loss_color_val.item())
+                print("Exposure loss:", loss_exposure_val.item())
+                print("Smoothing loss:", loss_smoothing.item())
+                print("Variance loss:", loss_variance.item())
+                
 
             scaler.scale(loss).backward()
 
@@ -753,11 +767,6 @@ class Runner:
                 # draw image
                 if self.cfg.tb_save_image:
                     with torch.no_grad():
-                        log_input_image = torch.log(input_image_for_net + 1e-8)
-                        target_reflectance = torch.exp(
-                            log_input_image - log_illumination_map
-                        )
-
                         self.writer.add_images(
                             "retinex_net/input_image",
                             input_image_for_net,
@@ -770,7 +779,7 @@ class Runner:
                         )
                         self.writer.add_images(
                             "retinex_net/target_reflectance",
-                            target_reflectance,
+                            reflectance_map,
                             step,
                         )
 
