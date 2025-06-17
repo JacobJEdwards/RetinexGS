@@ -216,9 +216,7 @@ class Runner:
             self.loss_smooth.compile()
             self.loss_spatial = SpatialLoss().to(self.device)
             self.loss_spatial.compile()
-            self.loss_adaptive_curve = AdaptiveCurveLoss(
-                alpha=0.6, beta=0.4, lambda1=10.0, lambda2=10.0,
-            ).to(self.device)
+            self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
             self.loss_adaptive_curve.compile()
 
         feature_dim = 32 if cfg.app_opt else None
