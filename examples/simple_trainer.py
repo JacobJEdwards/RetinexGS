@@ -722,7 +722,7 @@ class Runner:
                 else:
                     reflectance_map = torch.exp(log_reflectance_target)
 
-                reflectance_target = torch.clamp(reflectance_target, 0, 1)
+                reflectance_target = torch.clamp(reflectance_map, 0, 1)
                 illumination_map = torch.exp(log_illumination_map)
                 illumination_map = torch.clamp(illumination_map, min=1e-5)
 
