@@ -1389,41 +1389,33 @@ class Runner:
                 if cfg.use_bilateral_grid:
                     self.writer.add_scalar("train/tvloss", tvloss_value.item(), step)
                 if cfg.tb_save_image:
-                    canvas_tb = (
-                        torch.cat([pixels, colors_low], dim=2).detach().cpu().numpy()
-                    )
-                    canvas_tb = canvas_tb.reshape(-1, *canvas_tb.shape[2:])
-                    self.writer.add_image(
-                        "train/render", canvas_tb, step, dataformats="HWC"
-                    )
-
-                    canvas_enh = (
-                        torch.cat([pixels, colors_enh], dim=2).detach().cpu().numpy()
-                    )
-                    canvas_enh = canvas_enh.reshape(-1, *canvas_enh.shape[2:])
-                    self.writer.add_image(
-                        "train/render_enh", canvas_enh, step, dataformats="HWC"
-                    )
-                    self.writer.add_image(
-                        "train/illumination_map",
-                        illumination_map,
-                        step,
-                    )
-                    self.writer.add_image(
-                        "train/reflectance_target",
-                        reflectance_target,
-                        step,
-                    )
-                    self.writer.add_images(
-                        "retinex_net/input_image_for_net",
-                        input_image_for_net,
-                        step,
-                    )
-                    self.writer.add_images(
-                        "retinex_net/pixels",
-                        pixels.permute(0, 3, 1, 2),
-                        step,
-                    )
+                    with torch.no_grad():
+                        self.writer.add_images(
+                            "train/render_low", colors_low, step
+                        )
+                        self.writer.add_images(
+                            "train/render_enh", colors_enh, step,
+                        )
+                        self.writer.add_images(
+                            "train/illumination_map",
+                            illumination_map,
+                            step,
+                        )
+                        self.writer.add_images(
+                            "train/reflectance_target",
+                            reflectance_target,
+                            step,
+                        )
+                        self.writer.add_images(
+                            "retinex_net/input_image_for_net",
+                            input_image_for_net,
+                            step,
+                        )
+                        self.writer.add_images(
+                            "retinex_net/pixels",
+                            pixels.permute(0, 3, 1, 2),
+                            step,
+                        )
 
                 self.writer.flush()
 
