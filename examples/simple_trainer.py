@@ -31,7 +31,8 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
-from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, AdaptiveCurveLoss, LaplacianLoss
+from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, AdaptiveCurveLoss, LaplacianLoss, \
+    TotalVariationLoss
 from rendering_double import rasterization_dual
 from gsplat import export_splats
 from gsplat.compression import PngCompression
@@ -216,7 +217,8 @@ class Runner:
             self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
             self.loss_exposure.compile()
             # self.loss_smooth = SmoothingLoss().to(self.device)
-            self.loss_smooth = LaplacianLoss().to(self.device)
+            # self.loss_smooth = LaplacianLoss().to(self.device)
+            self.loss_smooth = TotalVariationLoss().to(self.device)
             self.loss_smooth.compile()
             self.loss_spatial = SpatialLoss().to(self.device)
             self.loss_spatial.compile()
@@ -700,6 +702,7 @@ class Runner:
                     input_image_for_net = v_channel
                     log_input_image = torch.log(input_image_for_net + 1e-8)
                 else:
+                    pixels_hsv = torch.tensor(0.0, device=device)
                     input_image_for_net = pixels.permute(0, 3, 1, 2)
                     log_input_image = torch.log(input_image_for_net + 1e-8)
 
@@ -722,7 +725,7 @@ class Runner:
                 else:
                     reflectance_map = torch.exp(log_reflectance_target)
 
-                reflectance_target = torch.clamp(reflectance_map, 0, 1)
+                reflectance_map = torch.clamp(reflectance_map, 0, 1)
                 illumination_map = torch.exp(log_illumination_map)
                 illumination_map = torch.clamp(illumination_map, min=1e-5)
 
@@ -787,10 +790,16 @@ class Runner:
                 if self.cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(
-                            "retinex_net/input_image",
+                            "retinex_net/input_image_for_net",
                             input_image_for_net,
                             step,
                         )
+                        self.writer.add_images(
+                            "retinex_net/pixels",
+                            pixels.permute(0, 3, 1, 2),
+                            step,
+                        )
+
                         self.writer.add_images(
                             "retinex_net/illumination_map",
                             illumination_map,
@@ -980,24 +989,40 @@ class Runner:
                 info["means2d"].retain_grad()
 
                 if cfg.enable_retinex:
+
+                    if cfg.use_hsv_color_space:
+                        pixels_nchw = pixels.permute(0, 3, 1, 2)
+                        pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
+                        v_channel = pixels_hsv[:, 2:3, :, :]
+                        input_image_for_net = v_channel
+                        log_input_image = torch.log(input_image_for_net + 1e-8)
+                    else:
+                        pixels_hsv = torch.tensor(0.0, device=device)
+                        input_image_for_net = pixels.permute(0,3,1,2)
+                        log_input_image = torch.log(input_image_for_net + 1e-8)
+
                     retinex_embedding = self.retinex_embeds(image_ids)
-                    input_image_for_net = pixels.permute(0, 3, 1, 2)
-                    log_input_image = torch.log(input_image_for_net + 1e-8)  # [1, 3, H, W]
                     log_illumination_map = self.retinex_net(
                         input_image_for_net, retinex_embedding
                     )  # [1, 3, H, W]
                     log_reflectance_target = log_input_image - log_illumination_map
 
-                    reflectance_target = torch.exp(log_reflectance_target)
-                    reflectance_target = torch.clamp(reflectance_target, 0, 1)
+                    if cfg.use_hsv_color_space:
+                        reflectance_v_target = torch.exp(log_reflectance_target)
+                        reflectance_hsv_target = torch.cat(
+                            [pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1
+                        )
+                        reflectance_target = kornia.color.hsv_to_rgb(reflectance_hsv_target)
+                    else:
+                        reflectance_target = torch.exp(log_reflectance_target)
 
+                    reflectance_target = torch.clamp(reflectance_target, 0, 1)
                     illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
 
                     reflectance_target_permuted = reflectance_target.permute(
                         0, 2, 3, 1
                     )  # [1, H, W, 3]
 
-                    loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
 
                     loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                     ssim_loss = 1.0 - self.ssim(
@@ -1008,7 +1033,8 @@ class Runner:
                         ssim_loss * cfg.ssim_lambda
                     )
 
-                    loss_illum_color = self.loss_color(illumination_map)
+                    loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
+                    loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
                     loss_illum_smooth = self.loss_smooth(illumination_map)
                     loss_illum_variance = torch.var(illumination_map)
 
@@ -1054,6 +1080,13 @@ class Runner:
                     illumination_map = torch.tensor(0.0, device=device)
                     reflectance_target = torch.tensor(0.0, device=device)
 
+                if cfg.enable_retinex:
+                    k_mean = self.splats["adjust_k"].mean(dim=-1, keepdim=True)
+                    loss_k_gray = torch.mean((self.splats["adjust_k"] - k_mean) ** 2)
+
+                    loss_b_offset = torch.mean(self.splats["adjust_b"] ** 2)
+
+                    loss += 0.01 * loss_k_gray + 0.01 * loss_b_offset
 
 
                 self.cfg.strategy.step_pre_backward(

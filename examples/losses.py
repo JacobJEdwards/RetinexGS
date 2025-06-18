@@ -232,6 +232,26 @@ class LaplacianLoss(nn.Module):
         laplacian = F.conv2d(x_gray, self.kernel, padding=1)
         return torch.mean(torch.abs(laplacian))
 
+class TotalVariationLoss(nn.Module):
+    def __init__(self: Self, weight: float = 1.0) -> None:
+        super(TotalVariationLoss, self).__init__()
+        self.weight = weight
+        
+    @staticmethod
+    def _tensor_size(t: Tensor) -> int:
+        return t.size()[1]*t.size()[2]*t.size()[3]
+
+    def forward(self: Self, x: Tensor) -> Tensor:
+        diff_h = x[:, :, 1:, :] - x[:, :, :-1, :]
+        diff_w = x[:, :, :, 1:] - x[:, :, :, :-1]
+
+        tv_h = torch.pow(diff_h, 2).sum()
+        tv_w = torch.pow(diff_w, 2).sum()
+
+        loss = (tv_h + tv_w) / x.numel()
+
+        return self.weight * loss
+
 class SmoothingLoss(nn.Module):
     weight_left: Tensor
     weight_right: Tensor
@@ -279,3 +299,4 @@ if __name__ == "__main__":
     curve_1 = torch.linspace(0, 1, 255).unsqueeze(0)
     curve_2 = gamma_curve(curve_1, 1.0)
     curve_3 = s_curve(curve_2, alpha=1.0)
+
