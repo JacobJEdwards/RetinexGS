@@ -1259,7 +1259,7 @@ class Runner:
 
                 depthloss_value = torch.tensor(0.0, device=device)
 
-                if cfg.depth_loss:
+                if cfg.depth_.loss:
                     assert depths_gt is not None, "Depth ground truth is required for depth loss"
                     assert points is not None, "Points are required for depth loss"
                     assert depths_low is not None, "Low-resolution depths are required for depth loss"
@@ -1621,26 +1621,42 @@ class Runner:
             )
 
             if len(out) == 5:
-                _, colors, _, alphas, info = out
+                colors_enh, colors_low, alphas_enh, alphas_low, info = out
             else:
-                colors, alphas, info = out
+                colors_low, alphas_low, info = out
+                colors_enh, alphas_enh = colors_low, colors_low
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
-            colors = torch.clamp(colors, 0.0, 1.0)
+            colors_low = torch.clamp(colors_low, 0.0, 1.0)
+            colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
 
             if world_rank == 0:
-                canvas_list = [pixels, colors]
-                canvas_eval = torch.cat(canvas_list, dim=2).squeeze(0).cpu().numpy()
-                canvas_eval = (canvas_eval * 255).astype(np.uint8)
+                canvas_list_low = [pixels, colors_low]
+                canvas_list_enh = [colors_enh, alphas_enh]
+
+                canvas_eval_low = torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
+                canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
+
+                canvas_eval_enh = torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
+                canvas_eval_enh = (canvas_eval_enh * 255).astype(np.uint8)
+
+
                 imageio.imwrite(
-                    f"{self.render_dir}/{stage}_step{step}_{i:04d}.png",
-                    canvas_eval,
+                    f"{self.render_dir}/{stage}_step{step}_low_{i:04d}.png",
+                    canvas_eval_low,
                 )
 
+                if cfg.enable_retinex:
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
+                        canvas_eval_enh,
+                    )
+
+
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_p = colors.permute(0, 3, 1, 2)
+                colors_p = colors_low.permute(0, 3, 1, 2)
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
@@ -1653,11 +1669,19 @@ class Runner:
                 if cfg.use_bilateral_grid:
                     global color_correct
                     assert color_correct is not None
-                    cc_colors = color_correct(colors, pixels)
+                    cc_colors = color_correct(colors_low, pixels)
                     cc_colors_p = cc_colors.permute(0, 3, 1, 2)
                     metrics["cc_psnr"].append(self.psnr(cc_colors_p, pixels_p))
                     metrics["cc_ssim"].append(self.ssim(cc_colors_p, pixels_p))
                     metrics["cc_lpips"].append(self.lpips(cc_colors_p, pixels_p))
+                
+                if cfg.enable_retinex:
+                    colors_enh_p = colors_enh.permute(0, 3, 1, 2)
+                    metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
+                    metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
+                    metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
+
+
 
         if world_rank == 0:
             avg_ellipse_time = (
@@ -1792,12 +1816,10 @@ class Runner:
                 render_mode="RGB+ED",
             )
 
-            if cfg.enable_retinex and len(out) == 5:
+            if len(out) == 5:
                 renders_traj, _, _, _, _ = out
-            elif not cfg.enable_retinex and len(out) == 3:
-                renders_traj, _, _ = out
             else:
-                raise ValueError(f"Unexpected output length from rasterization: {len(out)}")
+                renders_traj, _, _ = out
 
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
