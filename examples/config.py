@@ -123,7 +123,7 @@ class Config:
     lambda_illum_contrast: float = 0.1
     lambda_illum_curve: float = 1.4
     pretrain_retinex: bool = True
-    pretrain_steps: int = 1000
+    pretrain_steps: int = 4000
     
     use_hsv_color_space: bool = True
 
