@@ -188,10 +188,12 @@ class Runner:
 
         if cfg.enable_retinex:
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
+            retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
             if cfg.multi_scale_retinex:
-                self.retinex_net = MultiScaleRetinexNet(in_channels=retinex_in_channels).to(self.device)
+                self.retinex_net = MultiScaleRetinexNet(in_channels=retinex_in_channels, out_channels=retinex_out_channels).to(
+                    self.device)
             else:
-                self.retinex_net = RetinexNet(in_channels=retinex_in_channels).to(self.device)
+                self.retinex_net = RetinexNet(in_channels=retinex_in_channels, out_channels=retinex_out_channels).to(self.device)
             self.retinex_net.compile()
             self.retinex_optimizer = torch.optim.AdamW(
                 self.retinex_net.parameters(),
