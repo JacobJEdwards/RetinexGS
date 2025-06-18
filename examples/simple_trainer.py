@@ -196,6 +196,7 @@ class Runner:
                 self.retinex_net = RetinexNet(in_channels=retinex_in_channels, out_channels=retinex_out_channels).to(self.device)
 
             # dpp
+            self.retinex_net.compile()
 
             if world_size > 1:
                 self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
@@ -209,6 +210,7 @@ class Runner:
             self.retinex_embeds = nn.Embedding(
                 len(self.trainset), self.retinex_embed_dim
             ).to(self.device)
+            self.retinex_embeds.compile()
             torch.nn.init.zeros_(self.retinex_embeds.weight)
 
             if world_size > 1:
@@ -220,12 +222,17 @@ class Runner:
             )
 
             self.loss_color = ColourConsistencyLoss().to(self.device)
+            self.loss_color.compile()
             self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
+            self.loss_exposure.compile()
             # self.loss_smooth = SmoothingLoss().to(self.device)
             # self.loss_smooth = LaplacianLoss().to(self.device)
             self.loss_smooth = TotalVariationLoss().to(self.device)
+            self.loss_smooth.compile()
             self.loss_spatial = SpatialLoss().to(self.device)
+            self.loss_spatial.compile()
             self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
+            self.loss_adaptive_curve.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -310,6 +317,7 @@ class Runner:
         self.pose_optimizers = []
         if cfg.pose_opt:
             self.pose_adjust = CameraOptModule(len(self.trainset)).to(self.device)
+            self.pose_adjust.compile()
             self.pose_adjust.zero_init()
             self.pose_optimizers = [
                 torch.optim.AdamW(
@@ -323,6 +331,7 @@ class Runner:
 
         if cfg.pose_noise > 0.0:
             self.pose_perturb = CameraOptModule(len(self.trainset)).to(self.device)
+            self.pose_perturb.compile()
             self.pose_perturb.random_init(cfg.pose_noise)
             if world_size > 1:
                 self.pose_perturb = DDP(self.pose_perturb)
@@ -333,6 +342,7 @@ class Runner:
             self.app_module = AppearanceOptModule(
                 len(self.trainset), feature_dim, cfg.app_embed_dim, cfg.sh_degree
             ).to(self.device)
+            self.app_module.compile()
             torch.nn.init.zeros_(cast(Tensor, self.app_module.color_head[-1].weight))
             torch.nn.init.zeros_(cast(Tensor, self.app_module.color_head[-1].bias))
             self.app_optimizers = [
