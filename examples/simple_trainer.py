@@ -17,6 +17,7 @@ import yaml
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler
+from torch.utils.checkpoint import checkpoint
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -702,7 +703,7 @@ class Runner:
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        log_illumination_map = self.retinex_net(
+        log_illumination_map = checkpoint(self.retinex_net,
             input_image_for_net, retinex_embedding
         )
 
@@ -1025,7 +1026,7 @@ class Runner:
 
                     retinex_embedding = self.retinex_embeds(image_ids)
 
-                    log_illumination_map = self.retinex_net(
+                    log_illumination_map = checkpoint(self.retinex_net,
                         input_image_for_net, retinex_embedding
                     )  # [1, 3, H, W]
 
