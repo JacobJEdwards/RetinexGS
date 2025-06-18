@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import cast, Any
 
 import imageio
+import kornia.color
 import numpy as np
 import piq
 import torch
@@ -689,7 +690,16 @@ class Runner:
 
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
-                input_image_for_net = pixels.permute(0, 3, 1, 2)
+
+                if cfg.use_hsv_color_space:
+                    pixels_nchw = pixels.permute(0, 3, 1, 2)
+                    pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
+                    v_channel = pixels_hsv[:, 2:3, :, :]
+                    input_image_for_net = v_channel
+                    log_input_image = torch.log(input_image_for_net + 1e-8)
+                else:
+                    input_image_for_net = pixels.permute(0, 3, 1, 2)
+                    log_input_image = torch.log(input_image_for_net + 1e-8)
 
                 self.retinex_optimizer.zero_grad()
                 self.retinex_embed_optimizer.zero_grad()
@@ -700,14 +710,22 @@ class Runner:
                     input_image_for_net, retinex_embedding
                 )  # [B, 3, H, W]
 
+                log_reflectance_target = log_input_image - log_illumination_map
+
+
+                if cfg.use_hsv_color_space:
+                    reflectance_v_target = torch.exp(log_reflectance_target)
+                    reflectance_hsv_target = torch.cat([pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1)
+                    reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
+                else:
+                    reflectance_map = torch.exp(log_reflectance_target)
+
+                reflectance_target = torch.clamp(reflectance_target, 0, 1)
                 illumination_map = torch.exp(log_illumination_map)
                 illumination_map = torch.clamp(illumination_map, min=1e-5)
 
-                reflectance_map = input_image_for_net / illumination_map
-
-
                 # loss_spa_val = self.loss_spatial(input_image_for_net, illumination_map)
-                loss_color_val = self.loss_color(illumination_map)
+                loss_color_val = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
                 loss_smoothing = self.loss_smooth(illumination_map)
                 loss_variance = torch.var(illumination_map)
 
