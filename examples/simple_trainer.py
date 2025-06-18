@@ -1407,12 +1407,12 @@ class Runner:
                             step,
                         )
                         self.writer.add_images(
-                            "retinex_net/input_image_for_net",
+                            "train/input_image_for_net",
                             input_image_for_net,
                             step,
                         )
                         self.writer.add_images(
-                            "retinex_net/pixels",
+                            "train/pixels",
                             pixels.permute(0, 3, 1, 2),
                             step,
                         )
