@@ -17,7 +17,6 @@ import yaml
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler
-from torch.utils.checkpoint import checkpoint
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -703,14 +702,8 @@ class Runner:
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        # log_illumination_map = self.retinex_net(
-        #     input_image_for_net, retinex_embedding
-        # )
-        log_illumination_map = checkpoint(
-            self.retinex_net,
-            input_image_for_net,
-            retinex_embedding,
-            use_reentrant=False,
+        log_illumination_map = self.retinex_net(
+            input_image_for_net, retinex_embedding
         )
 
         log_reflectance_target = log_input_image - log_illumination_map
@@ -1032,15 +1025,9 @@ class Runner:
 
                     retinex_embedding = self.retinex_embeds(image_ids)
 
-                    # log_illumination_map = self.retinex_net(
-                    #     input_image_for_net, retinex_embedding
-                    # )  # [1, 3, H, W]
-                    log_illumination_map = checkpoint(
-                        self.retinex_net,
-                        input_image_for_net,
-                        retinex_embedding,
-                        use_reentrant=False,
-                    )
+                    log_illumination_map = self.retinex_net(
+                        input_image_for_net, retinex_embedding
+                    )  # [1, 3, H, W]
 
                     log_reflectance_target = log_input_image - log_illumination_map
 
@@ -1687,7 +1674,7 @@ class Runner:
                     metrics["cc_psnr"].append(self.psnr(cc_colors_p, pixels_p))
                     metrics["cc_ssim"].append(self.ssim(cc_colors_p, pixels_p))
                     metrics["cc_lpips"].append(self.lpips(cc_colors_p, pixels_p))
-
+                
                 if cfg.enable_retinex:
                     colors_enh_p = colors_enh.permute(0, 3, 1, 2)
                     metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
