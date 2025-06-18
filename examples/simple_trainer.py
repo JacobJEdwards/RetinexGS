@@ -1391,10 +1391,10 @@ class Runner:
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(
-                            "train/render_low", colors_low, step
+                            "train/render_low", colors_low.permute(0, 3, 1, 2), step
                         )
                         self.writer.add_images(
-                            "train/render_enh", colors_enh, step,
+                            "train/render_enh", colors_enh.permute(0, 3, 1, 2), step,
                         )
                         self.writer.add_images(
                             "train/illumination_map",
