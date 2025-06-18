@@ -46,7 +46,7 @@ class Config:
     far_plane: float = 1e10
 
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
-    packed: bool = True
+    packed: bool = False
     sparse_grad: bool = False
     visible_adam: bool = False
     antialiased: bool = False
