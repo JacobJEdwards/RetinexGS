@@ -899,8 +899,8 @@ class Runner:
         pbar = tqdm.tqdm(range(init_step, max_steps))
 
         for step in pbar:
-            if step % 1000 == 0 and step > 0:
-                self.pre_train_retinex()
+            # if step % 1000 == 0 and step > 0:
+            #     self.pre_train_retinex()
 
             try:
                 data = next(trainloader_iter)
@@ -1549,11 +1549,11 @@ class Runner:
                 scaler.step(optimizer)
                 optimizer.zero_grad()
 
-            # if cfg.enable_retinex:
-            #     scaler.step(self.retinex_optimizer)
-            #     self.retinex_optimizer.zero_grad()
-            #     scaler.step(self.retinex_embed_optimizer)
-            #     self.retinex_embed_optimizer.zero_grad()
+            if cfg.enable_retinex:
+                scaler.step(self.retinex_optimizer)
+                self.retinex_optimizer.zero_grad()
+                scaler.step(self.retinex_embed_optimizer)
+                self.retinex_embed_optimizer.zero_grad()
 
             scaler.update()
 
