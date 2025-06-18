@@ -1259,7 +1259,7 @@ class Runner:
 
                 depthloss_value = torch.tensor(0.0, device=device)
 
-                if cfg.depth_.loss:
+                if cfg.depth_loss:
                     assert depths_gt is not None, "Depth ground truth is required for depth loss"
                     assert points is not None, "Points are required for depth loss"
                     assert depths_low is not None, "Low-resolution depths are required for depth loss"
