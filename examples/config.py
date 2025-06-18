@@ -79,8 +79,8 @@ class Config:
     depth_loss: bool = False
     depth_lambda: float = 1e-2
 
-    tb_every: int = 100
-    tb_save_image: bool = True
+    tb_every: int = 500
+    tb_save_image: bool = False
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
@@ -104,7 +104,7 @@ class Config:
     enable_hard_view_mining: bool = False
     hard_view_mining_pool_size: int = 200
     hard_view_mining_every: int = 1000
-    hard_view_mining_batch_size: int = 4
+    hard_view_mining_batch_size: int = 1
 
     enable_variational_intrinsics: bool = False
     focal_length_perturb_factor: float = 0.1
