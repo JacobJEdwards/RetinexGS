@@ -867,8 +867,7 @@ class Runner:
             )
 
         if cfg.pretrain_retinex and cfg.enable_retinex:
-            pass
-            # self.pre_train_retinex()
+            self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
