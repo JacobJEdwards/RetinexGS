@@ -704,7 +704,7 @@ class Runner:
         retinex_embedding = self.retinex_embeds(images_ids)
 
         log_illumination_map = checkpoint(self.retinex_net,
-            input_image_for_net, retinex_embedding
+            input_image_for_net, retinex_embedding, use_reentrant=False
         )
 
         log_reflectance_target = log_input_image - log_illumination_map
@@ -1027,7 +1027,7 @@ class Runner:
                     retinex_embedding = self.retinex_embeds(image_ids)
 
                     log_illumination_map = checkpoint(self.retinex_net,
-                        input_image_for_net, retinex_embedding
+                        input_image_for_net, retinex_embedding, use_reentrant=False
                     )  # [1, 3, H, W]
 
                     log_reflectance_target = log_input_image - log_illumination_map
