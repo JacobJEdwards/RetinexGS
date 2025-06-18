@@ -255,7 +255,7 @@ class RetinexNet(nn.Module):
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
-            self: Self, in_channels: int = 3, out_channels: int = 3, embed_dim: int = 32
+            self: Self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
@@ -334,4 +334,4 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.combination_layer(concatenated_maps)
 
-        return final_illumination
+        return final_illumination.repeat(1,3,1,1)

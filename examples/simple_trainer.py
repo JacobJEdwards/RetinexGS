@@ -864,7 +864,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with torch.autocast(device_type=device):
+            with ((torch.autocast(device_type=device))):
                 if (
                     cfg.enable_hard_view_mining
                     and cfg.enable_clipiqa_loss
@@ -971,28 +971,26 @@ class Runner:
                 )  # [1, H, W, 3]
 
                 loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted)
-                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
 
+                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(
                     colors_low.permute(0, 3, 1, 2),
                     pixels.permute(0, 3, 1, 2),
                 )
-
-
                 low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
                     ssim_loss_low * cfg.ssim_lambda
                 )
 
-                loss_illum_contrast = self.loss_spatial(
-                    input_image_for_net, reflectance_target, contrast=1.0
-                )
                 loss_illum_color = self.loss_color(illumination_map)
-                loss_illum_exposure = self.loss_exposure(illumination_map)
                 loss_illum_smooth = self.loss_smooth(illumination_map)
                 loss_illum_variance = torch.var(illumination_map)
-                # loss_adaptive_curve = self.loss_adaptive_curve(
-                #     illumination_map
-                # )
+
+                loss_adaptive_curve = self.loss_adaptive_curve(
+                    reflectance_target
+                )
+                loss_illum_exposure = self.loss_exposure(reflectance_target)
+                loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
+
 
                 loss_illumination = (
                     cfg.lambda_reflect * loss_illum_contrast
@@ -1000,10 +998,10 @@ class Runner:
                     + cfg.lambda_illum_color * loss_illum_color
                     + cfg.lambda_smooth * loss_illum_smooth
                     + cfg.lambda_illum_variance * loss_illum_variance
-                    # + cfg.lambda_adaptive_curve * loss_adaptive_curve
+                    + cfg.lambda_illum_curve * loss_adaptive_curve
                 )
 
-                loss = cfg.lambda_reflect * loss_reflectance + low_loss + loss_illumination
+                loss = cfg.lambda_reflect * loss_reflectance + low_loss * cfg.lambda_low + loss_illumination
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -1131,14 +1129,10 @@ class Runner:
                                 far_plane=cfg.far_plane,
                             )
 
-                            if cfg.enable_retinex and len(out) == 5:
+                            if len(out) == 5:
                                 novel_renders, _, _, _, _ = out
-                            elif not cfg.enable_retinex and len(out) == 3:
-                                novel_renders, _, _ = out
                             else:
-                                raise ValueError(
-                                    f"Unexpected output length from rasterization: {len(out)}"
-                                )
+                                novel_renders, _, _ = out
 
                             colors_nchw = novel_renders.permute(0, 3, 1, 2).contiguous()
                             colors_nchw = torch.clamp(colors_nchw, 0.0, 1.0)
@@ -1292,9 +1286,9 @@ class Runner:
                         "train/illumination_exposure", loss_illum_exposure.item(), step
                     )
                     self.writer.add_scalar("train/loss_reconstruct_low", low_loss.item(), step)
-                    # self.writer.add_scalar(
-                    #     "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
-                    # )
+                    self.writer.add_scalar(
+                        "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
+                    )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
                         "train/clipiqa_score", clipiqa_score_value.item(), step
