@@ -901,7 +901,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with ((torch.autocast(device_type=device))):
+            with torch.autocast(device_type=device):
                 if (
                     cfg.enable_hard_view_mining
                     and cfg.enable_clipiqa_loss
@@ -914,9 +914,10 @@ class Runner:
                 camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
 
-                pixels = data["image"].to(device) / 255.0
 
                 image_ids = data["image_id"].to(device)
+                pixels = data["image"].to(device) / 255.0
+
                 masks = data["mask"].to(device) if "mask" in data else None
 
                 if cfg.depth_loss:
@@ -992,7 +993,6 @@ class Runner:
                 info["means2d"].retain_grad()
 
                 if cfg.enable_retinex:
-
                     if cfg.use_hsv_color_space:
                         pixels_nchw = pixels.permute(0, 3, 1, 2)
                         pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
@@ -1005,22 +1005,28 @@ class Runner:
                         log_input_image = torch.log(input_image_for_net + 1e-8)
 
                     retinex_embedding = self.retinex_embeds(image_ids)
+
                     log_illumination_map = self.retinex_net(
                         input_image_for_net, retinex_embedding
                     )  # [1, 3, H, W]
+
                     log_reflectance_target = log_input_image - log_illumination_map
 
                     if cfg.use_hsv_color_space:
                         reflectance_v_target = torch.exp(log_reflectance_target)
-                        reflectance_hsv_target = torch.cat(
-                            [pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1
-                        )
+                        h_channel = pixels_hsv[:, 0:1, :, :]
+                        s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.9
+                        # reflectance_hsv_target = torch.cat(
+                        #     [pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1
+                        # )
+                        reflectance_hsv_target = torch.cat([h_channel, s_channel_dampened, reflectance_v_target], dim=1)
                         reflectance_target = kornia.color.hsv_to_rgb(reflectance_hsv_target)
                     else:
                         reflectance_target = torch.exp(log_reflectance_target)
 
                     reflectance_target = torch.clamp(reflectance_target, 0, 1)
                     illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
+                    illumination_map = torch.clamp(illumination_map, min=1e-5)
 
                     reflectance_target_permuted = reflectance_target.permute(
                         0, 2, 3, 1
@@ -1401,13 +1407,21 @@ class Runner:
                         "train/illumination_map",
                         illumination_map,
                         step,
-                        dataformats="NCHW",
                     )
                     self.writer.add_image(
                         "train/reflectance_target",
                         reflectance_target,
                         step,
-                        dataformats="NCHW",
+                    )
+                    self.writer.add_images(
+                        "retinex_net/input_image_for_net",
+                        input_image_for_net,
+                        step,
+                    )
+                    self.writer.add_images(
+                        "retinex_net/pixels",
+                        pixels.permute(0, 3, 1, 2),
+                        step,
                     )
 
                 self.writer.flush()
