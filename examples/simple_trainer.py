@@ -1023,15 +1023,15 @@ class Runner:
                 #         pixels_hsv = torch.tensor(0.0, device=device)
                 #         input_image_for_net = pixels.permute(0,3,1,2)
                 #         log_input_image = torch.log(input_image_for_net + 1e-8)
-                # 
+                #
                 #     retinex_embedding = self.retinex_embeds(image_ids)
-                # 
+                #
                 #     log_illumination_map = checkpoint(self.retinex_net,
                 #         input_image_for_net, retinex_embedding, use_reentrant=False
                 #     )  # [1, 3, H, W]
-                # 
+                #
                 #     log_reflectance_target = log_input_image - log_illumination_map
-                # 
+                #
                 #     if cfg.use_hsv_color_space:
                 #         reflectance_v_target = torch.exp(log_reflectance_target)
                 #         h_channel = pixels_hsv[:, 0:1, :, :]
@@ -1043,16 +1043,16 @@ class Runner:
                 #         reflectance_target = kornia.color.hsv_to_rgb(reflectance_hsv_target)
                 #     else:
                 #         reflectance_target = torch.exp(log_reflectance_target)
-                # 
+                #
                 #     reflectance_target = torch.clamp(reflectance_target, 0, 1)
                 #     illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
                 #     illumination_map = torch.clamp(illumination_map, min=1e-5)
-                # 
+                #
                 #     reflectance_target_permuted = reflectance_target.permute(
                 #         0, 2, 3, 1
                 #     )  # [1, H, W, 3]
-                # 
-                # 
+                #
+                #
                 #     loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 #     ssim_loss = 1.0 - self.ssim(
                 #         colors_low.permute(0, 3, 1, 2),
@@ -1061,19 +1061,19 @@ class Runner:
                 #     low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
                 #         ssim_loss * cfg.ssim_lambda
                 #     )
-                # 
+                #
                 #     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
                 #     loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
                 #     loss_illum_smooth = self.loss_smooth(illumination_map)
                 #     loss_illum_variance = torch.var(illumination_map)
-                # 
+                #
                 #     loss_adaptive_curve = self.loss_adaptive_curve(
                 #         reflectance_target
                 #     )
                 #     loss_illum_exposure = self.loss_exposure(reflectance_target)
                 #     loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
-                # 
-                # 
+                #
+                #
                 #     loss_illumination = (
                 #         cfg.lambda_reflect * loss_illum_contrast
                 #         + cfg.lambda_illum_exposure * loss_illum_exposure
@@ -1082,9 +1082,9 @@ class Runner:
                 #         + cfg.lambda_illum_variance * loss_illum_variance
                 #         + cfg.lambda_illum_curve * loss_adaptive_curve
                 #     )
-                # 
+                #
                 #     loss = cfg.lambda_reflect * loss_reflectance + low_loss * cfg.lambda_low + loss_illumination
-                # 
+                #
                 # else:
                 f1 = F.l1_loss(colors_low, pixels)
                 ssim_loss = 1.0 - self.ssim(
@@ -1549,11 +1549,11 @@ class Runner:
                 scaler.step(optimizer)
                 optimizer.zero_grad()
 
-            if cfg.enable_retinex:
-                scaler.step(self.retinex_optimizer)
-                self.retinex_optimizer.zero_grad()
-                scaler.step(self.retinex_embed_optimizer)
-                self.retinex_embed_optimizer.zero_grad()
+            # if cfg.enable_retinex:
+                # scaler.step(self.retinex_optimizer)
+                # self.retinex_optimizer.zero_grad()
+                # scaler.step(self.retinex_embed_optimizer)
+                # self.retinex_embed_optimizer.zero_grad()
 
             scaler.update()
 
