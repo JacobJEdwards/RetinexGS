@@ -697,9 +697,11 @@ class Runner:
 
                 if cfg.use_hsv_color_space:
                     pixels_nchw = pixels.permute(0, 3, 1, 2)
-                    pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
-                    v_channel = pixels_hsv[:, 2:3, :, :]
-                    input_image_for_net = v_channel
+                    pixels_hsv = kornia.color.rgb_to_lab(pixels_nchw)
+                    # v_channel = pixels_hsv[:, 2:3, :, :]
+                    v_channel = pixels_hsv[:, 0:1, :, :]
+                    # input_image_for_net = v_channel
+                    input_image_for_net = (v_channel / 100.0)
                     log_input_image = torch.log(input_image_for_net + 1e-8)
                 else:
                     pixels_hsv = torch.tensor(0.0, device=device)
@@ -719,9 +721,11 @@ class Runner:
 
 
                 if cfg.use_hsv_color_space:
-                    reflectance_v_target = torch.exp(log_reflectance_target)
-                    reflectance_hsv_target = torch.cat([pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1)
-                    reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
+                    # reflectance_v_target = torch.exp(log_reflectance_target)
+                    reflectance_v_target = torch.exp(log_reflectance_target) * 100.0
+                    # reflectance_hsv_target = torch.cat([pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1)
+                    reflectance_hsv_target = torch.cat([pixels_hsv[:, 1:3, :, :], reflectance_v_target], dim=1)
+                    reflectance_map = kornia.color.lab_to_rgb(reflectance_hsv_target)
                 else:
                     reflectance_map = torch.exp(log_reflectance_target)
 
