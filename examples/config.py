@@ -79,7 +79,7 @@ class Config:
     depth_loss: bool = False
     depth_lambda: float = 1e-2
 
-    tb_every: int = 500
+    tb_every: int = 100
     tb_save_image: bool = False
 
     lpips_net: Literal["vgg", "alex"] = "alex"
