@@ -1378,9 +1378,9 @@ class Runner:
                     self.writer.add_scalar(
                         "train/illumination_variance", loss_illum_variance.item(), step
                     )
-                    self.writer.add_scalar(
-                        "train/illumination_loss", loss_illumination.item(), step
-                    )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_loss", loss_illumination.item(), step
+                    # )
                     self.writer.add_scalar(
                         "train/illumination_color", loss_illum_color.item(), step
                     )
