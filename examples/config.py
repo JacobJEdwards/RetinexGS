@@ -126,7 +126,7 @@ class Config:
     pretrain_retinex: bool = True
     pretrain_steps: int = 4000
     
-    use_hsv_color_space: bool = True
+    use_hsv_color_space: bool = False
 
     eval_niqe: bool = False
 
