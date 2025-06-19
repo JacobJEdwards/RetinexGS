@@ -746,7 +746,7 @@ class Runner:
             + cfg.lambda_smooth * loss_smoothing
             + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
-            + cfg.lambda_saturation_reg * loss_saturation_regularisation if cfg.use_hsv_color_space else torch.tensor(0.0)
+            + cfg.lambda_saturation_reg * loss_saturation_regularisation
         )
 
         if step % self.cfg.tb_every == 0:
@@ -1105,8 +1105,7 @@ class Runner:
                         + cfg.lambda_smooth * loss_illum_smooth
                         + cfg.lambda_illum_variance * loss_illum_variance
                         + cfg.lambda_illum_curve * loss_adaptive_curve
-                        + cfg.lambda_saturation_reg * loss_saturation_regularisation if cfg.use_hsv_color_space else 
-                        torch.tensor(0.0, device=device)
+                        + cfg.lambda_saturation_reg * loss_saturation_regularisation
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
