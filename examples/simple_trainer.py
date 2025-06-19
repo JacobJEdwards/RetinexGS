@@ -826,7 +826,7 @@ class Runner:
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
 
-            scaler.update()
+            # scaler.update()
 
             pbar.set_postfix({"loss": loss.item()})
 
