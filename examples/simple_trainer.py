@@ -1667,7 +1667,7 @@ class Runner:
                     canvas_eval_low,
                 )
 
-                colors_low_np = colors_low.cpu().numpy()
+                colors_low_np = colors_low.squeeze(0).cpu().numpy()
 
 
                 imageio.imwrite(
@@ -1680,7 +1680,7 @@ class Runner:
                         f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
                         canvas_eval_enh,
                     )
-                    colors_enh_np = colors_enh.cpu().numpy()
+                    colors_enh_np = colors_enh.squeeze(0).cpu().numpy()
                     imageio.imwrite(
                         f"{self.render_dir}/{stage}_enh_{i:04d}.png",
                         (colors_enh_np * 255).astype(np.uint8),
