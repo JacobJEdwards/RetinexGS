@@ -708,11 +708,11 @@ class Runner:
         )
 
         log_reflectance_target = log_input_image - log_illumination_map
-        
+
         if cfg.use_hsv_color_space:
             reflectance_v_target = torch.exp(log_reflectance_target)
             h_channel = pixels_hsv[:, 0:1, :, :]
-            
+
             s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.95
             reflectance_hsv_target = torch.cat(
                 [h_channel, s_channel_dampened, reflectance_v_target], dim=1
@@ -1667,10 +1667,23 @@ class Runner:
                     canvas_eval_low,
                 )
 
+                colors_low_np = colors_low.cpu().numpy()
+
+
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_low_{i:04d}.png",
+                    (colors_low_np * 255).astype(np.uint8),
+                )
+
                 if cfg.enable_retinex:
                     imageio.imwrite(
                         f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
                         canvas_eval_enh,
+                    )
+                    colors_enh_np = colors_enh.cpu().numpy()
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_enh_{i:04d}.png",
+                        (colors_enh_np * 255).astype(np.uint8),
                     )
 
 
