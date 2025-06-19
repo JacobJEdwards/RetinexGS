@@ -858,6 +858,30 @@ class Runner:
             torch.optim.lr_scheduler.ExponentialLR(
                 self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)
             ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["scales"], gamma=0.01 ** (1.0 / max_steps)
+            ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["opacities"], gamma=0.01 ** (1.0 / max_steps)
+            ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["quats"], gamma=0.01 ** (1.0 / max_steps)
+            ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["sh0"], gamma=0.01 ** (1.0 / max_steps)
+            ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["shN"], gamma=0.01 ** (1.0 / max_steps)
+            ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["features"], gamma=0.01 ** (1.0 / max_steps)
+            ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["adjust_k"], gamma=0.01 ** (1.0 / max_steps)
+            ),
+            torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizers["adjust_b"], gamma=0.01 ** (1.0 / max_steps)
+            ),
         ]
         if cfg.enable_retinex:
             schedulers.append(
@@ -1604,6 +1628,7 @@ class Runner:
         for i, data in enumerate(tqdm.tqdm(valloader, desc=f"Eval {stage}")):
             camtoworlds = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
+
             pixels = data["image"].to(device) / 255.0
             image_id = data["image_id"].to(device)
 
@@ -1699,18 +1724,18 @@ class Runner:
 
                 if cfg.enable_retinex:
                     with torch.no_grad():
-                        _, _, reflectance_target = self.get_retinex_output(image_id, pixels)
+                        # _, _, reflectance_target = self.get_retinex_output(image_id, pixels)
                         colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-                        reflectance_target_p = reflectance_target
+                        # reflectance_target_p = reflectance_target
 
                         metrics["lpips_enh"].append(
-                            self.lpips(colors_enh_p, reflectance_target_p)
+                            self.lpips(colors_enh_p, pixels_p)
                         )
                         metrics["ssim_enh"].append(
-                            self.ssim(colors_enh_p, reflectance_target_p)
+                            self.ssim(colors_enh_p, pixels_p)
                         )
                         metrics["psnr_enh"].append(
-                            self.psnr(colors_enh_p, reflectance_target_p)
+                            self.psnr(colors_enh_p, pixels_p)
                         )
 
         if world_rank == 0:
