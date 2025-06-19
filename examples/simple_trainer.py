@@ -1064,27 +1064,27 @@ class Runner:
 
                     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
 
-                    # loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
-                    # loss_illum_smooth = self.loss_smooth(illumination_map)
-                    # loss_illum_variance = torch.var(illumination_map)
-                    #
-                    # loss_adaptive_curve = self.loss_adaptive_curve(
-                    #     reflectance_target
-                    # )
-                    # loss_illum_exposure = self.loss_exposure(reflectance_target)
-                    # loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
+                    loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
+                    loss_illum_smooth = self.loss_smooth(illumination_map)
+                    loss_illum_variance = torch.var(illumination_map)
+
+                    loss_adaptive_curve = self.loss_adaptive_curve(
+                        reflectance_target
+                    )
+                    loss_illum_exposure = self.loss_exposure(reflectance_target)
+                    loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
 
 
-                    # loss_illumination = (
-                    #     cfg.lambda_reflect * loss_illum_contrast
-                    #     + cfg.lambda_illum_exposure * loss_illum_exposure
-                    #     + cfg.lambda_illum_color * loss_illum_color
-                    #     + cfg.lambda_smooth * loss_illum_smooth
-                    #     + cfg.lambda_illum_variance * loss_illum_variance
-                    #     + cfg.lambda_illum_curve * loss_adaptive_curve
-                    # )
-                    #
-                    loss = cfg.lambda_reflect * loss_reflectance + low_loss * cfg.lambda_low # + loss_illumination
+                    loss_illumination = (
+                        cfg.lambda_reflect * loss_illum_contrast
+                        + cfg.lambda_illum_exposure * loss_illum_exposure
+                        + cfg.lambda_illum_color * loss_illum_color
+                        + cfg.lambda_smooth * loss_illum_smooth
+                        + cfg.lambda_illum_variance * loss_illum_variance
+                        + cfg.lambda_illum_curve * loss_adaptive_curve
+                    )
+
+                    loss = cfg.lambda_reflect * loss_reflectance + low_loss * cfg.lambda_low + loss_illumination
 
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
@@ -1369,28 +1369,28 @@ class Runner:
                     self.writer.add_scalar(
                         "train/reflectance_loss", loss_reflectance.item(), step
                     )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_spatial", loss_illum_contrast.item(), step
-                    # )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_smoothing", loss_illum_smooth.item(), step
-                    # )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_variance", loss_illum_variance.item(), step
-                    # )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_loss", loss_illumination.item(), step
-                    # )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_color", loss_illum_color.item(), step
-                    # )
-                    # self.writer.add_scalar(
-                    #     "train/illumination_exposure", loss_illum_exposure.item(), step
-                    # )
+                    self.writer.add_scalar(
+                        "train/illumination_spatial", loss_illum_contrast.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_smoothing", loss_illum_smooth.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_variance", loss_illum_variance.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_loss", loss_illumination.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_color", loss_illum_color.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_exposure", loss_illum_exposure.item(), step
+                    )
                     self.writer.add_scalar("train/loss_reconstruct_low", low_loss.item(), step)
-                    # self.writer.add_scalar(
-                    #     "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
-                    # )
+                    self.writer.add_scalar(
+                        "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
+                    )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
                         "train/clipiqa_score", clipiqa_score_value.item(), step
@@ -1425,11 +1425,11 @@ class Runner:
                             reflectance_target,
                             step,
                         )
-                        # self.writer.add_images(
-                        #     "train/input_image_for_net",
-                        #     input_image_for_net,
-                        #     step,
-                        # )
+                        self.writer.add_images(
+                            "train/input_image_for_net",
+                            input_image_for_net,
+                            step,
+                        )
                         self.writer.add_images(
                             "train/pixels",
                             pixels.permute(0, 3, 1, 2),
@@ -1550,11 +1550,11 @@ class Runner:
                 scaler.step(optimizer)
                 optimizer.zero_grad()
 
-            # if cfg.enable_retinex:
-                # scaler.step(self.retinex_optimizer)
-                # self.retinex_optimizer.zero_grad()
-                # scaler.step(self.retinex_embed_optimizer)
-                # self.retinex_embed_optimizer.zero_grad()
+            if cfg.enable_retinex:
+                scaler.step(self.retinex_optimizer)
+                self.retinex_optimizer.zero_grad()
+                scaler.step(self.retinex_embed_optimizer)
+                self.retinex_embed_optimizer.zero_grad()
 
             scaler.update()
 
