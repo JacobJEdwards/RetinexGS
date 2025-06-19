@@ -1369,28 +1369,28 @@ class Runner:
                     self.writer.add_scalar(
                         "train/reflectance_loss", loss_reflectance.item(), step
                     )
-                    self.writer.add_scalar(
-                        "train/illumination_spatial", loss_illum_contrast.item(), step
-                    )
-                    self.writer.add_scalar(
-                        "train/illumination_smoothing", loss_illum_smooth.item(), step
-                    )
-                    self.writer.add_scalar(
-                        "train/illumination_variance", loss_illum_variance.item(), step
-                    )
-                    self.writer.add_scalar(
-                        "train/illumination_loss", loss_illumination.item(), step
-                    )
-                    self.writer.add_scalar(
-                        "train/illumination_color", loss_illum_color.item(), step
-                    )
-                    self.writer.add_scalar(
-                        "train/illumination_exposure", loss_illum_exposure.item(), step
-                    )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_spatial", loss_illum_contrast.item(), step
+                    # )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_smoothing", loss_illum_smooth.item(), step
+                    # )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_variance", loss_illum_variance.item(), step
+                    # )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_loss", loss_illumination.item(), step
+                    # )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_color", loss_illum_color.item(), step
+                    # )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_exposure", loss_illum_exposure.item(), step
+                    # )
                     self.writer.add_scalar("train/loss_reconstruct_low", low_loss.item(), step)
-                    self.writer.add_scalar(
-                        "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
-                    )
+                    # self.writer.add_scalar(
+                    #     "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
+                    # )
                 if cfg.enable_clipiqa_loss:
                     self.writer.add_scalar(
                         "train/clipiqa_score", clipiqa_score_value.item(), step
