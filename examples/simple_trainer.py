@@ -362,6 +362,7 @@ class Runner:
 
         if cfg.enable_clipiqa_loss or cfg.enable_retinex_clipiqa:
             self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
+            self.brisque_model = piq.BRISQUELoss(data_range=1.0).to(self.device)
 
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
@@ -738,8 +739,8 @@ class Runner:
         )
         loss_exposure_val = self.loss_exposure(reflectance_map)
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=1.0)
-        clipiqa_loss = self.clipiqa_model(
-            reflectance_map.contiguous()
+        clipiqa_loss = self.brisque_model(
+            reflectance_map
         )
         loss = (
             cfg.lambda_reflect * loss_reflectance_spa
