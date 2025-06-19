@@ -873,15 +873,6 @@ class Runner:
             torch.optim.lr_scheduler.ExponentialLR(
                 self.optimizers["shN"], gamma=0.01 ** (1.0 / max_steps)
             ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["features"], gamma=0.01 ** (1.0 / max_steps)
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["adjust_k"], gamma=0.01 ** (1.0 / max_steps)
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["adjust_b"], gamma=0.01 ** (1.0 / max_steps)
-            ),
         ]
         if cfg.enable_retinex:
             schedulers.append(
