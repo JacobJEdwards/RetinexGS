@@ -1073,7 +1073,7 @@ class Runner:
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
-                    loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh + loss_illumination * 0.1
+                    loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh + loss_illumination
 
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
@@ -1675,7 +1675,7 @@ class Runner:
                 if cfg.eval_niqe and self.niqe_metric is not None:
                     niqe_score = self.niqe_metric(colors_p.contiguous())
                     metrics["niqe"].append(niqe_score)
-                    
+
                     if cfg.enable_retinex:
                         colors_enh_p = colors_enh.permute(0, 3, 1, 2)
                         niqe_score_enh = self.niqe_metric(colors_enh_p.contiguous())

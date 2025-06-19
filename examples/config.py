@@ -26,7 +26,7 @@ class Config:
     batch_size: int = 1
     steps_scaler: float = 1.0
 
-    max_steps: int = 10_000
+    max_steps: int = 30_000
     eval_steps: list[int] = field(default_factory=lambda: [3000, 7_000, 10_000])
     save_steps: list[int] = field(default_factory=lambda: [3000, 7_000,10_000])
     save_ply: bool = True
@@ -46,7 +46,7 @@ class Config:
     far_plane: float = 1e10
 
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
-    packed: bool = False
+    packed: bool = True
     sparse_grad: bool = False
     visible_adam: bool = False
     antialiased: bool = False
@@ -124,7 +124,7 @@ class Config:
     lambda_illum_curve: float = 1.4
     pretrain_retinex: bool = True
     pretrain_steps: int = 4000
-    
+
     use_hsv_color_space: bool = True
 
     eval_niqe: bool = False
