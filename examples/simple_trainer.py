@@ -362,7 +362,7 @@ class Runner:
 
         if cfg.enable_clipiqa_loss or cfg.enable_retinex_clipiqa:
             self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
-            self.brisque_model = piq.BRISQUE(data_range=1.0).to(self.device)
+            self.brisque_model = piq.BRISQUELoss(data_range=1.0).to(self.device)
 
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
