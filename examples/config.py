@@ -46,12 +46,12 @@ class Config:
     far_plane: float = 1e10
 
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
-    packed: bool = True
+    packed: bool = False
     sparse_grad: bool = False
-    visible_adam: bool = True
+    visible_adam: bool = False
     antialiased: bool = False
 
-    random_bkgd: bool = True
+    random_bkgd: bool = False
 
     means_lr: float = 1.6e-4
     scales_lr: float = 5e-3
@@ -76,7 +76,7 @@ class Config:
     use_bilateral_grid: bool = False
     bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
 
-    depth_loss: bool = True
+    depth_loss: bool = False
     depth_lambda: float = 1e-2
 
     tb_every: int = 100

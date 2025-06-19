@@ -272,7 +272,7 @@ class SmoothingLoss(nn.Module):
 
         self.pool = nn.AvgPool2d(4)
 
-    def forward(self: Self, enhance: Tensor): # Only needs the illumination map
+    def forward(self: Self, enhance: Tensor): 
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
         enhance_pool = self.pool(enhance_mean)
 

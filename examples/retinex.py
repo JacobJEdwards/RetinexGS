@@ -286,14 +286,12 @@ class MultiScaleRetinexNet(nn.Module):
         # self.sigmoid = nn.Sigmoid()
 
     def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
-        # Encoder
         c1 = self.relu(self.conv1(x))
         c1_modulated = self.film1(c1, embedding)
         p1 = self.pool(c1_modulated)
         c2 = self.relu(self.conv2(p1))
         p2 = self.pool(c2)
 
-        # Decoder
         up1 = self.upconv1(p2)
         up1 = F.interpolate(
             up1, size=p1.shape[2:], mode="bilinear", align_corners=False

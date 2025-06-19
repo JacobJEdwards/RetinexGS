@@ -679,6 +679,45 @@ class Runner:
             info,
         )  # return colors and alphas
 
+    def get_retinex_output(
+            self,
+            images_ids: Tensor,
+            pixels: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        if self.cfg.use_hsv_color_space:
+            pixels_nchw = pixels.permute(0, 3, 1, 2)
+            pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
+            v_channel = pixels_hsv[:, 2:3, :, :]
+            input_image_for_net = v_channel
+            log_input_image = torch.log(input_image_for_net + 1e-8)
+        else:
+            pixels_hsv = torch.tensor(0.0, device=self.device)
+            input_image_for_net = pixels.permute(0, 3, 1, 2)
+            log_input_image = torch.log(input_image_for_net + 1e-8)
+
+        retinex_embedding = self.retinex_embeds(images_ids)
+
+        log_illumination_map = checkpoint(self.retinex_net,
+            input_image_for_net, retinex_embedding, use_reentrant=False
+        )
+        log_reflectance_target = log_input_image - log_illumination_map
+
+        if self.cfg.use_hsv_color_space:
+            reflectance_v_target = torch.exp(log_reflectance_target)
+            h_channel = pixels_hsv[:, 0:1, :, :]
+            s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.95
+            reflectance_hsv_target = torch.cat(
+                [h_channel, s_channel_dampened, reflectance_v_target], dim=1
+            )
+            reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
+        else:
+            reflectance_map = torch.exp(log_reflectance_target)
+        reflectance_map = torch.clamp(reflectance_map, 0, 1)
+        illumination_map = torch.exp(log_illumination_map)
+        illumination_map = torch.clamp(illumination_map, min=1e-5)
+
+        return input_image_for_net, illumination_map, reflectance_map
+
     def retinex_train_step(self,
         images_ids: Tensor,
         pixels: Tensor,
@@ -687,43 +726,10 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        if cfg.use_hsv_color_space:
-            pixels_nchw = pixels.permute(0, 3, 1, 2)
-            pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
-            v_channel = pixels_hsv[:, 2:3, :, :]
-            input_image_for_net = v_channel
-            log_input_image = torch.log(input_image_for_net + 1e-8)
-        else:
-            pixels_hsv = torch.tensor(0.0, device=device)
-            input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net + 1e-8)
-
-        self.retinex_optimizer.zero_grad()
-        self.retinex_embed_optimizer.zero_grad()
-
-        retinex_embedding = self.retinex_embeds(images_ids)
-
-        log_illumination_map = checkpoint(self.retinex_net,
-            input_image_for_net, retinex_embedding, use_reentrant=False
+        input_image_for_net, illumination_map, reflectance_map = self.get_retinex_output(
+            images_ids=images_ids,
+            pixels=pixels
         )
-
-        log_reflectance_target = log_input_image - log_illumination_map
-
-        if cfg.use_hsv_color_space:
-            reflectance_v_target = torch.exp(log_reflectance_target)
-            h_channel = pixels_hsv[:, 0:1, :, :]
-
-            s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.95
-            reflectance_hsv_target = torch.cat(
-                [h_channel, s_channel_dampened, reflectance_v_target], dim=1
-            )
-            reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
-        else:
-            reflectance_map = torch.exp(log_reflectance_target)
-
-        reflectance_map = torch.clamp(reflectance_map, 0, 1)
-        illumination_map = torch.exp(log_illumination_map)
-        illumination_map = torch.clamp(illumination_map, min=1e-5)
 
         loss_color_val = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
         loss_smoothing = self.loss_smooth(illumination_map)
@@ -828,6 +834,9 @@ class Runner:
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
 
+            self.retinex_optimizer.zero_grad()
+            self.retinex_embed_optimizer.zero_grad()
+
             # scaler.update()
 
             pbar.set_postfix({"loss": loss.item()})
@@ -838,8 +847,6 @@ class Runner:
         device = self.device
         world_rank = self.world_rank
         world_size = self.world_size
-
-        scaler = GradScaler()
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
@@ -1015,40 +1022,10 @@ class Runner:
                 info["means2d"].retain_grad()
 
                 if cfg.enable_retinex:
-                    if cfg.use_hsv_color_space:
-                        pixels_nchw = pixels.permute(0, 3, 1, 2)
-                        pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
-                        v_channel = pixels_hsv[:, 2:3, :, :]
-                        input_image_for_net = v_channel
-                        log_input_image = torch.log(input_image_for_net + 1e-8)
-                    else:
-                        pixels_hsv = torch.tensor(0.0, device=device)
-                        input_image_for_net = pixels.permute(0,3,1,2)
-                        log_input_image = torch.log(input_image_for_net + 1e-8)
-
-                    retinex_embedding = self.retinex_embeds(image_ids)
-
-                    log_illumination_map = checkpoint(self.retinex_net,
-                        input_image_for_net, retinex_embedding, use_reentrant=False
-                    )  # [1, 3, H, W]
-
-                    log_reflectance_target = log_input_image - log_illumination_map
-
-                    if cfg.use_hsv_color_space:
-                        reflectance_v_target = torch.exp(log_reflectance_target)
-                        h_channel = pixels_hsv[:, 0:1, :, :]
-                        s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.9
-                        # reflectance_hsv_target = torch.cat(
-                        #     [pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1
-                        # )
-                        reflectance_hsv_target = torch.cat([h_channel, s_channel_dampened, reflectance_v_target], dim=1)
-                        reflectance_target = kornia.color.hsv_to_rgb(reflectance_hsv_target)
-                    else:
-                        reflectance_target = torch.exp(log_reflectance_target)
-
-                    reflectance_target = torch.clamp(reflectance_target, 0, 1)
-                    illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
-                    illumination_map = torch.clamp(illumination_map, min=1e-5)
+                    input_image_for_net, illumination_map, reflectance_target = self.get_retinex_output(
+                        images_ids=image_ids,
+                        pixels=pixels
+                    )
 
                     reflectance_target_permuted = reflectance_target.permute(
                         0, 2, 3, 1
@@ -1096,7 +1073,7 @@ class Runner:
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
-                    loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh + loss_illumination
+                    loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh + loss_illumination * 0.1
 
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
@@ -1621,6 +1598,7 @@ class Runner:
             camtoworlds = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
             pixels = data["image"].to(device) / 255.0
+            image_id = data["image_id"].to(device)
 
             masks = data["mask"].to(device) if "mask" in data else None
             height, width = pixels.shape[1:3]
@@ -1706,14 +1684,22 @@ class Runner:
                     metrics["cc_psnr"].append(self.psnr(cc_colors_p, pixels_p))
                     metrics["cc_ssim"].append(self.ssim(cc_colors_p, pixels_p))
                     metrics["cc_lpips"].append(self.lpips(cc_colors_p, pixels_p))
-                
+
                 if cfg.enable_retinex:
-                    colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-                    metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
-                    metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
-                    metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
+                    with torch.no_grad():
+                        _, _, reflectance_target = self.get_retinex_output(image_id, pixels)
+                        colors_enh_p = colors_enh.permute(0, 3, 1, 2)
+                        reflectance_target_p = reflectance_target.permute(0, 3, 1, 2)
 
-
+                        metrics["lpips_enh"].append(
+                            self.lpips(colors_enh_p, reflectance_target_p)
+                        )
+                        metrics["ssim_enh"].append(
+                            self.ssim(colors_enh_p, reflectance_target_p)
+                        )
+                        metrics["psnr_enh"].append(
+                            self.psnr(colors_enh_p, reflectance_target_p)
+                        )
 
         if world_rank == 0:
             avg_ellipse_time = (
