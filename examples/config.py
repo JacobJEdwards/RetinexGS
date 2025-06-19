@@ -126,7 +126,7 @@ class Config:
     pretrain_steps: int = 4000
     
     enable_retinex_clipiqa: bool = True
-    retinex_clipiqa_lambda: float = 0.5
+    retinex_clipiqa_lambda: float = 1.0
 
     use_hsv_color_space: bool = True
 

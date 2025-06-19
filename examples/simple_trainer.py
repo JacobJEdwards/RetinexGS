@@ -1083,13 +1083,13 @@ class Runner:
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
                     loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh + loss_illumination
 
-                    if cfg.enable_retinex_clipiqa:
-                        loss += (
-                            cfg.retinex_clipiqa_lambda
-                            * self.clipiqa_model(
-                                reflectance_target,
-                            )
-                        )
+                    # if cfg.enable_retinex_clipiqa:
+                    #     loss += (
+                    #         cfg.retinex_clipiqa_lambda
+                    #         * self.clipiqa_model(
+                    #             reflectance_target,
+                    #         )
+                    #     )
 
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
