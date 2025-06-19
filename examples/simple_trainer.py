@@ -1110,13 +1110,13 @@ class Runner:
                     illumination_map = torch.tensor(0.0, device=device)
                     reflectance_target = torch.tensor(0.0, device=device)
 
-                if cfg.enable_retinex:
-                    k_mean = self.splats["adjust_k"].mean(dim=-1, keepdim=True)
-                    loss_k_gray = torch.mean((self.splats["adjust_k"] - k_mean) ** 2)
-
-                    loss_b_offset = torch.mean(self.splats["adjust_b"] ** 2)
-
-                    loss += 0.01 * loss_k_gray + 0.01 * loss_b_offset
+                # if cfg.enable_retinex:
+                #     k_mean = self.splats["adjust_k"].mean(dim=-1, keepdim=True)
+                #     loss_k_gray = torch.mean((self.splats["adjust_k"] - k_mean) ** 2)
+                # 
+                #     loss_b_offset = torch.mean(self.splats["adjust_b"] ** 2)
+                # 
+                #     loss += 0.01 * loss_k_gray + 0.01 * loss_b_offset
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
