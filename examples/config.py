@@ -127,7 +127,7 @@ class Config:
     
     use_hsv_color_space: bool = True
 
-    eval_niqe: bool = False
+    eval_niqe: bool = True
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
