@@ -1065,7 +1065,7 @@ class Runner:
                     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
                     loss_reflectance_ssim = 1.0 - self.ssim(
                         colors_enh.permute(0, 3, 1, 2),
-                        reflectance_target_permuted
+                        reflectance_target_permuted.permute(0,3,1,2),
                     )
 
                     loss_reconstruct_enh = (
