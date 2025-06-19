@@ -1640,7 +1640,7 @@ class Runner:
 
             if world_rank == 0:
                 canvas_list_low = [pixels, colors_low]
-                canvas_list_enh = [colors_enh, alphas_enh]
+                canvas_list_enh = [pixels, colors_enh]
 
                 canvas_eval_low = torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
                 canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
