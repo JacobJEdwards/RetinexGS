@@ -744,10 +744,10 @@ class Runner:
         )
         loss = (
             cfg.lambda_reflect * loss_reflectance_spa
-            + cfg.lambda_illum_color * loss_color_val
-            + cfg.lambda_illum_exposure * loss_exposure_val
+            # + cfg.lambda_illum_color * loss_color_val
+            # + cfg.lambda_illum_exposure * loss_exposure_val
             + cfg.lambda_smooth * loss_smoothing
-            + cfg.lambda_illum_variance * loss_variance
+            # + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
             + cfg.retinex_clipiqa_lambda * (1 - clipiqa_loss)
         )
