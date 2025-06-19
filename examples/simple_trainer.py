@@ -748,7 +748,7 @@ class Runner:
         )
         if cfg.enable_retinex_clipiqa:
             clipiqa_loss = self.clipiqa_model(
-                reflectance_map.contiguous()
+                reflectance_map.permute(0, 3, 1, 2).contiguous()
             )
             loss += cfg.retinex_clipiqa_lambda * (1.0 - clipiqa_loss)
 
