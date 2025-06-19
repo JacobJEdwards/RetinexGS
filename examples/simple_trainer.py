@@ -1012,102 +1012,103 @@ class Runner:
 
                 info["means2d"].retain_grad()
 
-                # if cfg.enable_retinex:
-                #     if cfg.use_hsv_color_space:
-                #         pixels_nchw = pixels.permute(0, 3, 1, 2)
-                #         pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
-                #         v_channel = pixels_hsv[:, 2:3, :, :]
-                #         input_image_for_net = v_channel
-                #         log_input_image = torch.log(input_image_for_net + 1e-8)
-                #     else:
-                #         pixels_hsv = torch.tensor(0.0, device=device)
-                #         input_image_for_net = pixels.permute(0,3,1,2)
-                #         log_input_image = torch.log(input_image_for_net + 1e-8)
-                #
-                #     retinex_embedding = self.retinex_embeds(image_ids)
-                #
-                #     log_illumination_map = checkpoint(self.retinex_net,
-                #         input_image_for_net, retinex_embedding, use_reentrant=False
-                #     )  # [1, 3, H, W]
-                #
-                #     log_reflectance_target = log_input_image - log_illumination_map
-                #
-                #     if cfg.use_hsv_color_space:
-                #         reflectance_v_target = torch.exp(log_reflectance_target)
-                #         h_channel = pixels_hsv[:, 0:1, :, :]
-                #         s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.9
-                #         # reflectance_hsv_target = torch.cat(
-                #         #     [pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1
-                #         # )
-                #         reflectance_hsv_target = torch.cat([h_channel, s_channel_dampened, reflectance_v_target], dim=1)
-                #         reflectance_target = kornia.color.hsv_to_rgb(reflectance_hsv_target)
-                #     else:
-                #         reflectance_target = torch.exp(log_reflectance_target)
-                #
-                #     reflectance_target = torch.clamp(reflectance_target, 0, 1)
-                #     illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
-                #     illumination_map = torch.clamp(illumination_map, min=1e-5)
-                #
-                #     reflectance_target_permuted = reflectance_target.permute(
-                #         0, 2, 3, 1
-                #     )  # [1, H, W, 3]
-                #
-                #
-                #     loss_reconstruct_low = F.l1_loss(colors_low, pixels)
-                #     ssim_loss = 1.0 - self.ssim(
-                #         colors_low.permute(0, 3, 1, 2),
-                #         pixels.permute(0, 3, 1, 2),
-                #     )
-                #     low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
-                #         ssim_loss * cfg.ssim_lambda
-                #     )
-                #
-                #     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
-                #     loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
-                #     loss_illum_smooth = self.loss_smooth(illumination_map)
-                #     loss_illum_variance = torch.var(illumination_map)
-                #
-                #     loss_adaptive_curve = self.loss_adaptive_curve(
-                #         reflectance_target
-                #     )
-                #     loss_illum_exposure = self.loss_exposure(reflectance_target)
-                #     loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
-                #
-                #
-                #     loss_illumination = (
-                #         cfg.lambda_reflect * loss_illum_contrast
-                #         + cfg.lambda_illum_exposure * loss_illum_exposure
-                #         + cfg.lambda_illum_color * loss_illum_color
-                #         + cfg.lambda_smooth * loss_illum_smooth
-                #         + cfg.lambda_illum_variance * loss_illum_variance
-                #         + cfg.lambda_illum_curve * loss_adaptive_curve
-                #     )
-                #
-                #     loss = cfg.lambda_reflect * loss_reflectance + low_loss * cfg.lambda_low + loss_illumination
-                #
-                # else:
-                f1 = F.l1_loss(colors_low, pixels)
-                ssim_loss = 1.0 - self.ssim(
-                    colors_low.permute(0, 3, 1, 2),
-                    pixels.permute(0, 3, 1, 2),
-                )
+                if cfg.enable_retinex:
+                    if cfg.use_hsv_color_space:
+                        pixels_nchw = pixels.permute(0, 3, 1, 2)
+                        pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
+                        v_channel = pixels_hsv[:, 2:3, :, :]
+                        input_image_for_net = v_channel
+                        log_input_image = torch.log(input_image_for_net + 1e-8)
+                    else:
+                        pixels_hsv = torch.tensor(0.0, device=device)
+                        input_image_for_net = pixels.permute(0,3,1,2)
+                        log_input_image = torch.log(input_image_for_net + 1e-8)
 
-                loss_reflectance = f1
+                    retinex_embedding = self.retinex_embeds(image_ids)
 
-                loss = (
-                    f1 * (1.0 - cfg.ssim_lambda) + ssim_loss * cfg.ssim_lambda
-                )
+                    log_illumination_map = checkpoint(self.retinex_net,
+                        input_image_for_net, retinex_embedding, use_reentrant=False
+                    )  # [1, 3, H, W]
 
-                low_loss = loss
-                loss_illumination = torch.tensor(0.0, device=device)
-                loss_illum_color = torch.tensor(0.0, device=device)
-                loss_illum_smooth = torch.tensor(0.0, device=device)
-                loss_illum_variance = torch.tensor(0.0, device=device)
-                loss_adaptive_curve = torch.tensor(0.0, device=device)
-                loss_illum_exposure = torch.tensor(0.0, device=device)
-                loss_illum_contrast = torch.tensor(0.0, device=device)
-                illumination_map = torch.tensor(0.0, device=device)
-                reflectance_target = torch.tensor(0.0, device=device)
+                    log_reflectance_target = log_input_image - log_illumination_map
+
+                    if cfg.use_hsv_color_space:
+                        reflectance_v_target = torch.exp(log_reflectance_target)
+                        h_channel = pixels_hsv[:, 0:1, :, :]
+                        s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.9
+                        # reflectance_hsv_target = torch.cat(
+                        #     [pixels_hsv[:, 0:2, :, :], reflectance_v_target], dim=1
+                        # )
+                        reflectance_hsv_target = torch.cat([h_channel, s_channel_dampened, reflectance_v_target], dim=1)
+                        reflectance_target = kornia.color.hsv_to_rgb(reflectance_hsv_target)
+                    else:
+                        reflectance_target = torch.exp(log_reflectance_target)
+
+                    reflectance_target = torch.clamp(reflectance_target, 0, 1)
+                    illumination_map = torch.exp(log_illumination_map)  # [1, 3, H, W]
+                    illumination_map = torch.clamp(illumination_map, min=1e-5)
+
+                    reflectance_target_permuted = reflectance_target.permute(
+                        0, 2, 3, 1
+                    )  # [1, H, W, 3]
+
+
+                    loss_reconstruct_low = F.l1_loss(colors_low, pixels)
+                    ssim_loss = 1.0 - self.ssim(
+                        colors_low.permute(0, 3, 1, 2),
+                        pixels.permute(0, 3, 1, 2),
+                    )
+                    low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
+                        ssim_loss * cfg.ssim_lambda
+                    )
+
+                    loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
+
+                    # loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
+                    # loss_illum_smooth = self.loss_smooth(illumination_map)
+                    # loss_illum_variance = torch.var(illumination_map)
+                    #
+                    # loss_adaptive_curve = self.loss_adaptive_curve(
+                    #     reflectance_target
+                    # )
+                    # loss_illum_exposure = self.loss_exposure(reflectance_target)
+                    # loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
+
+
+                    # loss_illumination = (
+                    #     cfg.lambda_reflect * loss_illum_contrast
+                    #     + cfg.lambda_illum_exposure * loss_illum_exposure
+                    #     + cfg.lambda_illum_color * loss_illum_color
+                    #     + cfg.lambda_smooth * loss_illum_smooth
+                    #     + cfg.lambda_illum_variance * loss_illum_variance
+                    #     + cfg.lambda_illum_curve * loss_adaptive_curve
+                    # )
+                    #
+                    loss = cfg.lambda_reflect * loss_reflectance + low_loss * cfg.lambda_low # + loss_illumination
+
+                else:
+                    f1 = F.l1_loss(colors_low, pixels)
+                    ssim_loss = 1.0 - self.ssim(
+                        colors_low.permute(0, 3, 1, 2),
+                        pixels.permute(0, 3, 1, 2),
+                    )
+
+                    loss_reflectance = f1
+
+                    loss = (
+                        f1 * (1.0 - cfg.ssim_lambda) + ssim_loss * cfg.ssim_lambda
+                    )
+
+                    low_loss = loss
+                    loss_illumination = torch.tensor(0.0, device=device)
+                    loss_illum_color = torch.tensor(0.0, device=device)
+                    loss_illum_smooth = torch.tensor(0.0, device=device)
+                    loss_illum_variance = torch.tensor(0.0, device=device)
+                    loss_adaptive_curve = torch.tensor(0.0, device=device)
+                    loss_illum_exposure = torch.tensor(0.0, device=device)
+                    loss_illum_contrast = torch.tensor(0.0, device=device)
+                    illumination_map = torch.tensor(0.0, device=device)
+                    reflectance_target = torch.tensor(0.0, device=device)
 
                 if cfg.enable_retinex:
                     k_mean = self.splats["adjust_k"].mean(dim=-1, keepdim=True)
