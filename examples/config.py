@@ -122,11 +122,10 @@ class Config:
     lambda_illum_variance: float = 0.08
     lambda_illum_contrast: float = 0.1
     lambda_illum_curve: float = 1.4
-    lambda_saturation_reg: float = 0.2
     pretrain_retinex: bool = True
     pretrain_steps: int = 4000
     
-    use_hsv_color_space: bool = False
+    use_hsv_color_space: bool = True
 
     eval_niqe: bool = False
 
