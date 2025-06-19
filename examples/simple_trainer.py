@@ -360,9 +360,8 @@ class Runner:
             if world_size > 1:
                 self.app_module = DDP(self.app_module)
 
-        if cfg.enable_clipiqa_loss:
-            if cfg.clipiqa_model_type == "clipiqa":
-                self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
+        if cfg.enable_clipiqa_loss or cfg.enable_retinex_clipiqa:
+            self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
 
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
@@ -747,6 +746,11 @@ class Runner:
             + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
         )
+        if cfg.enable_retinex_clipiqa:
+            clipiqa_loss = self.clipiqa_model(
+                reflectance_map.permute(0, 3, 1, 2)
+            )
+            loss += cfg.retinex_clipiqa_lambda * clipiqa_loss
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/loss", loss.item(), step)
@@ -768,6 +772,11 @@ class Runner:
             self.writer.add_scalar(
                 "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
             )
+
+            if cfg.enable_retinex_clipiqa:
+                self.writer.add_scalar(
+                    "retinex_net/loss_clipiqa", clipiqa_loss.item(), step
+                )
 
             # draw image
             if self.cfg.tb_save_image:
@@ -1074,6 +1083,14 @@ class Runner:
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
                     loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh + loss_illumination
+
+                    if cfg.enable_retinex_clipiqa:
+                        loss += (
+                            cfg.retinex_clipiqa_lambda
+                            * self.clipiqa_model(
+                                reflectance_target,
+                            )
+                        )
 
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
