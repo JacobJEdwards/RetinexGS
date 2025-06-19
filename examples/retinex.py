@@ -281,9 +281,15 @@ class MultiScaleRetinexNet(nn.Module):
         )
 
         self.relu = nn.ReLU()
-        # self.sigmoid = nn.Sigmoid()
 
-    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
+        self.saturation_head = nn.Sequential(
+            nn.Conv2d(32, 16, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(16, 1, kernel_size=3, padding=1),
+            nn.Sigmoid() # maybe replace with one that allows over 1.0 saturation
+        )
+
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor]:
         # Encoder
         c1 = self.relu(self.conv1(x))
         c1_modulated = self.film1(c1, embedding)
@@ -334,4 +340,10 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.combination_layer(concatenated_maps)
 
-        return final_illumination
+        saturation_adjustment_map = self.saturation_head(c3)
+
+        saturation_adjustment_map = F.interpolate(
+            saturation_adjustment_map, size=x.shape[2:], mode="bilinear", align_corners=False
+        ) 
+
+        return final_illumination, saturation_adjustment_map
