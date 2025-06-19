@@ -1063,6 +1063,15 @@ class Runner:
                     )
 
                     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
+                    loss_reflectance_ssim = 1.0 - self.ssim(
+                        colors_enh.permute(0, 3, 1, 2),
+                        reflectance_target.permute(0, 3, 1, 2),
+                    )
+
+                    loss_reconstruct_enh = (
+                        loss_reflectance * (1.0 - cfg.ssim_lambda)
+                        + loss_reflectance_ssim * cfg.ssim_lambda
+                    )
 
                     loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
                     loss_illum_smooth = self.loss_smooth(illumination_map)
@@ -1084,7 +1093,8 @@ class Runner:
                     #     + cfg.lambda_illum_curve * loss_adaptive_curve
                     # )
 
-                    loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
+                    # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
+                    loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh
 
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
