@@ -1084,17 +1084,17 @@ class Runner:
                     loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
 
 
-                    # loss_illumination = (
-                    #     cfg.lambda_reflect * loss_illum_contrast
-                    #     + cfg.lambda_illum_exposure * loss_illum_exposure
-                    #     + cfg.lambda_illum_color * loss_illum_color
-                    #     + cfg.lambda_smooth * loss_illum_smooth
-                    #     + cfg.lambda_illum_variance * loss_illum_variance
-                    #     + cfg.lambda_illum_curve * loss_adaptive_curve
-                    # )
+                    loss_illumination = (
+                        cfg.lambda_reflect * loss_illum_contrast
+                        + cfg.lambda_illum_exposure * loss_illum_exposure
+                        + cfg.lambda_illum_color * loss_illum_color
+                        + cfg.lambda_smooth * loss_illum_smooth
+                        + cfg.lambda_illum_variance * loss_illum_variance
+                        + cfg.lambda_illum_curve * loss_adaptive_curve
+                    )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
-                    loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh
+                    loss = loss_reconstruct_low + 0.5 * loss_reconstruct_enh + loss_illumination
 
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
