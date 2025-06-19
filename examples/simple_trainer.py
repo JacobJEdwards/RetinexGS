@@ -821,10 +821,10 @@ class Runner:
                     step=step
                 )
 
-            scaler.scale(loss).backward()
+            loss.backward()
 
-            scaler.step(self.retinex_optimizer)
-            scaler.step(self.retinex_embed_optimizer)
+            self.retinex_optimizer.step()
+            self.retinex_embed_optimizer.step()
 
             scaler.update()
 
@@ -1331,7 +1331,7 @@ class Runner:
                         cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean()
                     )
 
-            scaler.scale(loss).backward()
+            loss.backward()
 
 
             desc_parts = [f"loss={loss.item():.3f}"]
@@ -1536,27 +1536,32 @@ class Runner:
 
             for optimizer in self.optimizers.values():
                 if cfg.visible_adam:
-                    scaler.step(optimizer, visibility_mask)
+                    optimizer.step(visibility_mask)
                 else:
-                    scaler.step(optimizer)
+                    optimizer.step()
                 optimizer.zero_grad()
             for optimizer in self.pose_optimizers:
-                scaler.step(optimizer)
+                # scaler.step(optimizer)
+                optimizer.step()
                 optimizer.zero_grad()
             for optimizer in self.app_optimizers:
-                scaler.step(optimizer)
+                # scaler.step(optimizer)
+                optimizer.step()
                 optimizer.zero_grad()
             for optimizer in self.bil_grid_optimizers:
-                scaler.step(optimizer)
+                # scaler.step(optimizer)
+                optimizer.step()
                 optimizer.zero_grad()
 
             if cfg.enable_retinex:
-                scaler.step(self.retinex_optimizer)
+                # scaler.step(self.retinex_optimizer)
+                self.retinex_optimizer.step()
                 self.retinex_optimizer.zero_grad()
-                scaler.step(self.retinex_embed_optimizer)
+                # scaler.step(self.retinex_embed_optimizer)
+                self.retinex_embed_optimizer.step()
                 self.retinex_embed_optimizer.zero_grad()
 
-            scaler.update()
+            # scaler.update()
 
             for scheduler in schedulers:
                 scheduler.step()
@@ -1985,5 +1990,7 @@ if __name__ == "__main__":
 
     if config.with_ut:
         assert config.with_eval3d, "Training with UT requires setting `with_eval3d` flag."
+
+    torch.set_float32_matmul_precision('high')
 
     cli(main, config, verbose=True)
