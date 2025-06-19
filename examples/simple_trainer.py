@@ -362,7 +362,7 @@ class Runner:
 
         if cfg.enable_clipiqa_loss or cfg.enable_retinex_clipiqa:
             self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
-            self.brisque_model = piq.BRISQUELoss(data_range=1.0).to(self.device)
+            self.brisque_model = piq.BRISQUE(data_range=1.0).to(self.device)
 
         self.bil_grid_optimizers = []
         if cfg.use_bilateral_grid:
@@ -739,17 +739,13 @@ class Runner:
         )
         loss_exposure_val = self.loss_exposure(reflectance_map)
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=1.0)
-        clipiqa_loss = self.clipiqa_model(
-            reflectance_map.contiguous()
-        )
         loss = (
             cfg.lambda_reflect * loss_reflectance_spa
-            # + cfg.lambda_illum_color * loss_color_val
-            # + cfg.lambda_illum_exposure * loss_exposure_val
+            + cfg.lambda_illum_color * loss_color_val
+            + cfg.lambda_illum_exposure * loss_exposure_val
             + cfg.lambda_smooth * loss_smoothing
-            # + cfg.lambda_illum_variance * loss_variance
+            + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
-            + cfg.retinex_clipiqa_lambda * (1 - clipiqa_loss)
         )
 
         if step % self.cfg.tb_every == 0:
@@ -772,11 +768,6 @@ class Runner:
             self.writer.add_scalar(
                 "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
             )
-
-            if cfg.enable_retinex_clipiqa:
-                self.writer.add_scalar(
-                    "retinex_net/loss_clipiqa", clipiqa_loss.item(), step
-                )
 
             # draw image
             if self.cfg.tb_save_image:
@@ -807,7 +798,6 @@ class Runner:
     def pre_train_retinex(self) -> None:
         cfg = self.cfg
         device = self.device
-        scaler = GradScaler()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
