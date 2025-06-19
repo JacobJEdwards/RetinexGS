@@ -748,9 +748,9 @@ class Runner:
         )
         if cfg.enable_retinex_clipiqa:
             clipiqa_loss = self.clipiqa_model(
-                reflectance_map
+                reflectance_map.contiguous()
             )
-            loss += cfg.retinex_clipiqa_lambda * clipiqa_loss
+            loss += cfg.retinex_clipiqa_lambda * (1.0 - clipiqa_loss)
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/loss", loss.item(), step)
