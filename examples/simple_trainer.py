@@ -739,8 +739,8 @@ class Runner:
         )
         loss_exposure_val = self.loss_exposure(reflectance_map)
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=1.0)
-        clipiqa_loss = self.brisque_model(
-            reflectance_map
+        clipiqa_loss = self.clipiqa_model(
+            reflectance_map.contiguous()
         )
         loss = (
             cfg.lambda_reflect * loss_reflectance_spa
@@ -749,7 +749,7 @@ class Runner:
             + cfg.lambda_smooth * loss_smoothing
             + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
-            + cfg.retinex_clipiqa_lambda * clipiqa_loss
+            + cfg.retinex_clipiqa_lambda * (1 - clipiqa_loss)
         )
 
         if step % self.cfg.tb_every == 0:
