@@ -1423,28 +1423,29 @@ class Runner:
                             "train/render_low", colors_low.permute(0, 3, 1, 2), step
                         )
                         self.writer.add_images(
-                            "train/render_enh", colors_enh.permute(0, 3, 1, 2), step,
-                        )
-                        self.writer.add_images(
-                            "train/illumination_map",
-                            illumination_map,
-                            step,
-                        )
-                        self.writer.add_images(
-                            "train/reflectance_target",
-                            reflectance_target,
-                            step,
-                        )
-                        self.writer.add_images(
-                            "train/input_image_for_net",
-                            input_image_for_net,
-                            step,
-                        )
-                        self.writer.add_images(
                             "train/pixels",
                             pixels.permute(0, 3, 1, 2),
                             step,
                         )
+                        if cfg.enable_retinex:
+                            self.writer.add_images(
+                                "train/render_enh", colors_enh.permute(0, 3, 1, 2), step,
+                            )
+                            self.writer.add_images(
+                                "train/illumination_map",
+                                illumination_map,
+                                step,
+                            )
+                            self.writer.add_images(
+                                "train/reflectance_target",
+                                reflectance_target,
+                                step,
+                            )
+                            self.writer.add_images(
+                                "train/input_image_for_net",
+                                input_image_for_net,
+                                step,
+                            )
 
                 self.writer.flush()
 
