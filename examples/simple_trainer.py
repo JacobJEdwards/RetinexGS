@@ -1689,7 +1689,7 @@ class Runner:
                     with torch.no_grad():
                         _, _, reflectance_target = self.get_retinex_output(image_id, pixels)
                         colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-                        reflectance_target_p = reflectance_target.permute(0, 3, 1, 2)
+                        reflectance_target_p = reflectance_target
 
                         metrics["lpips_enh"].append(
                             self.lpips(colors_enh_p, reflectance_target_p)
