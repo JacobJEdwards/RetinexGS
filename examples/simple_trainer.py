@@ -47,7 +47,7 @@ from utils import (
     set_random_seed,
     generate_variational_intrinsics,
 )
-from retinex import RetinexNet, MultiScaleRetinexNet
+from retinex import RetinexNet, MultiScaleRetinexNet, DenoisingNet
 
 
 def create_splats_with_optimizers(
@@ -189,8 +189,20 @@ class Runner:
         if cfg.enable_retinex:
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
+
+            if cfg.use_denoising_net:
+                self.denoising_net = DenoisingNet(
+                    in_channels=retinex_out_channels,
+                    out_channels=retinex_out_channels,
+                    embed_dim=32 if cfg.use_denoising_embedding else 0
+                ).to(self.device)
+                self.denoising_net.compile()
+                if world_size > 1:
+                    self.denoising_net = DDP(self.denoising_net, device_ids=[local_rank])
+
             if cfg.multi_scale_retinex:
-                self.retinex_net = MultiScaleRetinexNet(in_channels=retinex_in_channels, out_channels=retinex_out_channels).to(
+                self.retinex_net = MultiScaleRetinexNet(in_channels=retinex_in_channels, 
+                                                        out_channels=retinex_out_channels, use_refinement=cfg.use_refinement_net).to(
                     self.device)
             else:
                 self.retinex_net = RetinexNet(in_channels=retinex_in_channels, out_channels=retinex_out_channels).to(self.device)
@@ -202,6 +214,9 @@ class Runner:
                 self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
             net_params = list(self.retinex_net.parameters())
+            if self.denoising_net is not None:
+                net_params += list(self.denoising_net.parameters())
+                
             self.retinex_optimizer = torch.optim.AdamW(
                 net_params,
                 lr=1e-4 * math.sqrt(cfg.batch_size),
@@ -710,6 +725,9 @@ class Runner:
         log_illumination_map = checkpoint(self.retinex_net,
             input_image_for_net, retinex_embedding, use_reentrant=False
         )
+        illumination_map = torch.exp(log_illumination_map)
+        illumination_map = torch.clamp(illumination_map, min=1e-5)
+        
         log_reflectance_target = log_input_image - log_illumination_map
 
         if self.cfg.use_hsv_color_space:
@@ -722,9 +740,19 @@ class Runner:
             reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
         else:
             reflectance_map = torch.exp(log_reflectance_target)
+            
+        
+        if self.cfg.use_denoising_net and self.denoising_net is not None:
+            if self.cfg.use_denoising_embedding:
+                denoising_embedding = self.retinex_embeds(images_ids)
+                reflectance_map = self.denoising_net(
+                    reflectance_map, denoising_embedding
+                )
+            else:
+                reflectance_map = self.denoising_net(reflectance_map)
+                
+        
         reflectance_map = torch.clamp(reflectance_map, 0, 1)
-        illumination_map = torch.exp(log_illumination_map)
-        illumination_map = torch.clamp(illumination_map, min=1e-5)
 
         return input_image_for_net, illumination_map, reflectance_map
 
