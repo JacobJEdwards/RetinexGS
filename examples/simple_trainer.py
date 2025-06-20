@@ -22,7 +22,6 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal, assert_never
-from torch.amp.grad_scaler import GradScaler
 
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
@@ -32,7 +31,7 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
-from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, AdaptiveCurveLoss, TotalVariationLoss
+from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, AdaptiveCurveLoss, TotalVariationLoss, LaplacianLoss
 from rendering_double import rasterization_dual
 from gsplat import export_splats
 from gsplat.compression import PngCompression
@@ -234,6 +233,8 @@ class Runner:
             self.loss_spatial.compile()
             self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
             self.loss_adaptive_curve.compile()
+            self.loss_details = LaplacianLoss().to(self.device)
+            self.loss_details.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -734,11 +735,20 @@ class Runner:
         loss_color_val = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
         loss_smoothing = self.loss_smooth(illumination_map)
         loss_variance = torch.var(illumination_map)
+
         loss_adaptive_curve = self.loss_adaptive_curve(
             reflectance_map
         )
         loss_exposure_val = self.loss_exposure(reflectance_map)
-        loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=1.0)
+
+        con_degree = (0.5/torch.mean(pixels)).item()
+        
+        loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
+        loss_laplacian_val = self.loss_details(reflectance_map)
+        # loss_laplacian_val = torch.mean(torch.abs(self.loss_laplacian(reflectance_map) - self.loss_laplacian(input_image_for_net)))
+
+
+
         loss = (
             cfg.lambda_reflect * loss_reflectance_spa
             + cfg.lambda_illum_color * loss_color_val
@@ -746,6 +756,7 @@ class Runner:
             + cfg.lambda_smooth * loss_smoothing
             + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
+            + cfg.lambda_laplacian * loss_laplacian_val
         )
 
         if step % self.cfg.tb_every == 0:
@@ -857,21 +868,6 @@ class Runner:
         schedulers: list[ExponentialLR | ChainedScheduler] = [
             torch.optim.lr_scheduler.ExponentialLR(
                 self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["scales"], gamma=0.01 ** (1.0 / max_steps)
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["opacities"], gamma=0.01 ** (1.0 / max_steps)
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["quats"], gamma=0.01 ** (1.0 / max_steps)
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["sh0"], gamma=0.01 ** (1.0 / max_steps)
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["shN"], gamma=0.01 ** (1.0 / max_steps)
             ),
         ]
         if cfg.enable_retinex:
