@@ -738,7 +738,7 @@ class Runner:
 
         loss_color_val = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
         loss_smoothing = self.loss_smooth(illumination_map)
-        loss_variance = torch.var(illumination_map)
+        # loss_variance = torch.var(illumination_map)
 
         loss_adaptive_curve = self.loss_adaptive_curve(
             reflectance_map
@@ -758,7 +758,7 @@ class Runner:
             + cfg.lambda_illum_color * loss_color_val
             + cfg.lambda_illum_exposure * loss_exposure_val
             + cfg.lambda_smooth * loss_smoothing
-            + cfg.lambda_illum_variance * loss_variance
+            # + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
             + cfg.lambda_laplacian * loss_laplacian_val
         )
@@ -777,9 +777,9 @@ class Runner:
             self.writer.add_scalar(
                 "retinex_net/loss_smooth", loss_smoothing.item(), step
             )
-            self.writer.add_scalar(
-                "retinex_net/loss_variance", loss_variance.item(), step
-            )
+            # self.writer.add_scalar(
+            #     "retinex_net/loss_variance", loss_variance.item(), step
+            # )
             self.writer.add_scalar(
                 "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
             )
@@ -1071,7 +1071,7 @@ class Runner:
 
                     loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
                     loss_illum_smooth = self.loss_smooth(illumination_map)
-                    loss_illum_variance = torch.var(illumination_map)
+                    # loss_illum_variance = torch.var(illumination_map)
 
                     loss_adaptive_curve = self.loss_adaptive_curve(
                         reflectance_target
@@ -1090,7 +1090,7 @@ class Runner:
                         + cfg.lambda_illum_exposure * loss_illum_exposure
                         + cfg.lambda_illum_color * loss_illum_color
                         + cfg.lambda_smooth * loss_illum_smooth
-                        + cfg.lambda_illum_variance * loss_illum_variance
+                        # + cfg.lambda_illum_variance * loss_illum_variance
                         + cfg.lambda_illum_curve * loss_adaptive_curve
                         + cfg.lambda_laplacian * loss_illum_laplacian
                     )
@@ -1123,7 +1123,7 @@ class Runner:
                     loss_illumination = torch.tensor(0.0, device=device)
                     loss_illum_color = torch.tensor(0.0, device=device)
                     loss_illum_smooth = torch.tensor(0.0, device=device)
-                    loss_illum_variance = torch.tensor(0.0, device=device)
+                    # loss_illum_variance = torch.tensor(0.0, device=device)
                     loss_adaptive_curve = torch.tensor(0.0, device=device)
                     loss_illum_exposure = torch.tensor(0.0, device=device)
                     loss_illum_contrast = torch.tensor(0.0, device=device)
@@ -1397,9 +1397,9 @@ class Runner:
                     self.writer.add_scalar(
                         "train/illumination_smoothing", loss_illum_smooth.item(), step
                     )
-                    self.writer.add_scalar(
-                        "train/illumination_variance", loss_illum_variance.item(), step
-                    )
+                    # self.writer.add_scalar(
+                    #     "train/illumination_variance", loss_illum_variance.item(), step
+                    # )
                     self.writer.add_scalar(
                         "train/illumination_laplacian", loss_illum_laplacian.item(), step
                     )
