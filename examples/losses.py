@@ -288,8 +288,80 @@ class SmoothingLoss(nn.Module):
 
         E = torch.mean(D_left + D_right + D_up + D_down)
 
-        return E        
-    
+        return E
+
+class GradientLoss(nn.Module):
+    kernel_x: Tensor
+    kernel_y: Tensor
+
+    def __init__(self: Self) -> None:
+        super(GradientLoss, self).__init__()
+        kernel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3)
+        kernel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3)
+        self.register_buffer('kernel_x', kernel_x)
+        self.register_buffer('kernel_y', kernel_y)
+
+    def forward(self: Self, x: Tensor, y: Tensor) -> Tensor:
+        x_gray = torch.mean(x, dim=1, keepdim=True)
+        y_gray = torch.mean(y, dim=1, keepdim=True)
+
+        grad_x_x = F.conv2d(x_gray, self.kernel_x, padding=1)
+        grad_y_x = F.conv2d(y_gray, self.kernel_x, padding=1)
+
+        grad_x_y = F.conv2d(x_gray, self.kernel_y, padding=1)
+        grad_y_y = F.conv2d(y_gray, self.kernel_y, padding=1)
+
+        loss_x = torch.mean(torch.abs(grad_x_x - grad_y_x))
+        loss_y = torch.mean(torch.abs(grad_x_y - grad_y_y))
+
+        return loss_x + loss_y
+
+class FrequencyLoss(nn.Module):
+    def __init__(self: Self) -> None:
+        super(FrequencyLoss, self).__init__()
+
+    def forward(self: Self, x: Tensor, y: Tensor) -> Tensor:
+        x_gray = torch.mean(x, dim=1, keepdim=True).squeeze(1) 
+        y_gray = torch.mean(y, dim=1, keepdim=True).squeeze(1)
+
+        fft_x = torch.fft.fftshift(torch.fft.rfft2(x_gray, norm="ortho"))
+        fft_y = torch.fft.fftshift(torch.fft.rfft2(y_gray, norm="ortho"))
+
+        magnitude_x = torch.log(torch.abs(fft_x) + 1e-8)
+        magnitude_y = torch.log(torch.abs(fft_y) + 1e-8)
+
+        loss = F.l1_loss(magnitude_x, magnitude_y)
+        return loss
+
+class EdgeAwareSmoothingLoss(nn.Module):
+    def __init__(self: Self, gamma: float = 0.1) -> None:
+        super(EdgeAwareSmoothingLoss, self).__init__()
+        self.gamma = gamma
+
+    def forward(self: Self, img: Tensor, guide_img: Tensor) -> Tensor:
+        if img.shape[1] > 1: 
+            img_gray = torch.mean(img, dim=1, keepdim=True)
+        else:
+            img_gray = img
+
+        if guide_img.shape[1] > 1:
+            guide_img_gray = torch.mean(guide_img, dim=1, keepdim=True)
+        else:
+            guide_img_gray = guide_img
+
+        dx_img = img_gray[:, :, :, 1:] - img_gray[:, :, :, :-1]
+        dy_img = img_gray[:, :, 1:, :] - img_gray[:, :, :-1, :]
+
+        dx_guide = guide_img_gray[:, :, :, 1:] - guide_img_gray[:, :, :, :-1]
+        dy_guide = guide_img_gray[:, :, 1:, :] - guide_img_gray[:, :, :-1, :]
+
+        weights_x = torch.exp(-torch.abs(dx_guide) / self.gamma)
+        weights_y = torch.exp(-torch.abs(dy_guide) / self.gamma)
+
+        loss_x = torch.mean(weights_x * torch.abs(dx_img))
+        loss_y = torch.mean(weights_y * torch.abs(dy_img))
+
+        return loss_x + loss_y
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
@@ -299,4 +371,5 @@ if __name__ == "__main__":
     curve_1 = torch.linspace(0, 1, 255).unsqueeze(0)
     curve_2 = gamma_curve(curve_1, 1.0)
     curve_3 = s_curve(curve_2, alpha=1.0)
+
 

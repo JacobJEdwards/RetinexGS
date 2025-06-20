@@ -323,3 +323,19 @@ class FiLMLayer(nn.Module):
         gamma, beta = torch.chunk(gamma_beta, 2, dim=1)
 
         return gamma * x + beta
+
+class RefinementNet(nn.Module):
+    def __init__(self: Self, in_channels: int, out_channels: int):
+        super(RefinementNet, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.conv3 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self: Self, x: Tensor) -> Tensor:
+        out = self.relu1(self.conv1(x))
+        out = self.relu2(self.conv2(out))
+        out = self.conv3(out)
+        return self.sigmoid(out)

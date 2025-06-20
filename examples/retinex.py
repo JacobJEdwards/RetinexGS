@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from examples.utils import RefinementNet
 from utils import FiLMLayer
 
 
@@ -54,7 +55,7 @@ class RetinexNet(nn.Module):
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
-            self: Self, in_channels: int = 3, out_channels: int = 3, embed_dim: int = 32
+            self: Self, in_channels: int = 3, out_channels: int = 3, embed_dim: int = 32, use_refinement: bool = True
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
@@ -78,6 +79,10 @@ class MultiScaleRetinexNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
         )
+        
+        self.use_refinement = use_refinement
+        if self.use_refinement:
+            self.refinement_net = RefinementNet(out_channels, out_channels)
 
         self.relu = nn.ReLU()
         
@@ -132,5 +137,8 @@ class MultiScaleRetinexNet(nn.Module):
         concatenated_maps = log_illum_coarse_res + log_illumination_medium_res + log_illumination_full_res
 
         final_illumination = self.combination_layer(concatenated_maps)
+        
+        if self.use_refinement:
+            final_illumination = self.refinement_net(final_illumination)
 
         return final_illumination
