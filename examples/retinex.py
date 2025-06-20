@@ -5,8 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from examples.utils import RefinementNet
-from utils import FiLMLayer
+from utils import FiLMLayer, RefinementNet
 
 
 class RetinexNet(nn.Module):
