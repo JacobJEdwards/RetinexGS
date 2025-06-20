@@ -92,10 +92,10 @@ class MultiScaleRetinexNet(nn.Module):
         # self.sigmoid = nn.Sigmoid()
 
     def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
-        c1 = self.relu(self.bn1(self.conv1(x)))
+        c1 = self.relu(self.conv1(x))
         c1_modulated = self.film1(c1, embedding)
         p1 = self.pool(c1_modulated)
-        c2 = self.relu(self.bn2(self.conv2(p1)))
+        c2 = self.relu(self.conv2(p1))
         p2 = self.pool(c2)
 
         up1 = self.upconv1(p2)
@@ -103,7 +103,7 @@ class MultiScaleRetinexNet(nn.Module):
             up1, size=p1.shape[2:], mode="bilinear", align_corners=False
         )
         merged = torch.cat([up1, p1], dim=1)
-        c3 = self.relu(self.bn3(self.conv3(merged)))
+        c3 = self.relu(self.conv3(merged))
 
         log_illumination_full_res = self.upconv2(c3)
         log_illumination_full_res = F.interpolate(
