@@ -135,7 +135,7 @@ def create_splats_with_optimizers(
     elif visible_adam:
         optimizer_class = SelectiveAdam
     else:
-        optimizer_class = torch.optim.Adam
+        optimizer_class = torch.optim.AdamW
 
     optimizers = {
         name: optimizer_class(
@@ -771,25 +771,25 @@ class Runner:
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/loss", loss.item(), step)
             self.writer.add_scalar(
-                "retinex_net/loss_spatial", loss_reflectance_spa.item(), step
+                "retinex_net/loss_spatial", loss_reflectance_spa.item() * cfg.lambda_reflect, step
             )
             self.writer.add_scalar(
-                "retinex_net/loss_color", loss_color_val.item(), step
+                "retinex_net/loss_color", loss_color_val.item() * cfg.lambda_illum_color, step
             )
             self.writer.add_scalar(
-                "retinex_net/loss_exposure", loss_exposure_val.item(), step
+                "retinex_net/loss_exposure", loss_exposure_val.item() * cfg.lambda_illum_exposure, step
             )
             self.writer.add_scalar(
-                "retinex_net/loss_smooth", loss_smoothing.item(), step
+                "retinex_net/loss_smooth", loss_smoothing.item() * cfg.lambda_smooth, step
             )
             # self.writer.add_scalar(
             #     "retinex_net/loss_variance", loss_variance.item(), step
             # )
             self.writer.add_scalar(
-                "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
+                "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item() * cfg.lambda_illum_curve, step
             )
             self.writer.add_scalar(
-                "retinex_net/loss_laplacian", loss_laplacian_val.item(), step
+                "retinex_net/loss_laplacian", loss_laplacian_val.item() * cfg.lambda_laplacian, step
             )
 
             # draw image
