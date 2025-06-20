@@ -59,14 +59,17 @@ class MultiScaleRetinexNet(nn.Module):
         super(MultiScaleRetinexNet, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
         self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
 
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
 
         self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
-
+        self.bn3 = nn.BatchNorm2d(32)
+        
         self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
         self.output_head_medium = nn.Conv2d(32, out_channels, kernel_size=3, padding=1)
@@ -89,10 +92,10 @@ class MultiScaleRetinexNet(nn.Module):
         # self.sigmoid = nn.Sigmoid()
 
     def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
-        c1 = self.relu(self.conv1(x))
+        c1 = self.relu(self.bn1(self.conv1(x)))
         c1_modulated = self.film1(c1, embedding)
         p1 = self.pool(c1_modulated)
-        c2 = self.relu(self.conv2(p1))
+        c2 = self.relu(self.bn2(self.conv2(p1)))
         p2 = self.pool(c2)
 
         up1 = self.upconv1(p2)
@@ -100,7 +103,7 @@ class MultiScaleRetinexNet(nn.Module):
             up1, size=p1.shape[2:], mode="bilinear", align_corners=False
         )
         merged = torch.cat([up1, p1], dim=1)
-        c3 = self.relu(self.conv3(merged))
+        c3 = self.relu(self.bn3(self.conv3(merged)))
 
         log_illumination_full_res = self.upconv2(c3)
         log_illumination_full_res = F.interpolate(
@@ -141,3 +144,42 @@ class MultiScaleRetinexNet(nn.Module):
             final_illumination = self.refinement_net(final_illumination, embedding)
 
         return final_illumination
+
+class DenoisingNet(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, embed_dim: int = 0):
+        super(DenoisingNet, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) if embed_dim > 0 else None
+
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) if embed_dim > 0 else None
+
+        self.conv3 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+        self.sigmoid = nn.Sigmoid() 
+
+        self.embed_dim = embed_dim 
+
+    def forward(self, x: Tensor, embedding: Tensor | None = None) -> Tensor:
+        identity = x 
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu1(out)
+        if self.film1 is not None:
+            out = self.film1(out, embedding)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu2(out)
+        if self.film2 is not None:
+            out = self.film2(out, embedding)
+
+        residual = self.conv3(out) 
+
+        denoised_output = identity + residual
+        return self.sigmoid(denoised_output)

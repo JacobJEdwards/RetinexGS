@@ -329,10 +329,12 @@ class RefinementNet(nn.Module):
         super(RefinementNet, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
         self.relu1 = nn.ReLU(inplace=True)
         self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) # Add FiLM Layer
 
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
         self.relu2 = nn.ReLU(inplace=True)
         self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) # Add another FiLM Layer
 
@@ -341,10 +343,12 @@ class RefinementNet(nn.Module):
 
     def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor: # Accept embedding
         out = self.conv1(x)
+        out = self.bn1(out)
         out = self.relu1(out)
         out = self.film1(out, embedding)
 
         out = self.conv2(out)
+        out = self.bn2(out)
         out = self.relu2(out)
         out = self.film2(out, embedding)
 

@@ -202,13 +202,18 @@ class Runner:
                 self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
             net_params = list(self.retinex_net.parameters())
-            if self.retinex_net.use_refinement:
-                net_params += list(self.retinex_net.refinement_net.parameters())
             self.retinex_optimizer = torch.optim.AdamW(
                 net_params,
                 lr=1e-4 * math.sqrt(cfg.batch_size),
                 weight_decay=1e-4,
             )
+            if self.retinex_net.use_refinement:
+                self.refinement_optimizer = torch.optim.AdamW(
+                    self.retinex_net.refinement_net.parameters(),
+                    lr=1e-4 * math.sqrt(cfg.batch_size),
+                    weight_decay=1e-4,
+                )
+
             self.retinex_embed_dim = 32
             self.retinex_embeds = nn.Embedding(
                 len(self.trainset), self.retinex_embed_dim
@@ -850,9 +855,13 @@ class Runner:
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
+            if self.retinex_net.use_refinement:
+                self.refinement_optimizer.step()
+                self.retinex_optimizer.zero_grad()
 
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
+
 
             # scaler.update()
 
@@ -883,6 +892,12 @@ class Runner:
                     self.retinex_optimizer, gamma=0.01 ** (1.0 / max_steps)
                 )
             )
+            if self.retinex_net.use_refinement:
+                schedulers.append(
+                    torch.optim.lr_scheduler.ExponentialLR(
+                        self.refinement_optimizer, gamma=0.01 ** (1.0 / max_steps)
+                    )
+                )
 
         if cfg.pose_opt:
             schedulers.append(
@@ -1586,6 +1601,10 @@ class Runner:
                 # scaler.step(self.retinex_embed_optimizer)
                 self.retinex_embed_optimizer.step()
                 self.retinex_embed_optimizer.zero_grad()
+                if self.retinex_net.use_refinement:
+                    # scaler.step(self.retinex_refinement_optimizer)
+                    self.refinement_optimizer.step()
+                    self.refinement_optimizer.zero_grad()
 
             # scaler.update()
 
