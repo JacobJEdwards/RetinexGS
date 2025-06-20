@@ -1790,10 +1790,20 @@ class Runner:
             )
             print(f"Eval {stage} Step {step}: " + " | ".join(print_parts_eval))
 
+            raw_metrics = {}
+            for k, v_list in metrics.items():
+                if v_list:
+                    if isinstance(v_list[0], torch.Tensor):
+                        raw_metrics[k] = [v.item() for v in v_list]
+                    else:
+                        raw_metrics[k] = v_list
+                else:
+                    raw_metrics[k] = []
+
             with open(f"{self.stats_dir}/{stage}_step{step:04d}.json", "w") as f:
                 json.dump(stats_eval, f)
             with open(f"{self.stats_dir}/{stage}_raw_step{step:04d}.json", "w") as f:
-                json.dump(metrics, f)
+                json.dump(raw_metrics, f)
             for k_stat, v_stat in stats_eval.items():
                 self.writer.add_scalar(f"{stage}/{k_stat}", v_stat, step)
             self.writer.flush()
