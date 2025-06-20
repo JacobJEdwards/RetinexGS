@@ -365,7 +365,7 @@ class Runner:
             if world_size > 1:
                 self.app_module = DDP(self.app_module)
 
-        if cfg.enable_clipiqa_loss or cfg.enable_retinex_clipiqa:
+        if cfg.enable_clipiqa_loss: 
             self.clipiqa_model = piq.CLIPIQA(data_range=1.0).to(self.device)
             self.brisque_model = piq.BRISQUELoss(data_range=1.0).to(self.device)
 
