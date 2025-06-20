@@ -23,7 +23,7 @@ class Config:
 
     port: int = 4000
 
-    batch_size: int = 1
+    batch_size: int = 4
     steps_scaler: float = 1.0
 
     max_steps: int = 10_000
