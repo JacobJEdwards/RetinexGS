@@ -31,7 +31,7 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
-from examples.losses import FrequencyLoss, EdgeAwareSmoothingLoss
+from losses import FrequencyLoss, EdgeAwareSmoothingLoss
 from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, AdaptiveCurveLoss, TotalVariationLoss, LaplacianLoss, \
     GradientLoss
 from rendering_double import rasterization_dual
@@ -797,7 +797,7 @@ class Runner:
             input_image_for_net, reflectance_map
         )
         loss_frequency_val = self.loss_frequency(input_image_for_net, reflectance_map)
-        
+
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
             reflectance_map # or illumination_map ?
         )
