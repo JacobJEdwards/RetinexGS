@@ -325,17 +325,28 @@ class FiLMLayer(nn.Module):
         return gamma * x + beta
 
 class RefinementNet(nn.Module):
-    def __init__(self: Self, in_channels: int, out_channels: int):
+    def __init__(self: Self, in_channels: int, out_channels: int, embed_dim: int): # Add embed_dim
         super(RefinementNet, self).__init__()
+
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
         self.relu1 = nn.ReLU(inplace=True)
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) # Add FiLM Layer
+
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.relu2 = nn.ReLU(inplace=True)
+        self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) # Add another FiLM Layer
+
         self.conv3 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self: Self, x: Tensor) -> Tensor:
-        out = self.relu1(self.conv1(x))
-        out = self.relu2(self.conv2(out))
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor: # Accept embedding
+        out = self.conv1(x)
+        out = self.relu1(out)
+        out = self.film1(out, embedding)
+
+        out = self.conv2(out)
+        out = self.relu2(out)
+        out = self.film2(out, embedding)
+
         out = self.conv3(out)
         return self.sigmoid(out)

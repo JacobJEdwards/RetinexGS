@@ -81,7 +81,7 @@ class MultiScaleRetinexNet(nn.Module):
         
         self.use_refinement = use_refinement
         if self.use_refinement:
-            self.refinement_net = RefinementNet(out_channels, out_channels)
+            self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
         self.relu = nn.ReLU()
         
@@ -138,6 +138,6 @@ class MultiScaleRetinexNet(nn.Module):
         final_illumination = self.combination_layer(concatenated_maps)
         
         if self.use_refinement:
-            final_illumination = self.refinement_net(final_illumination)
+            final_illumination = self.refinement_net(final_illumination, embedding)
 
         return final_illumination
