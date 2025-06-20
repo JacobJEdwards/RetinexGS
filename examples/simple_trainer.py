@@ -799,7 +799,7 @@ class Runner:
         loss_frequency_val = self.loss_frequency(input_image_for_net, reflectance_map)
 
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-            reflectance_map # or illumination_map ?
+            illumination_map, input_image_for_net
         )
 
 
