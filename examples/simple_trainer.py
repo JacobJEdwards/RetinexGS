@@ -214,7 +214,7 @@ class Runner:
                 self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
             net_params = list(self.retinex_net.parameters())
-            if self.denoising_net is not None:
+            if cfg.use_denoising_net and self.denoising_net is not None:
                 net_params += list(self.denoising_net.parameters())
                 
             self.retinex_optimizer = torch.optim.AdamW(
