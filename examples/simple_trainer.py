@@ -742,7 +742,7 @@ class Runner:
         loss_exposure_val = self.loss_exposure(reflectance_map)
 
         con_degree = (0.5/torch.mean(pixels)).item()
-        
+
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
         loss_laplacian_val = self.loss_details(reflectance_map)
         # loss_laplacian_val = torch.mean(torch.abs(self.loss_laplacian(reflectance_map) - self.loss_laplacian(input_image_for_net)))
@@ -778,6 +778,9 @@ class Runner:
             )
             self.writer.add_scalar(
                 "retinex_net/loss_adaptive_curve", loss_adaptive_curve.item(), step
+            )
+            self.writer.add_scalar(
+                "retinex_net/loss_laplacian", loss_laplacian_val.item(), step
             )
 
             # draw image
@@ -1070,8 +1073,13 @@ class Runner:
                         reflectance_target
                     )
                     loss_illum_exposure = self.loss_exposure(reflectance_target)
-                    loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=1.0)
 
+                    con_degree = (0.5/torch.mean(pixels)).item()
+                    loss_illum_contrast = self.loss_spatial(input_image_for_net, reflectance_target, contrast=con_degree)
+                    loss_illum_laplacian = self.loss_details(reflectance_target)
+                    # loss_illum_laplacian = torch.mean(
+                    #     torch.abs(self.loss_laplacian(reflectance_target) - self.loss_laplacian(input_image_for_net))
+                    # )
 
                     loss_illumination = (
                         cfg.lambda_reflect * loss_illum_contrast
@@ -1080,6 +1088,7 @@ class Runner:
                         + cfg.lambda_smooth * loss_illum_smooth
                         + cfg.lambda_illum_variance * loss_illum_variance
                         + cfg.lambda_illum_curve * loss_adaptive_curve
+                        + cfg.lambda_laplacian * loss_illum_laplacian
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
@@ -1114,16 +1123,18 @@ class Runner:
                     loss_adaptive_curve = torch.tensor(0.0, device=device)
                     loss_illum_exposure = torch.tensor(0.0, device=device)
                     loss_illum_contrast = torch.tensor(0.0, device=device)
+                    loss_illum_laplacian = torch.tensor(0.0, device=device)
                     illumination_map = torch.tensor(0.0, device=device)
                     reflectance_target = torch.tensor(0.0, device=device)
 
-                if cfg.enable_retinex:
-                    k_mean = self.splats["adjust_k"].mean(dim=-1, keepdim=True)
-                    loss_k_gray = torch.mean((self.splats["adjust_k"] - k_mean) ** 2)
 
-                    loss_b_offset = torch.mean(self.splats["adjust_b"] ** 2)
-
-                    loss += 0.01 * loss_k_gray + 0.01 * loss_b_offset
+                # if cfg.enable_retinex:
+                #     k_mean = self.splats["adjust_k"].mean(dim=-1, keepdim=True)
+                #     loss_k_gray = torch.mean((self.splats["adjust_k"] - k_mean) ** 2)
+                #
+                #     loss_b_offset = torch.mean(self.splats["adjust_b"] ** 2)
+                #
+                #     loss += 0.01 * loss_k_gray + 0.01 * loss_b_offset
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -1384,6 +1395,9 @@ class Runner:
                     )
                     self.writer.add_scalar(
                         "train/illumination_variance", loss_illum_variance.item(), step
+                    )
+                    self.writer.add_scalar(
+                        "train/illumination_laplacian", loss_illum_laplacian.item(), step
                     )
                     # self.writer.add_scalar(
                     #     "train/illumination_loss", loss_illumination.item(), step
