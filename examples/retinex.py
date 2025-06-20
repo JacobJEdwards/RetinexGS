@@ -141,7 +141,9 @@ class MultiScaleRetinexNet(nn.Module):
         final_illumination = self.combination_layer(concatenated_maps)
         
         if self.use_refinement:
-            final_illumination = self.refinement_net(final_illumination, embedding)
+            illumination_residual = self.refinement_net(final_illumination, embedding)
+            final_illumination = final_illumination + illumination_residual
+            final_illumination = torch.clamp(final_illumination, 0, 1)
 
         return final_illumination
 

@@ -31,7 +31,9 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
-from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, AdaptiveCurveLoss, TotalVariationLoss, LaplacianLoss
+from examples.losses import FrequencyLoss, EdgeAwareSmoothingLoss
+from losses import ColourConsistencyLoss, ExposureLoss, SpatialLoss, AdaptiveCurveLoss, TotalVariationLoss, LaplacianLoss, \
+    GradientLoss
 from rendering_double import rasterization_dual
 from gsplat import export_splats
 from gsplat.compression import PngCompression
@@ -259,6 +261,12 @@ class Runner:
             self.loss_adaptive_curve.compile()
             self.loss_details = LaplacianLoss().to(self.device)
             self.loss_details.compile()
+            self.loss_gradient = GradientLoss().to(self.device)
+            self.loss_gradient.compile()
+            self.loss_frequency = FrequencyLoss().to(self.device)
+            self.loss_frequency.compile()
+            self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
+            self.loss_edge_aware_smooth.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -781,8 +789,18 @@ class Runner:
         con_degree = (0.5/torch.mean(pixels)).item()
 
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
-        loss_laplacian_val = self.loss_details(reflectance_map)
-        # loss_laplacian_val = torch.mean(torch.abs(self.loss_laplacian(reflectance_map) - self.loss_laplacian(input_image_for_net)))
+        # loss_laplacian_val = self.loss_details(reflectance_map)
+        loss_laplacian_val = torch.mean(torch.abs(self.loss_details(reflectance_map) - self.loss_details(
+            input_image_for_net)))
+
+        loss_gradient = self.loss_gradient(
+            input_image_for_net, reflectance_map
+        )
+        loss_frequency_val = self.loss_frequency(input_image_for_net, reflectance_map)
+        
+        loss_smooth_edge_aware = self.loss_edge_aware_smooth(
+            reflectance_map # or illumination_map ?
+        )
 
 
 
@@ -794,6 +812,9 @@ class Runner:
             # + cfg.lambda_illum_variance * loss_variance
             + cfg.lambda_illum_curve * loss_adaptive_curve
             + cfg.lambda_laplacian * loss_laplacian_val
+            + cfg.lambda_gradient * loss_gradient
+            + cfg.lambda_frequency * loss_frequency_val
+            + cfg.lambda_edge_aware_smooth * loss_smooth_edge_aware
         )
 
         if step % self.cfg.tb_every == 0:
@@ -818,6 +839,15 @@ class Runner:
             )
             self.writer.add_scalar(
                 "retinex_net/loss_laplacian", loss_laplacian_val.item() * cfg.lambda_laplacian, step
+            )
+            self.writer.add_scalar(
+                "retinex_net/loss_gradient", loss_gradient.item() * cfg.lambda_gradient, step
+            )
+            self.writer.add_scalar(
+                "retinex_net/loss_frequency", loss_frequency_val.item() * cfg.lambda_frequency, step
+            )
+            self.writer.add_scalar(
+                "retinex_net/loss_edge_aware_smooth", loss_smooth_edge_aware.item() * cfg.lambda_edge_aware_smooth, step
             )
 
             # draw image
