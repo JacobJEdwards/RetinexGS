@@ -122,7 +122,7 @@ class Config:
     lambda_illum_variance: float = 0.08
     lambda_illum_contrast: float = 0.1
     lambda_illum_curve: float = 1.4
-    lambda_laplacian: float = 0.5
+    lambda_laplacian: float = 10.0
     pretrain_retinex: bool = True
     pretrain_steps: int = 4000
     
