@@ -128,7 +128,7 @@ class Config:
     lambda_edge_aware_smooth: float = 1.0
     
     pretrain_retinex: bool = True
-    pretrain_steps: int = 4000
+    pretrain_steps: int = 5000
     
     use_hsv_color_space: bool = True
     use_refinement_net: bool = True
