@@ -16,7 +16,7 @@ import tyro
 import yaml
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler
+from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
 from torch.utils.checkpoint import checkpoint
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
@@ -946,23 +946,27 @@ class Runner:
         max_steps = cfg.max_steps
         init_step = 0
 
-        schedulers: list[ExponentialLR | ChainedScheduler] = [
-            torch.optim.lr_scheduler.ExponentialLR(
-                self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)
+        initial_means_lr = self.optimizers["means"].param_groups[0]["lr"]
+        schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
+            CosineAnnealingLR(
+                self.optimizers["means"], T_max=max_steps, eta_min=initial_means_lr * 0.01
             ),
         ]
         if cfg.enable_retinex:
+            initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
             schedulers.append(
-                torch.optim.lr_scheduler.ExponentialLR(
-                    self.retinex_optimizer, gamma=0.01 ** (1.0 / max_steps)
-                )
+                    CosineAnnealingLR(self.retinex_optimizer, T_max=max_steps, eta_min=initial_retinex_lr * 0.01)
             )
             if self.retinex_net.use_refinement:
+                initial_refinement_lr = self.refinement_optimizer.param_groups[0]["lr"]
                 schedulers.append(
-                    torch.optim.lr_scheduler.ExponentialLR(
-                        self.refinement_optimizer, gamma=0.01 ** (1.0 / max_steps)
-                    )
+                    CosineAnnealingLR(self.refinement_optimizer, T_max=max_steps, eta_min=initial_refinement_lr * 0.01)
                 )
+
+            initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
+            schedulers.append(
+                CosineAnnealingLR(self.retinex_embed_optimizer, T_max=max_steps, eta_min=initial_embed_lr * 0.01)
+            )
 
         if cfg.pose_opt:
             schedulers.append(
