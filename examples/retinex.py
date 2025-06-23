@@ -205,7 +205,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         if self.use_refinement:
             illumination_residual = self.refinement_net(final_illumination, embedding)
-            final_illumination = final_illumination + illumination_residual
-            final_illumination = torch.clamp(final_illumination, 0, 1)
+            final_illumination = illumination_residual
 
         return final_illumination
