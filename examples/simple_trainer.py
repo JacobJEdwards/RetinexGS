@@ -1253,7 +1253,7 @@ class Runner:
                     )
                     # loss_illum_laplacian = self.loss_details(reflectance_target)
                     loss_illum_laplacian = torch.mean(
-                        torch.abs(self.loss_laplacian(reflectance_target) - self.loss_laplacian(input_image_for_net))
+                        torch.abs(self.loss_details(reflectance_target) - self.loss_details(input_image_for_net))
                     )
                     loss_illum_gradient = self.loss_gradient(
                         input_image_for_net, reflectance_target
