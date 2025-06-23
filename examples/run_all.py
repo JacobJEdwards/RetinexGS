@@ -9,6 +9,8 @@ output_dir = Path("../../result")
 for d in input_dir.iterdir():
     if not d.is_dir():
         continue
+    if d.name == "shrub":
+        continue
 
     print(f"Processing {d.name}...")
     cmd = [
