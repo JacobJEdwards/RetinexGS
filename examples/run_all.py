@@ -11,8 +11,7 @@ for d in input_dir.iterdir():
     print(f"Processing {d.name}...")
     cmd = [
         "python",
-        "simple_trainer.py",
-        "default "
+        "simple_trainer.py default",
         "--data_dir", str(d),
         "--result_dir", str(output_dir / d.name),
     ]
