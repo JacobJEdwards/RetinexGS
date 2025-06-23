@@ -180,6 +180,7 @@ class Runner:
             factor=cfg.data_factor,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
+            is_mip360=True,
         )
         self.trainset = Dataset(
             self.parser, patch_size=cfg.patch_size, load_depths=cfg.depth_loss

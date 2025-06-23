@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import imageio.v2 as imageio
@@ -20,7 +20,7 @@ from .normalize import (
 )
 
 
-def _get_rel_paths(path_dir: str) -> list[str]:
+def _get_rel_paths(path_dir: str | Path) -> list[str]:
     """Recursively get relative paths of files in a directory."""
     paths = []
     for dp, dn, fn in os.walk(path_dir):
@@ -63,6 +63,8 @@ class Parser:
         factor: int = 1,
         normalize: bool = False,
         test_every: int = 8,
+            *,
+        is_mip360: bool = False
     ):
         self.data_dir = data_dir
         self.factor = factor
@@ -143,7 +145,7 @@ class Parser:
         if not (type_ == 0 or type_ == 1):
             print("Warning: COLMAP Camera is not PINHOLE. Images have distortion.")
 
-        w2c_mats = np.stack(w2c_mats, axis=0)
+        w2c_mats = np.stack(w2c_mats)
 
         # Convert extrinsics to camera-to-world.
         camtoworlds = np.linalg.inv(w2c_mats)
@@ -180,10 +182,15 @@ class Parser:
             image_dir_suffix = f"_{factor}"
         else:
             image_dir_suffix = ""
-        colmap_image_dir = os.path.join(data_dir, "images")
-        image_dir = os.path.join(data_dir, "images" + image_dir_suffix)
+
+        colmap_image_dir = data_dir / "images"
+        image_dir = data_dir / ("images" + image_dir_suffix)
+
+        if is_mip360:
+            image_dir = data_dir / ("images" + image_dir_suffix + "_variance")
+
         for d in [image_dir, colmap_image_dir]:
-            if not os.path.exists(d):
+            if not d.exists():
                 raise ValueError(f"Image folder {d} does not exist.")
 
         # Downsampled images may have different names vs images used for COLMAP,
@@ -192,7 +199,7 @@ class Parser:
         image_files = sorted(_get_rel_paths(image_dir))
         if factor > 1 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
             image_dir = _resize_image_folder(
-                colmap_image_dir, image_dir + "_png", factor=factor
+                str(colmap_image_dir), str(image_dir / "_png"), factor=factor
             )
             image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
@@ -300,11 +307,7 @@ class Parser:
                 fy = K[1, 1]
                 cx = K[0, 2]
                 cy = K[1, 2]
-                grid_x, grid_y = np.meshgrid(
-                    np.arange(width, dtype=np.float32),
-                    np.arange(height, dtype=np.float32),
-                    indexing="xy",
-                )
+                grid_x, grid_y = np.meshgrid(np.arange(width, dtype=np.float32), np.arange(height, dtype=np.float32))
                 x1 = (grid_x - cx) / fx
                 y1 = (grid_y - cy) / fy
                 theta = np.sqrt(x1**2 + y1**2)
@@ -355,7 +358,7 @@ class Dataset:
         self,
         parser: Parser,
         split: str = "train",
-        patch_size: Optional[int] = None,
+        patch_size: int | None = None,
         load_depths: bool = False,
     ):
         self.parser = parser
@@ -368,12 +371,19 @@ class Dataset:
         else:
             self.indices = indices[indices % self.parser.test_every == 0]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.indices)
 
-    def __getitem__(self, item: int) -> Dict[str, Any]:
+    def __getitem__(self, item: int) -> dict[str, Any]:
         index = self.indices[item]
-        image = imageio.imread(self.parser.image_paths[index])[..., :3]
+
+        if self.split == 'val':
+            image = imageio.imread(self.parser.image_paths[index].replace('_variance',''))[..., :3]
+        else:
+
+            image = imageio.imread(self.parser.image_paths[index])[..., :3]
+
+
         camera_id = self.parser.camera_ids[index]
         K = self.parser.Ks_dict[camera_id].copy()  # undistorted K
         params = self.parser.params_dict[camera_id]
