@@ -133,7 +133,7 @@ class Config:
     
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False
-    use_denoising_net: bool = False
+    use_denoising_net: bool = True
     use_denoising_embedding: bool = False
 
     eval_niqe: bool = False
