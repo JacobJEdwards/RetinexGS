@@ -173,6 +173,7 @@ class DenoisingNet(nn.Module):
 
         self.conv3 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
         self.sigmoid = nn.Sigmoid()
+        self.tanh = nn.Tanh()
 
         nn.init.constant_(self.conv3.weight, 0.)
         if self.conv3.bias is not None:
@@ -197,7 +198,7 @@ class DenoisingNet(nn.Module):
 
         residual = self.conv3(out)
 
-        denoised_output = identity + residual
+        denoised_output = identity + self.tanh(residual)
         return denoised_output
     
     
