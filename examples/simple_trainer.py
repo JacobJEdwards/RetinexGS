@@ -188,7 +188,7 @@ class Runner:
             factor=cfg.data_factor,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
-            exp_name="over_exp",
+            exp_name="low",
             # is_mip360=True,
         )
         self.trainset = Dataset(
@@ -2224,7 +2224,7 @@ if __name__ == "__main__":
     config = tyro.cli(
         Config,
     )
-    
+
     config.adjust_steps(config.steps_scaler)
 
     if config.use_bilateral_grid or config.use_fused_bilagrid:
