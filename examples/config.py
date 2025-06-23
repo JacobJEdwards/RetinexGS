@@ -12,7 +12,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("../../NeRF_360/stump")
+    data_dir: Path = Path("../../room")
     data_factor: int = 8
     result_dir: Path = Path("../../result")
     test_every: int = 8
@@ -133,7 +133,7 @@ class Config:
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
-    use_refinement_net: bool = False
+    use_refinement_net: bool = True
     use_denoising_net: bool = False
     use_denoising_embedding: bool = False
 
