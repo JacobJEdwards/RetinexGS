@@ -207,6 +207,9 @@ class DenoisingNet(nn.Module):
 
         residual = self.output_conv(out)
 
+        if residual.shape[2:] != identity.shape[2:]:
+            residual = F.interpolate(residual, size=identity.shape[2:], mode='bilinear', align_corners=False)
+
         denoised_output = identity + residual
         return self.sigmoid(denoised_output)
 
