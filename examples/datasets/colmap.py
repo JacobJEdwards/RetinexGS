@@ -814,7 +814,7 @@ class Dataset:
     def __getitem__(self, item: int) -> Dict[str, Any]:
         index = self.indices[item]
         # print('the stage is', self.split)
-        print('the image id is', self.parser.image_paths[index])
+        # print('the image id is', self.parser.image_paths[index])
         if self.split == 'val': # evaluation on the clean scene
 
             image = imageio.imread(self.parser.image_paths[index].replace('_variance',''))[..., :3]
