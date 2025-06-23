@@ -150,10 +150,10 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.combination_layer(concatenated_maps)
 
-        if self.use_refinement:
-            illumination_residual = self.refinement_net(final_illumination, embedding)
-            final_illumination = final_illumination + illumination_residual
-            final_illumination = torch.clamp(final_illumination, 0, 1)
+        # if self.use_refinement:
+        #     illumination_residual = self.refinement_net(final_illumination, embedding)
+        #     final_illumination = final_illumination + illumination_residual
+        #     final_illumination = torch.clamp(final_illumination, 0, 1)
 
         return final_illumination
 
@@ -163,12 +163,12 @@ class DenoisingNet(nn.Module):
 
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(64)
-        self.relu1 = nn.ReLU(inplace=True)
+        self.relu1 = nn.LeakyReLU(0.2, inplace=True)
         self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) if embed_dim > 0 else None
 
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(64)
-        self.relu2 = nn.ReLU(inplace=True)
+        self.relu2 = nn.LeakyReLU(0.2, inplace=True)
         self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) if embed_dim > 0 else None
 
         self.conv3 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
