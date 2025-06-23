@@ -188,7 +188,7 @@ class Runner:
             factor=cfg.data_factor,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
-            exp_name="variance",
+            exp_name="over_exp",
             # is_mip360=True,
         )
         self.trainset = Dataset(

@@ -31,7 +31,7 @@ class Config:
     save_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
     save_ply: bool = True
     ply_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
-    disable_video: bool = False
+    disable_video: bool = True
 
     init_type: str = "sfm"
     init_num_pts: int = 100_000

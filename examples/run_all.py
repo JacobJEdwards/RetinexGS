@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 
-input_dir = Path("../../NeRF_360")
+input_dir = Path("../../LOM_full")
 output_dir = Path("../../result")
 
 for d in input_dir.iterdir():
