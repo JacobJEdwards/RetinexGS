@@ -361,7 +361,7 @@ class DenoisingNet(nn.Module):
         super().__init__()
 
         channels = kwargs['channels']
-        filters_0 = kwargs['base filters']
+        filters_0 = kwargs['base_filters']
         filters_1 = 2 * filters_0
         filters_2 = 4 * filters_0
         filters_3 = 8 * filters_0
