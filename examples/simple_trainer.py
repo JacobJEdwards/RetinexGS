@@ -49,7 +49,7 @@ from utils import (
     set_random_seed,
     generate_variational_intrinsics,
 )
-from retinex import RetinexNet, MultiScaleRetinexNet, DenoisingNet, RefinementNet
+from retinex import RetinexNet, MultiScaleRetinexNet
 
 
 def create_splats_with_optimizers(
@@ -196,17 +196,18 @@ class Runner:
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
 
             if cfg.use_denoising_net:
-                self.denoising_net = DenoisingNet(
-                    # in_channels=3,
-                    # inner_channels=64,
-                    # out_channels=3,
-                    # embed_dim=32 if cfg.use_denoising_embedding else 0
-                    channels=3,
-                    base_filters=128
-                ).to(self.device)
-                self.denoising_net.compile()
-                if world_size > 1:
-                    self.denoising_net = DDP(self.denoising_net, device_ids=[local_rank])
+                pass
+                # self.denoising_net = DenoisingNet(
+                #     # in_channels=3,
+                #     # inner_channels=64,
+                #     # out_channels=3,
+                #     # embed_dim=32 if cfg.use_denoising_embedding else 0
+                #     channels=3,
+                #     base_filters=128
+                # ).to(self.device)
+                # self.denoising_net.compile()
+                # if world_size > 1:
+                #     self.denoising_net = DDP(self.denoising_net, device_ids=[local_rank])
 
             if cfg.multi_scale_retinex:
                 self.retinex_net = MultiScaleRetinexNet(in_channels=retinex_in_channels, 
@@ -222,8 +223,8 @@ class Runner:
                 self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
             net_params = list(self.retinex_net.parameters())
-            if cfg.use_denoising_net and self.denoising_net is not None:
-                net_params += list(self.denoising_net.parameters())
+            # if cfg.use_denoising_net and self.denoising_net is not None:
+            #     net_params += list(self.denoising_net.parameters())
                 
             self.retinex_optimizer = torch.optim.AdamW(
                 net_params,
@@ -756,14 +757,14 @@ class Runner:
             reflectance_map = torch.exp(log_reflectance_target)
             
         
-        if self.cfg.use_denoising_net and self.denoising_net is not None:
+        # if self.cfg.use_denoising_net and self.denoising_net is not None:
             # if self.cfg.use_denoising_embedding:
             #     denoising_embedding = self.retinex_embeds(images_ids)
             #     reflectance_map = self.denoising_net(
             #         reflectance_map, denoising_embedding
             #     )
             # else:
-                reflectance_map = self.denoising_net(reflectance_map)
+            #     reflectance_map = self.denoising_net(reflectance_map)
                 
         
         reflectance_map = torch.clamp(reflectance_map, 0, 1)
@@ -1085,6 +1086,10 @@ class Runner:
                 else:
                     colors_low, depths_low = renders_low, None
                     colors_enh, depths_enh = renders_enh, None
+
+                colors_low = torch.clamp(colors_low, 0.0, 1.0)
+                colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
+                pixels = torch.clamp(pixels, 0.0, 1.0)
 
                 if cfg.use_bilateral_grid:
                     assert slice_func is not None, "slice_func must be defined for bilateral grid slicing"
