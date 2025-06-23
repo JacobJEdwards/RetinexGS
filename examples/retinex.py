@@ -244,6 +244,7 @@ class RefinementNet(nn.Module):
         self.film3 = FiLMLayer(embed_dim=embed_dim, feature_channels=64)
 
         self.output_conv = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+        self.tanh = nn.Tanh()
 
         nn.init.constant_(self.output_conv.weight, 0.)
         if self.output_conv.bias is not None:
@@ -266,5 +267,8 @@ class RefinementNet(nn.Module):
         out = self.film3(out, embedding)
 
         residual = self.output_conv(out)
+        residual = self.tanh(residual)
+
+        residual *= 0.1
 
         return residual
