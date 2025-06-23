@@ -123,18 +123,18 @@ class Config:
     lambda_illum_contrast: float = 0.1
     lambda_illum_curve: float = 1.5
     
-    lambda_laplacian: float = 0.0
-    lambda_gradient: float = 0.0
-    lambda_frequency: float = 0.0
-    lambda_edge_aware_smooth: float = 0.0
+    lambda_laplacian: float = 1.0
+    lambda_gradient: float = 0.5
+    lambda_frequency: float = 0.5
+    lambda_edge_aware_smooth: float = 1.0
     
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
     
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False
-    use_denoising_net: bool = True
-    use_denoising_embedding: bool = True
+    use_denoising_net: bool = False
+    use_denoising_embedding: bool = False
 
     eval_niqe: bool = False
 
