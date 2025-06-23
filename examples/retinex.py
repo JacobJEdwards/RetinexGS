@@ -294,6 +294,64 @@ class UpsampleBlock(nn.Module):
     def forward(self, x):
         upsample, concat = x
         upsample = self.actv_t(self.conv_t(upsample))
+
+        Python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# (Your existing code for init_weights, DownsampleBlock, UpsampleBlock,
+# InputBlock, OutputBlock, DenoisingBlock classes here)
+
+@torch.no_grad()
+def init_weights(init_type='xavier'):
+    if init_type == 'xavier':
+        init = nn.init.xavier_normal_
+    elif init_type == 'he':
+        init = nn.init.kaiming_normal_
+    else:
+        init = nn.init.orthogonal_
+
+    def initializer(m):
+        classname = m.__class__.__name__
+        if classname.find('Conv2d') != -1:
+            init(m.weight)
+        elif classname.find('BatchNorm') != -1:
+            nn.init.normal_(m.weight, 1.0, 0.01)
+            nn.init.zeros_(m.bias)
+
+    return initializer
+
+
+class DownsampleBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(DownsampleBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2)
+        self.actv = nn.PReLU(out_channels)
+
+    def forward(self, x):
+        return self.actv(self.conv(x))
+
+
+class UpsampleBlock(nn.Module):
+    def __init__(self, in_channels, cat_channels, out_channels):
+        super(UpsampleBlock, self).__init__()
+
+        self.conv = nn.Conv2d(in_channels + cat_channels, out_channels, 3, padding=1)
+        self.conv_t = nn.ConvTranspose2d(in_channels, in_channels, 2, stride=2)
+        self.actv = nn.PReLU(out_channels)
+        self.actv_t = nn.PReLU(in_channels)
+
+    def forward(self, x):
+        upsample, concat = x
+        upsample = self.actv_t(self.conv_t(upsample))
+
+        if upsample.shape[2] != concat.shape[2] or upsample.shape[3] != concat.shape[3]:
+            diff_h = concat.shape[2] - upsample.shape[2]
+            diff_w = concat.shape[3] - upsample.shape[3]
+
+            upsample = F.pad(upsample, (0, diff_w, 0, diff_h), mode='replicate')
+        
         return self.actv(self.conv(torch.cat([concat, upsample], 1)))
 
 
@@ -406,6 +464,23 @@ class DenoisingNet(nn.Module):
         self.output_block = OutputBlock(filters_0, channels)
 
     def forward(self, inputs):
+        original_h, original_w = inputs.shape[2:]
+        target_multiple = 8 # Number of downsampling levels is 3 (2^3)
+
+        # Calculate desired padded dimensions
+        new_h = (original_h + target_multiple - 1) // target_multiple * target_multiple
+        new_w = (original_w + target_multiple - 1) // target_multiple * target_multiple
+
+        # Calculate padding amounts (pad_right, pad_bottom)
+        pad_h = new_h - original_h
+        pad_w = new_w - original_w
+
+        # Apply padding if necessary
+        if pad_h > 0 or pad_w > 0:
+            # F.pad expects (pad_left, pad_right, pad_top, pad_bottom)
+            inputs = F.pad(inputs, (0, pad_w, 0, pad_h), mode='reflect') # 'reflect' or 'replicate' are common
+
+
         out_0 = self.input_block(inputs)    # Level 0
         out_0 = self.block_0_0(out_0)
         out_0 = self.block_0_1(out_0)
@@ -434,4 +509,9 @@ class DenoisingNet(nn.Module):
         out_6 = self.block_0_2(out_6)
         out_6 = self.block_0_3(out_6)
 
-        return self.output_block(out_6) + inputs
+        final_output = self.output_block(out_6) + inputs
+
+        if pad_h > 0 or pad_w > 0:
+            final_output = final_output[:, :, :original_h, :original_w]
+
+        return final_output
