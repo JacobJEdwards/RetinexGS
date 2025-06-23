@@ -171,15 +171,15 @@ class Runner:
         self.world_size = world_size
         self.device = f"cuda:{local_rank}"
 
-        cfg.result_dir.mkdir(exist_ok=True)
+        cfg.result_dir.mkdir(exist_ok=True, parents=True)
         self.ckpt_dir = cfg.result_dir / "ckpts"
-        self.ckpt_dir.mkdir(exist_ok=True)
+        self.ckpt_dir.mkdir(exist_ok=True, parents=True)
         self.stats_dir = cfg.result_dir / "stats"
-        self.stats_dir.mkdir(exist_ok=True)
+        self.stats_dir.mkdir(exist_ok=True, parents=True)
         self.render_dir = cfg.result_dir / "renders"
-        self.render_dir.mkdir(exist_ok=True)
+        self.render_dir.mkdir(exist_ok=True, parents=True)
         self.ply_dir = cfg.result_dir / "ply"
-        self.ply_dir.mkdir(exist_ok=True)
+        self.ply_dir.mkdir(exist_ok=True, parents=True)
 
         self.writer = SummaryWriter(log_dir=str(cfg.result_dir / "tb"))
 
