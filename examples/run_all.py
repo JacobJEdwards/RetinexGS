@@ -12,7 +12,7 @@ for d in input_dir.iterdir():
     cmd = [
         "python",
         "simple_trainer.py",
-        "default"
+        "default "
         "--data_dir", str(d),
         "--result_dir", str(output_dir / d.name),
     ]
