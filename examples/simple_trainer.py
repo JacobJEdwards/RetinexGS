@@ -1054,7 +1054,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with ((torch.autocast(enabled=False, device_type=device))):
+            with (((torch.autocast(enabled=False, device_type=device)))):
                 if (
                     cfg.enable_hard_view_mining
                     and cfg.enable_clipiqa_loss
@@ -1215,7 +1215,8 @@ class Runner:
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
-                    loss = loss_reconstruct_low * cfg.lambda_low + loss_reconstruct_enh (1.0 - cfg.lambda_low) +loss_illumination * cfg.lambda_illumination
+                    loss = loss_reconstruct_low * cfg.lambda_low + loss_reconstruct_enh * (1.0 - cfg.lambda_low)
+                    +loss_illumination * cfg.lambda_illumination
 
                     # if cfg.enable_retinex_clipiqa:
                     #     loss += (
