@@ -1130,8 +1130,15 @@ class Runner:
                         colors_low.permute(0, 3, 1, 2),
                         pixels.permute(0, 3, 1, 2),
                     )
+                    lpips_loss = self.lpips(
+                        colors_low.permute(0, 3, 1, 2),
+                        pixels.permute(0, 3, 1, 2),
+                    )
+
                     low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
                         ssim_loss * cfg.ssim_lambda
+                    ) + (
+                        0.1 * lpips_loss
                     )
 
                     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
@@ -1139,10 +1146,15 @@ class Runner:
                         colors_enh.permute(0, 3, 1, 2),
                         reflectance_target_permuted.permute(0,3,1,2),
                     )
+                    loss_lpips_enh = self.lpips(
+                        colors_enh.permute(0, 3, 1, 2),
+                        reflectance_target_permuted.permute(0, 3, 1, 2),
+                    )
 
                     loss_reconstruct_enh = (
                         loss_reflectance * (1.0 - cfg.ssim_lambda)
                         + loss_reflectance_ssim * cfg.ssim_lambda
+                        + 0.1 * loss_lpips_enh
                     )
 
                     loss_illum_color = self.loss_color(illumination_map) if not cfg.use_hsv_color_space else torch.tensor(0.0, device=device)
