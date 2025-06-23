@@ -1054,7 +1054,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with torch.autocast(enabled=False, device_type=device):
+            with ((torch.autocast(enabled=False, device_type=device))):
                 if (
                     cfg.enable_hard_view_mining
                     and cfg.enable_clipiqa_loss
@@ -1170,8 +1170,7 @@ class Runner:
                         pixels.permute(0, 3, 1, 2),
                     )
 
-                    # =  (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
-                    low_loss = ssim_loss * cfg.ssim_lambda
+                    low_loss = ssim_loss * cfg.ssim_lambda + loss_reconstruct_low * (1.0 - cfg.ssim_lambda) + lpips_loss * 0.1
 
                     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
                     loss_reflectance_ssim = 1.0 - self.ssim(
@@ -1216,7 +1215,8 @@ class Runner:
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
-                    loss = loss_reconstruct_low *0.5 + loss_reconstruct_enh + loss_illumination * 0.5
+                    loss = loss_reconstruct_low * cfg.lambda_low + loss_reconstruct_enh (1.0 - cfg.lambda_low) +
+                    loss_illumination * cfg.lambda_illumination
 
                     # if cfg.enable_retinex_clipiqa:
                     #     loss += (
