@@ -118,13 +118,13 @@ class Config:
     lambda_reflect: float = 6.0
     lambda_smooth: float = 600.0
     lambda_illum_color: float = 0.5
-    lambda_illum_exposure: float = 2.5
+    lambda_illum_exposure: float = 2.4
     lambda_illum_variance: float = 0.05
     lambda_illum_contrast: float = 0.1
     lambda_illum_curve: float = 1.5
     
     lambda_laplacian: float = 1.0
-    lambda_gradient: float = 0.5
+    lambda_gradient: float = 1.5
     lambda_frequency: float = 0.5
     lambda_edge_aware_smooth: float = 1.0
     
