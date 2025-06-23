@@ -1170,11 +1170,8 @@ class Runner:
                         pixels.permute(0, 3, 1, 2),
                     )
 
-                    low_loss = (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
-                        ssim_loss * cfg.ssim_lambda
-                    ) + (
-                        0.2 * lpips_loss
-                    )
+                    # =  (loss_reconstruct_low * (1.0 - cfg.ssim_lambda)) + (
+                    low_loss = ssim_loss * cfg.ssim_lambda
 
                     loss_reflectance = F.l1_loss(colors_enh, reflectance_target_permuted.detach())
                     loss_reflectance_ssim = 1.0 - self.ssim(
@@ -1219,7 +1216,7 @@ class Runner:
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
-                    loss = loss_reconstruct_low *0.0 + loss_reconstruct_enh + loss_illumination * 0.5
+                    loss = loss_reconstruct_low *0.5 + loss_reconstruct_enh + loss_illumination * 0.5
 
                     # if cfg.enable_retinex_clipiqa:
                     #     loss += (
