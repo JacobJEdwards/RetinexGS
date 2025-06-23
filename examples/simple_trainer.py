@@ -198,8 +198,9 @@ class Runner:
             if cfg.use_denoising_net:
                 self.denoising_net = DenoisingNet(
                     in_channels=3,
+                    inner_channels=64,
                     out_channels=3,
-                    embed_dim=32 if cfg.use_denoising_embedding else 0
+                    # embed_dim=32 if cfg.use_denoising_embedding else 0
                 ).to(self.device)
                 self.denoising_net.compile()
                 if world_size > 1:
