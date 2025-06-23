@@ -1251,10 +1251,20 @@ class Runner:
                     loss_illum_contrast = self.loss_spatial(
                         input_image_for_net, reflectance_target, contrast=con_degree
                     )
-                    loss_illum_laplacian = self.loss_details(reflectance_target)
-                    # loss_illum_laplacian = torch.mean(
-                    #     torch.abs(self.loss_laplacian(reflectance_target) - self.loss_laplacian(input_image_for_net))
-                    # )
+                    # loss_illum_laplacian = self.loss_details(reflectance_target)
+                    loss_illum_laplacian = torch.mean(
+                        torch.abs(self.loss_laplacian(reflectance_target) - self.loss_laplacian(input_image_for_net))
+                    )
+                    loss_illum_gradient = self.loss_gradient(
+                        input_image_for_net, reflectance_target
+                    )
+                    loss_illum_frequency = self.loss_frequency(
+                        input_image_for_net, reflectance_target
+                    )
+                    loss_illum_edge_aware_smooth = self.loss_edge_aware_smooth(
+                        illumination_map, input_image_for_net
+                    )
+
 
                     loss_illumination = (
                         cfg.lambda_reflect * loss_illum_contrast
@@ -1264,6 +1274,9 @@ class Runner:
                         # + cfg.lambda_illum_variance * loss_illum_variance
                         + cfg.lambda_illum_curve * loss_adaptive_curve
                         + cfg.lambda_laplacian * loss_illum_laplacian
+                        + cfg.lambda_gradient * loss_illum_gradient
+                        + cfg.lambda_frequency * loss_illum_frequency
+                        + cfg.lambda_edge_aware_smooth * loss_illum_edge_aware_smooth
                     )
 
                     # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
