@@ -155,6 +155,7 @@ class Runner:
     def __init__(
         self, local_rank: int, world_rank, world_size: int, cfg: Config
     ) -> None:
+        self.start_time = time.time()
         set_random_seed(42 + local_rank)
 
         self.cfg = cfg
@@ -1840,6 +1841,7 @@ class Runner:
                 {
                     "ellipse_time": avg_ellipse_time,
                     "num_GS": len(self.splats["means"]),
+                    "total_time": time.time() - self.start_time,
                 }
             )
 
