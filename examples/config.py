@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, assert_never
 
-from gsplat import DefaultStrategy, MCMCStrategy
+from gsplat import MCMCStrategy
+from default import DefaultStrategy
 
 
 @dataclass
