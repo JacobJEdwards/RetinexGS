@@ -33,7 +33,7 @@ class RefinementNet(nn.Module):
 
         self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
 
-        self.relu = nn.ReLU()
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
 
     def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
         e1 = self.relu(self.bn1(self.conv1(x)))
@@ -68,7 +68,7 @@ class RetinexNet(nn.Module):
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
         self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
-        self.relu = nn.ReLU()
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
         # self.sigmoid = nn.Sigmoid() we operate in log space, no need for sigmoid
 
     def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
@@ -129,7 +129,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.use_refinement:
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
-        self.relu = nn.ReLU()
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
 
 
         # self.sigmoid = nn.Sigmoid()
