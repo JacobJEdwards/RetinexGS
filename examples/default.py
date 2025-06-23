@@ -5,9 +5,9 @@ import torch
 from torch.optim import SparseAdam, Adam
 from typing_extensions import Literal
 
-from .base import Strategy
-from .ops import duplicate, remove, reset_opa, split
-from .. import SelectiveAdam
+from gsplat.strategy.base import Strategy
+from gsplat.strategy.ops import duplicate, remove, reset_opa, split
+from gsplat import SelectiveAdam
 
 
 @dataclass
@@ -112,9 +112,9 @@ class DefaultStrategy(Strategy):
         return state
 
     def check_sanity(
-        self,
-        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
-        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
+            self,
+            params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+            optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
     ):
         """Sanity check for the parameters and optimizers.
 
@@ -138,12 +138,12 @@ class DefaultStrategy(Strategy):
             assert key in params, f"{key} is required in params but missing."
 
     def step_pre_backward(
-        self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam],
-        state: Dict[str, Any],
-        step: int,
-        info: Dict[str, Any],
+            self,
+            params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
+            optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam],
+            state: Dict[str, Any],
+            step: int,
+            info: Dict[str, Any],
     ):
         """Callback function to be executed before the `loss.backward()` call."""
         assert self.key_for_gradient in info, (
@@ -152,13 +152,13 @@ class DefaultStrategy(Strategy):
         info[self.key_for_gradient].retain_grad()
 
     def step_post_backward(
-        self,
-        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
-        optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam],
-        state: dict[str, Any],
-        step: int,
-        info: dict[str, Any],
-        packed: bool = False,
+            self,
+            params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+            optimizers: Dict[str, Adam | SparseAdam | SelectiveAdam],
+            state: dict[str, Any],
+            step: int,
+            info: dict[str, Any],
+            packed: bool = False,
     ):
         """Callback function to be executed after the `loss.backward()` call."""
         if step >= self.refine_stop_iter:
@@ -167,9 +167,9 @@ class DefaultStrategy(Strategy):
         self._update_state(params, state, info, packed=packed)
 
         if (
-            step > self.refine_start_iter
-            and step % self.refine_every == 0
-            and step % self.reset_every >= self.pause_refine_after_reset
+                step > self.refine_start_iter
+                and step % self.refine_every == 0
+                and step % self.reset_every >= self.pause_refine_after_reset
         ):
             # grow GSs
             n_dupli, n_split = self._grow_gs(params, optimizers, state, step)
@@ -202,11 +202,11 @@ class DefaultStrategy(Strategy):
             )
 
     def _update_state(
-        self,
-        params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
-        state: Dict[str, Any],
-        info: Dict[str, Any],
-        packed: bool = False,
+            self,
+            params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
+            state: Dict[str, Any],
+            info: Dict[str, Any],
+            packed: bool = False,
     ):
         for key in [
             "width",
@@ -258,15 +258,15 @@ class DefaultStrategy(Strategy):
                 state["radii"][gs_ids],
                 # normalize radii to [0, 1] screen space
                 radii / float(max(info["width"], info["height"])),
-            )
+                )
 
     @torch.no_grad()
     def _grow_gs(
-        self,
-        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
-        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
-        state: dict[str, Any],
-        step: int,
+            self,
+            params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+            optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
+            state: dict[str, Any],
+            step: int,
     ) -> Tuple[int, int]:
         count = state["count"]
         grads = state["grad2d"] / count.clamp_min(1)
@@ -274,8 +274,8 @@ class DefaultStrategy(Strategy):
 
         is_grad_high = grads > self.grow_grad2d
         is_small = (
-            torch.exp(params["scales"]).max(dim=-1).values
-            <= self.grow_scale3d * state["scene_scale"]
+                torch.exp(params["scales"]).max(dim=-1).values
+                <= self.grow_scale3d * state["scene_scale"]
         )
         is_dupli = is_grad_high & is_small
         n_dupli = is_dupli.sum().item()
@@ -311,17 +311,17 @@ class DefaultStrategy(Strategy):
 
     @torch.no_grad()
     def _prune_gs(
-        self,
-        params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
-        optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
-        state: dict[str, Any],
-        step: int,
+            self,
+            params: dict[str, torch.nn.Parameter] | torch.nn.ParameterDict,
+            optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
+            state: dict[str, Any],
+            step: int,
     ) -> int:
         is_prune = torch.sigmoid(params["opacities"].flatten()) < self.prune_opa
         if step > self.reset_every:
             is_too_big = (
-                torch.exp(params["scales"]).max(dim=-1).values
-                > self.prune_scale3d * state["scene_scale"]
+                    torch.exp(params["scales"]).max(dim=-1).values
+                    > self.prune_scale3d * state["scene_scale"]
             )
             # The official code also implements sreen-size pruning but
             # it's actually not being used due to a bug:

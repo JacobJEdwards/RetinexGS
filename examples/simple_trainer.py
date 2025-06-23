@@ -40,7 +40,8 @@ from gsplat.compression import PngCompression
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
 from gsplat.rendering import rasterization
-from gsplat.strategy import DefaultStrategy, MCMCStrategy
+from gsplat.strategy import MCMCStrategy
+from default import DefaultStrategy
 from utils import (
     AppearanceOptModule,
     CameraOptModule,
