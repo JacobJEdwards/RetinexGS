@@ -898,6 +898,25 @@ class Runner:
 
         trainloader_iter = iter(trainloader)
 
+        initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
+        initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
+        schedulers = [
+            CosineAnnealingLR(
+                self.retinex_optimizer, T_max=cfg.pretrain_steps + cfg.max_steps, eta_min=initial_retinex_lr * 0.01
+            ),
+            CosineAnnealingLR(
+                self.retinex_embed_optimizer, T_max=cfg.pretrain_steps + cfg.max_steps, eta_min=initial_embed_lr * 0.01
+            )
+        ]
+
+        if self.retinex_net.use_refinement:
+            initial_refinement_lr = self.refinement_optimizer.param_groups[0]["lr"]
+            schedulers.append(
+                CosineAnnealingLR(
+                    self.refinement_optimizer, T_max=cfg.pretrain_steps + cfg.max_steps, eta_min=initial_refinement_lr * 0.01
+                )
+            )
+
         pbar = tqdm.tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
         for step in pbar:
             try:
@@ -922,10 +941,13 @@ class Runner:
             self.retinex_embed_optimizer.step()
             if self.retinex_net.use_refinement:
                 self.refinement_optimizer.step()
-                self.retinex_optimizer.zero_grad()
+                self.refinement_optimizer.zero_grad()
 
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
+
+            for scheduler in schedulers:
+                scheduler.step()
 
 
             # scaler.update()
@@ -960,7 +982,8 @@ class Runner:
             if self.retinex_net.use_refinement:
                 initial_refinement_lr = self.refinement_optimizer.param_groups[0]["lr"]
                 schedulers.append(
-                    CosineAnnealingLR(self.refinement_optimizer, T_max=max_steps, eta_min=initial_refinement_lr * 0.01)
+                    CosineAnnealingLR(self.refinement_optimizer, T_max=max_steps,
+                                      eta_min=initial_refinement_lr * 0.01)
                 )
 
             initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
