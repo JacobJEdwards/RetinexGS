@@ -339,7 +339,11 @@ class RefinementNet(nn.Module):
         self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) # Add another FiLM Layer
 
         self.conv3 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
-        self.tanh = nn.Tanh()
+        # self.tanh = nn.Tanh()
+        
+        nn.init.constant_(self.conv3.weight, 0.)
+        if self.conv3.bias is not None:
+            nn.init.constant_(self.conv3.bias, 0.)
 
     def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor: # Accept embedding
         out = self.conv1(x)
@@ -354,4 +358,4 @@ class RefinementNet(nn.Module):
 
         out = self.conv3(out)
 
-        return self.tanh(out)
+        return out

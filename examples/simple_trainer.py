@@ -197,7 +197,7 @@ class Runner:
 
             if cfg.use_denoising_net:
                 self.denoising_net = DenoisingNet(
-                    in_channels=retinex_out_channels,
+                    in_channels=3,
                     out_channels=retinex_out_channels,
                     embed_dim=32 if cfg.use_denoising_embedding else 0
                 ).to(self.device)
