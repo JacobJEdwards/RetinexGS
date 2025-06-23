@@ -40,8 +40,7 @@ from gsplat.compression import PngCompression
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
 from gsplat.rendering import rasterization
-from gsplat.strategy import MCMCStrategy
-from default import DefaultStrategy
+from gsplat.strategy import MCMCStrategy, DefaultStrategy
 from utils import (
     AppearanceOptModule,
     CameraOptModule,
@@ -2116,7 +2115,7 @@ if __name__ == "__main__":
     configs = {
         "default": (
             "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True)),
+            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
         ),
         "mcmc": (
             "Gaussian splatting training using MCMC.",
