@@ -757,12 +757,12 @@ class Runner:
             
         
         if self.cfg.use_denoising_net and self.denoising_net is not None:
-            if self.cfg.use_denoising_embedding:
-                denoising_embedding = self.retinex_embeds(images_ids)
-                reflectance_map = self.denoising_net(
-                    reflectance_map, denoising_embedding
-                )
-            else:
+            # if self.cfg.use_denoising_embedding:
+            #     denoising_embedding = self.retinex_embeds(images_ids)
+            #     reflectance_map = self.denoising_net(
+            #         reflectance_map, denoising_embedding
+            #     )
+            # else:
                 reflectance_map = self.denoising_net(reflectance_map)
                 
         
