@@ -191,7 +191,7 @@ class Parser:
         image_dir = data_dir / ("images" + image_dir_suffix)
 
         if is_mip360:
-            image_dir = data_dir / ("images" + image_dir_suffix + "_variance")
+            image_dir = data_dir / ("images" + "_variance" + image_dir_suffix)
 
         for d in [image_dir, colmap_image_dir]:
             if not d.exists():
