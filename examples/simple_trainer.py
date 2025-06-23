@@ -49,7 +49,7 @@ from utils import (
     set_random_seed,
     generate_variational_intrinsics,
 )
-from retinex import RetinexNet, MultiScaleRetinexNet, DenoisingNet
+from retinex import RetinexNet, MultiScaleRetinexNet, DenoisingNet, RefinementNet
 
 
 def create_splats_with_optimizers(

@@ -5,9 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from utils import FiLMLayer, RefinementNet
-
-
 class RetinexNet(nn.Module):
     def __init__(
             self: Self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
@@ -153,18 +150,33 @@ class DenoisingNet(nn.Module):
 
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(64)
-        self.relu1 = nn.ReLU(inplace=True)
+        self.relu1 = nn.LeakyReLU(0.2, inplace=True)
         self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) if embed_dim > 0 else None
 
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.relu2 = nn.ReLU(inplace=True)
-        self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) if embed_dim > 0 else None
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.relu2 = nn.LeakyReLU(0.2, inplace=True)
+        self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=128) if embed_dim > 0 else None
 
-        self.conv3 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
-        self.sigmoid = nn.Sigmoid() 
+        self.conv3 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.relu3 = nn.LeakyReLU(0.2, inplace=True)
+        self.film3 = FiLMLayer(embed_dim=embed_dim, feature_channels=128) if embed_dim > 0 else None
 
-        self.embed_dim = embed_dim 
+        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1) # Upsample
+        self.bn4 = nn.BatchNorm2d(64)
+        self.relu4 = nn.LeakyReLU(0.2, inplace=True)
+        self.film4 = FiLMLayer(embed_dim=embed_dim, feature_channels=64) if embed_dim > 0 else None
+
+        self.output_conv = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+        
+        self.sigmoid = nn.Sigmoid()  
+        
+        self.embed_dim = embed_dim
+
+        nn.init.constant_(self.output_conv.weight, 0.)
+        if self.output_conv.bias is not None:
+            nn.init.constant_(self.output_conv.bias, 0.)
 
     def forward(self, x: Tensor, embedding: Tensor | None = None) -> Tensor:
         identity = x 
@@ -181,7 +193,78 @@ class DenoisingNet(nn.Module):
         if self.film2 is not None:
             out = self.film2(out, embedding)
 
-        residual = self.conv3(out) 
+        out = self.conv3(out)
+        out = self.bn3(out)
+        out = self.relu3(out)
+        if self.film3 is not None:
+            out = self.film3(out, embedding)
+
+        out = self.upconv1(out)
+        out = self.bn4(out)
+        out = self.relu4(out)
+        if self.film4 is not None:
+            out = self.film4(out, embedding)
+
+        residual = self.output_conv(out)
 
         denoised_output = identity + residual
         return self.sigmoid(denoised_output)
+
+
+
+class FiLMLayer(nn.Module):
+    def __init__(self: Self, embed_dim: int, feature_channels: int):
+        super(FiLMLayer, self).__init__()
+        self.layer = nn.Linear(embed_dim, feature_channels * 2)
+
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
+        gamma_beta = self.layer(embedding)
+        gamma_beta = gamma_beta.view(gamma_beta.size(0), -1, 1, 1)
+        gamma, beta = torch.chunk(gamma_beta, 2, dim=1)
+
+        return gamma * x + beta
+
+class RefinementNet(nn.Module):
+    def __init__(self: Self, in_channels: int, out_channels: int, embed_dim: int): # Add embed_dim
+        super(RefinementNet, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu1 = nn.LeakyReLU(0.2, inplace=True)
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=64)
+
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.relu2 = nn.LeakyReLU(0.2, inplace=True)
+        self.film2 = FiLMLayer(embed_dim=embed_dim, feature_channels=64)
+
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(64)
+        self.relu3 = nn.LeakyReLU(0.2, inplace=True)
+        self.film3 = FiLMLayer(embed_dim=embed_dim, feature_channels=64)
+
+        self.output_conv = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+
+        nn.init.constant_(self.output_conv.weight, 0.)
+        if self.output_conv.bias is not None:
+            nn.init.constant_(self.output_conv.bias, 0.)
+
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor: # Accept embedding
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu1(out)
+        out = self.film1(out, embedding)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu2(out)
+        out = self.film2(out, embedding)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+        out = self.relu3(out)
+        out = self.film3(out, embedding)
+
+        residual = self.output_conv(out)
+
+        return residual
