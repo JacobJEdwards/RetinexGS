@@ -3,6 +3,7 @@ from typing import Self
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from mpmath import residual
 from torch import Tensor
 
 class RetinexNet(nn.Module):
@@ -269,6 +270,6 @@ class RefinementNet(nn.Module):
         residual = self.output_conv(out)
         residual = self.tanh(residual)
 
-        residual *= 0.1
+        residual = residual * 0.1
 
         return residual
