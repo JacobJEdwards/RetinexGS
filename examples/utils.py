@@ -284,6 +284,7 @@ def apply_depth_colormap(
         img = img * acc + (1.0 - acc)
     return img
 
+
 def generate_variational_intrinsics(
     base_K: Tensor,
     num_intrinsics: int,
@@ -310,4 +311,3 @@ def generate_variational_intrinsics(
     new_Ks[:, 1, 2] = cy_base + principal_point_perturb[:, 1]
 
     return new_Ks
-

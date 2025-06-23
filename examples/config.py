@@ -28,7 +28,7 @@ class Config:
 
     max_steps: int = 10_000
     eval_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
-    save_steps: list[int] = field(default_factory=lambda: [3_000, 7_000,10_000])
+    save_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
     save_ply: bool = True
     ply_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
     disable_video: bool = False
@@ -123,15 +123,15 @@ class Config:
     lambda_illum_variance: float = 0.05
     lambda_illum_contrast: float = 0.1
     lambda_illum_curve: float = 1.5
-    
+
     lambda_laplacian: float = 0.2
     lambda_gradient: float = 0.01
     lambda_frequency: float = 0.01
     lambda_edge_aware_smooth: float = 0.3
-    
+
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
-    
+
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False
     use_denoising_net: bool = False

@@ -49,6 +49,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+
 def color_correct(
     img: torch.Tensor, ref: torch.Tensor, num_iters: int = 5, eps: float = 0.5 / 255
 ) -> torch.Tensor:
@@ -346,7 +347,9 @@ class BilateralGrid(nn.Module):
         # exit()
         grid_xyz = torch.cat([grid_xy, grid_z], dim=-1)  # (N, m, h, w, 3)
 
-        affine_mats = F.grid_sample(grids, grid_xyz, align_corners=True, padding_mode="border")  # (N, 12, m, h, w)
+        affine_mats = F.grid_sample(
+            grids, grid_xyz, align_corners=True, padding_mode="border"
+        )  # (N, 12, m, h, w)
         affine_mats = affine_mats.permute(0, 2, 3, 4, 1)  # (N, m, h, w, 12)
         affine_mats = affine_mats.reshape(
             *affine_mats.shape[:-1], 3, 4

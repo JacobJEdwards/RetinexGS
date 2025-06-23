@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+
 class FiLMLayer(nn.Module):
     def __init__(self: Self, embed_dim: int, feature_channels: int):
         super(FiLMLayer, self).__init__()
@@ -16,6 +17,7 @@ class FiLMLayer(nn.Module):
         gamma, beta = torch.chunk(gamma_beta, 2, dim=1)
 
         return gamma * x + beta
+
 
 class RefinementNet(nn.Module):
     def __init__(self: Self, in_channels: int, out_channels: int, embed_dim: int):
@@ -45,23 +47,26 @@ class RefinementNet(nn.Module):
         e1 = self.relu(self.bn1(self.conv1(x)))
         e1 = self.relu(self.bn1_2(self.conv1_2(e1)))
         e2_pre_mod = self.relu(self.bn2(self.conv2(e1)))
-        e2_pre_mod = self.relu(self.bn2_2(self.conv2_2(e2_pre_mod))) 
+        e2_pre_mod = self.relu(self.bn2_2(self.conv2_2(e2_pre_mod)))
 
         e2 = self.film_bottleneck(e2_pre_mod, embedding)
 
         d1 = self.relu(self.bn3(self.upconv1(e2)))
         if d1.shape[2:] != e1.shape[2:]:
-            d1 = F.interpolate(d1, size=e1.shape[2:], mode='bilinear', align_corners=False)
+            d1 = F.interpolate(
+                d1, size=e1.shape[2:], mode="bilinear", align_corners=False
+            )
 
-        d1 = torch.cat([d1, e1], dim=1) 
-        d1 = self.relu(self.bn3_2(self.conv3(d1))) 
+        d1 = torch.cat([d1, e1], dim=1)
+        d1 = self.relu(self.bn3_2(self.conv3(d1)))
 
         output = self.output_layer(d1)
         return output
-    
+
+
 class RetinexNet(nn.Module):
     def __init__(
-            self: Self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
+        self: Self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
     ) -> None:
         super(RetinexNet, self).__init__()
 
@@ -105,7 +110,11 @@ class RetinexNet(nn.Module):
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
-            self: Self, in_channels: int = 3, out_channels: int = 3, embed_dim: int = 32, use_refinement: bool = False
+        self: Self,
+        in_channels: int = 3,
+        out_channels: int = 3,
+        embed_dim: int = 32,
+        use_refinement: bool = False,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
@@ -138,7 +147,6 @@ class MultiScaleRetinexNet(nn.Module):
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
         self.relu = nn.ReLU()
-
 
         # self.sigmoid = nn.Sigmoid()
 
@@ -187,7 +195,11 @@ class MultiScaleRetinexNet(nn.Module):
         #     ],
         #     dim=1,
         # )
-        concatenated_maps = log_illum_coarse_res + log_illumination_medium_res + log_illumination_full_res
+        concatenated_maps = (
+            log_illum_coarse_res
+            + log_illumination_medium_res
+            + log_illumination_full_res
+        )
 
         final_illumination = self.combination_layer(concatenated_maps)
 
