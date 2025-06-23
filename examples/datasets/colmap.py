@@ -488,7 +488,7 @@ import torch
 from pycolmap import SceneManager
 
 from .normalize import (
-    align_principle_axes,
+    align_principal_axes,
     similarity_from_cameras,
     transform_cameras,
     transform_points,
@@ -675,7 +675,7 @@ class Parser:
             camtoworlds = transform_cameras(T1, camtoworlds)
             points = transform_points(T1, points)
 
-            T2 = align_principle_axes(points)
+            T2 = align_principal_axes(points)
             camtoworlds = transform_cameras(T2, camtoworlds)
             points = transform_points(T2, points)
 

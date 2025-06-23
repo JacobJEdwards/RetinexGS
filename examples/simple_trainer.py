@@ -177,7 +177,7 @@ class Runner:
         self.writer = SummaryWriter(log_dir=str(cfg.result_dir / "tb"))
 
         self.parser = Parser(
-            data_dir=cfg.data_dir,
+            data_dir=str(cfg.data_dir),
             factor=cfg.data_factor,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
