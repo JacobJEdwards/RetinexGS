@@ -310,3 +310,4 @@ def generate_variational_intrinsics(
     new_Ks[:, 1, 2] = cy_base + principal_point_perturb[:, 1]
 
     return new_Ks
+
