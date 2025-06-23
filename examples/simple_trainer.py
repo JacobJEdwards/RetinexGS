@@ -970,8 +970,8 @@ class Runner:
 
         initial_means_lr = self.optimizers["means"].param_groups[0]["lr"]
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
-            CosineAnnealingLR(
-                self.optimizers["means"], T_max=max_steps, eta_min=initial_means_lr * 0.01
+            ExponentialLR(
+                self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)
             ),
         ]
         if cfg.enable_retinex:

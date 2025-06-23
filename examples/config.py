@@ -126,7 +126,7 @@ class Config:
     lambda_laplacian: float = 0.0
     lambda_gradient: float = 0.0
     lambda_frequency: float = 0.0
-    lambda_edge_aware_smooth: float = 0.0
+    lambda_edge_aware_smooth: float = 0.3
     
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
