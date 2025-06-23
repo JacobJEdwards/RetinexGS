@@ -2220,7 +2220,11 @@ if __name__ == "__main__":
             ),
         ),
     }
-    config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.extras.overridable_config_cli(configs)
+    config = tyro.cli(
+        Config,
+    )
+    
     config.adjust_steps(config.steps_scaler)
 
     if config.use_bilateral_grid or config.use_fused_bilagrid:
