@@ -3,7 +3,6 @@ from typing import Self
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mpmath import residual
 from torch import Tensor
 
 class RetinexNet(nn.Module):
