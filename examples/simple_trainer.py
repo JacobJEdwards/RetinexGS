@@ -946,8 +946,8 @@ class Runner:
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
 
-            # for scheduler in schedulers:
-            #     scheduler.step()
+            for scheduler in schedulers:
+                scheduler.step()
 
 
             # scaler.update()
