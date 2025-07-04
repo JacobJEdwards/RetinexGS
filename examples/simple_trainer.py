@@ -812,7 +812,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        input_image_for_net, illumination_map, reflectance_map, _, _, weights = (
+        input_image_for_net, illumination_map, reflectance_map, alpha, beta, weights = (
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
 
@@ -824,7 +824,7 @@ class Runner:
         loss_smoothing = self.loss_smooth(illumination_map)
         # loss_variance = torch.var(illumination_map)
 
-        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map)
+        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         loss_exposure_val = self.loss_exposure(reflectance_map)
 
         con_degree = (0.5 / torch.mean(pixels)).item()
@@ -1239,7 +1239,7 @@ class Runner:
                 info["means2d"].retain_grad()
 
                 if cfg.enable_retinex:
-                    input_image_for_net, illumination_map, reflectance_target, _, _, _ = (
+                    input_image_for_net, illumination_map, reflectance_target, alpha, beta, _ = (
                         self.get_retinex_output(images_ids=image_ids, pixels=pixels)
                     )
 
@@ -1289,7 +1289,7 @@ class Runner:
                     loss_illum_smooth = self.loss_smooth(illumination_map)
                     # loss_illum_variance = torch.var(illumination_map)
 
-                    loss_adaptive_curve = self.loss_adaptive_curve(reflectance_target)
+                    loss_adaptive_curve = self.loss_adaptive_curve(reflectance_target, alpha, beta)
                     loss_illum_exposure = self.loss_exposure(reflectance_target)
 
                     con_degree = (0.5 / torch.mean(pixels)).item()

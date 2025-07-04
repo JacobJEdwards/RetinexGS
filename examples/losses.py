@@ -119,8 +119,44 @@ class AdaptiveCurveLoss(nn.Module):
         self.lambda1 = lambda1
         self.lambda2 = lambda2
         self.lambda3 = lambda3
+    
+    def forward_with_maps(
+        self,
+        output: Tensor,
+        alpha_map: Tensor, 
+        beta_map: Tensor,
+    ) -> Tensor:
+        if alpha_map.shape[2:] != output.shape[2:]:
+            alpha_map = F.interpolate(alpha_map, size=output.shape[2:], mode='bilinear', align_corners=False)
+        if beta_map.shape[2:] != output.shape[2:]:
+            beta_map = F.interpolate(beta_map, size=output.shape[2:], mode='bilinear', align_corners=False)
 
-    def forward(self, output: Tensor) -> Tensor:
+
+        low_mask = (output < self.low_thresh).float()
+        # Apply alpha_map directly
+        low_light_loss = torch.mean(low_mask * torch.abs(output - alpha_map))
+
+        high_mask = (output > self.high_thresh).float()
+        # Apply beta_map directly
+        high_light_loss = torch.mean(high_mask * torch.abs(output - beta_map))
+
+        grad_y = (output[:, :, 1:, :] - output[:, :, :-1, :]) ** 2
+        grad_x = (output[:, :, :, 1:] - output[:, :, :, :-1]) ** 2
+        smooth_loss = torch.mean(grad_x) + torch.mean(grad_y)
+
+        total_loss = (
+                self.lambda1 * low_light_loss
+                + self.lambda2 * high_light_loss
+                + self.lambda3 * smooth_loss
+        )
+
+        return total_loss
+            
+
+    def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None) -> Tensor:
+        if alpha_map is not None and beta_map is not None:
+            return self.forward_with_maps(output, alpha_map, beta_map)
+        
         low_mask = (output < self.low_thresh).float()
         low_light_loss = torch.mean(low_mask * torch.abs(output - self.alpha))
 
