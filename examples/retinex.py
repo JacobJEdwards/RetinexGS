@@ -5,6 +5,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+class SpatiallyFiLMLayer(nn.Module):
+    def __init__(self, feature_channels: int):
+        super(SpatiallyFiLMLayer, self).__init__()
+        self.gamma_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
+        self.beta_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
+
+    def forward(self, x: Tensor, conditioning_features: Tensor) -> Tensor:
+        gamma = self.gamma_predictor(conditioning_features)
+        beta = self.beta_predictor(conditioning_features)
+        return gamma * x + beta
 
 class FiLMLayer(nn.Module):
     def __init__(self: Self, embed_dim: int, feature_channels: int):
