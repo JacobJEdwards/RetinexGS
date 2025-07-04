@@ -1908,6 +1908,7 @@ class Runner:
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
                 masks=masks,
+                image_ids=image_id,
             )
 
             if len(out) == 5:
