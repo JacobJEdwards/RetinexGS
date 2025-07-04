@@ -241,6 +241,7 @@ class Runner:
                     use_dilated_convs=cfg.use_dilated_convs,
                     use_se_blocks=cfg.use_se_blocks,
                     use_spatial_attention=cfg.use_spatial_attention,
+                    enable_dynamic_weights=cfg.enable_dynamic_weights,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
