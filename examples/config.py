@@ -142,7 +142,7 @@ class Config:
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
     use_spatial_attention: bool = False
-    enable_dynamic_weights: bool = False
+    enable_dynamic_weights: bool = True
     
     use_illum_opt: bool = True
     eval_niqe: bool = False
