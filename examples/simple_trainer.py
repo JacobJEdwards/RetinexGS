@@ -812,7 +812,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        input_image_for_net, illumination_map, reflectance_map, _, _, _ = (
+        input_image_for_net, illumination_map, reflectance_map, _, _, weights = (
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
 
@@ -847,17 +847,26 @@ class Runner:
             illumination_map, input_image_for_net
         )
 
+        if self.cfg.enable_dynamic_weights:
+            reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l, edge_aware_smooth_l = (
+                weights.unbind(1)
+            )
+        else:
+            (reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l,
+             edge_aware_smooth_l) = 1, 1, 1, 1, 1, 1, 1, 1, 1
+
+
         loss = (
-            cfg.lambda_reflect * loss_reflectance_spa
-            + cfg.lambda_illum_color * loss_color_val
-            + cfg.lambda_illum_exposure * loss_exposure_val
-            + cfg.lambda_smooth * loss_smoothing
+            cfg.lambda_reflect * loss_reflectance_spa * reflect_l
+            + cfg.lambda_illum_color * loss_color_val * colour_l
+            + cfg.lambda_illum_exposure * loss_exposure_val * exposure_l
+            + cfg.lambda_smooth * loss_smoothing * smooth_l
             # + cfg.lambda_illum_variance * loss_variance
-            + cfg.lambda_illum_curve * loss_adaptive_curve
-            + cfg.lambda_laplacian * loss_laplacian_val
-            + cfg.lambda_gradient * loss_gradient
-            + cfg.lambda_frequency * loss_frequency_val
-            + cfg.lambda_edge_aware_smooth * loss_smooth_edge_aware
+            + cfg.lambda_illum_curve * loss_adaptive_curve * adaptive_curve_l
+            + cfg.lambda_laplacian * loss_laplacian_val * laplacian_l
+            + cfg.lambda_gradient * loss_gradient* gradient_l
+            + cfg.lambda_frequency * loss_frequency_val * frequency_l
+            + cfg.lambda_edge_aware_smooth * loss_smooth_edge_aware * edge_aware_smooth_l
         )
 
         if step % self.cfg.tb_every == 0:
