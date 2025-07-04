@@ -31,7 +31,7 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
-from examples.utils import IlluminationOptModule
+from utils import IlluminationOptModule
 from losses import FrequencyLoss, EdgeAwareSmoothingLoss
 from losses import (
     ColourConsistencyLoss,
