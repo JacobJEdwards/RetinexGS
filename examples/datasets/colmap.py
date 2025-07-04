@@ -9,6 +9,7 @@ from PIL import Image
 from pycolmap import SceneManager
 from tqdm import tqdm
 from typing_extensions import assert_never
+import imageio
 
 from .normalize import (
     align_principal_axes,
