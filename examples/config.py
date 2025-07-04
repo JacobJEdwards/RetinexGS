@@ -142,7 +142,6 @@ class Config:
     use_dilated_convs: bool = False
     
     use_illum_opt: bool = True
-
     eval_niqe: bool = False
 
     def adjust_steps(self, factor: float) -> None:
