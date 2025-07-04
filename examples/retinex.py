@@ -4,6 +4,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+class SpatialAttentionModule(nn.Module):
+    def __init__(self, kernel_size: int = 7) -> None:
+        super().__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x: Tensor) -> Tensor:
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x_cat = torch.cat([avg_out, max_out], dim=1)
+        scale = self.sigmoid(self.conv(x_cat))
+        return x * scale
+
+
 class SEBlock(nn.Module):
     def __init__(self, channel: int, reduction: int = 16) -> None:
         super().__init__()
@@ -145,6 +159,8 @@ class MultiScaleRetinexNet(nn.Module):
         predictive_adaptive_curve: bool = False,
         spatially_film: bool = False,
         use_se_blocks: bool = False,
+        enable_dynamic_weights: bool = False,
+        use_spatial_attention: bool = False,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
@@ -164,6 +180,17 @@ class MultiScaleRetinexNet(nn.Module):
             self.film1 = SpatiallyFiLMLayer(feature_channels=32)
         else:
             self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
+        
+        self.enable_dynamic_weights = enable_dynamic_weights
+        if self.enable_dynamic_weights:
+            self.loss_weight_head = nn.Sequential(
+                nn.AdaptiveAvgPool2d(1),
+                nn.Flatten(),
+                nn.Linear(in_channels, 64), 
+                nn.ReLU(),
+                nn.Linear(64, 9),
+                nn.Sigmoid()
+            )
 
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
@@ -182,6 +209,12 @@ class MultiScaleRetinexNet(nn.Module):
             self.se1 = SEBlock(32)
             self.se2 = SEBlock(64)
             self.se3 = SEBlock(32)
+
+        if self.use_spatial_attention:
+            self.spatial_att1 = SpatialAttentionModule() 
+            self.spatial_att2 = SpatialAttentionModule()
+            self.spatial_att3 = SpatialAttentionModule()
+
 
         self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
@@ -216,7 +249,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         # self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None]:
+    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu((self.conv1(x)))
         if self.spatially_film:
             spatial_cond_features = self.spatial_conditioning_encoder(x)
@@ -226,6 +259,8 @@ class MultiScaleRetinexNet(nn.Module):
         
         if self.use_se_blocks:
             c1_modulated = self.se1(c1_modulated)
+        if self.use_spatial_attention:
+            c1_modulated = self.spatial_att1(c1_modulated)
             
         p1 = self.pool(c1_modulated)
         
@@ -237,6 +272,8 @@ class MultiScaleRetinexNet(nn.Module):
         
         if self.use_se_blocks:
             c2 = self.se2(c2)
+        if self.use_spatial_attention:
+            c2 = self.spatial_att2(c2)
         
         p2 = self.pool(c2)
 
@@ -246,8 +283,11 @@ class MultiScaleRetinexNet(nn.Module):
         )
         merged = torch.cat([up1, p1], dim=1)
         c3 = self.relu((self.conv3(merged)))
+        
         if self.use_se_blocks:
             c3 = self.se3(c3)
+        if self.use_spatial_attention:
+            c3 = self.spatial_att3(c3)
 
         log_illumination_full_res = self.upconv2(c3)
         log_illumination_full_res = F.interpolate(
@@ -302,6 +342,11 @@ class MultiScaleRetinexNet(nn.Module):
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             alpha_map = 0.5 + 1.0 * torch.sigmoid(alpha_map_raw)
             beta_map = 0.1 + 0.8 * torch.sigmoid(beta_map_raw)
+        
+        if self.enable_dynamic_weights:
+            dynamic_weights = self.loss_weight_head(x)
+        else:
+            dynamic_weights = None
 
 
-        return final_illumination, alpha_map, beta_map
+        return final_illumination, alpha_map, beta_map, dynamic_weights

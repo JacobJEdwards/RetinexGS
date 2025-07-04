@@ -240,6 +240,7 @@ class Runner:
                     spatially_film=cfg.spatial_film,
                     use_dilated_convs=cfg.use_dilated_convs,
                     use_se_blocks=cfg.use_se_blocks,
+                    use_spatial_attention=cfg.use_spatial_attention,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
@@ -756,7 +757,7 @@ class Runner:
 
     def get_retinex_output(
         self, images_ids: Tensor, pixels: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
         if self.cfg.use_hsv_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
             pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
@@ -770,7 +771,7 @@ class Runner:
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        log_illumination_map, alpha, beta = checkpoint(
+        log_illumination_map, alpha, beta, weights = checkpoint(
             self.retinex_net,
             input_image_for_net,
             retinex_embedding,
@@ -803,7 +804,7 @@ class Runner:
 
         reflectance_map = torch.clamp(reflectance_map, 0, 1)
 
-        return input_image_for_net, illumination_map, reflectance_map
+        return input_image_for_net, illumination_map, reflectance_map, alpha, beta, weights
 
     def retinex_train_step(
         self, images_ids: Tensor, pixels: Tensor, step: int
@@ -811,7 +812,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        input_image_for_net, illumination_map, reflectance_map = (
+        input_image_for_net, illumination_map, reflectance_map, _, _, _ = (
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
 
@@ -1229,7 +1230,7 @@ class Runner:
                 info["means2d"].retain_grad()
 
                 if cfg.enable_retinex:
-                    input_image_for_net, illumination_map, reflectance_target = (
+                    input_image_for_net, illumination_map, reflectance_target, _, _, _ = (
                         self.get_retinex_output(images_ids=image_ids, pixels=pixels)
                     )
 
