@@ -4,6 +4,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+class SEBlock(nn.Module):
+    def __init__(self, channel: int, reduction: int = 16) -> None:
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
 class SpatiallyFiLMLayer(nn.Module):
     def __init__(self, feature_channels: int):
         super(SpatiallyFiLMLayer, self).__init__()
@@ -127,6 +144,7 @@ class MultiScaleRetinexNet(nn.Module):
         use_dilated_convs: bool = False,
         predictive_adaptive_curve: bool = False,
         spatially_film: bool = False,
+        use_se_blocks: bool = False,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
@@ -157,7 +175,13 @@ class MultiScaleRetinexNet(nn.Module):
             self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2)
             self.bn_dilated1 = nn.BatchNorm2d(64)
             self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4)
-            self.bn_dilated2 = nn.BatchNorm2d(64)        
+            self.bn_dilated2 = nn.BatchNorm2d(64)
+
+        self.use_se_blocks = use_se_blocks
+        if self.use_se_blocks:
+            self.se1 = SEBlock(32)
+            self.se2 = SEBlock(64)
+            self.se3 = SEBlock(32)
 
         self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
@@ -193,20 +217,26 @@ class MultiScaleRetinexNet(nn.Module):
         # self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None]:
-        c1 = self.relu(self.conv1(x))
+        c1 = self.relu(self.bn1(self.conv1(x)))
         if self.spatially_film:
             spatial_cond_features = self.spatial_conditioning_encoder(x)
             c1_modulated = self.film1(c1, spatial_cond_features)
         else:
             c1_modulated = self.film1(c1, embedding)
+        
+        if self.use_se_blocks:
+            c1_modulated = self.se1(c1_modulated)
             
         p1 = self.pool(c1_modulated)
         
-        c2 = self.relu(self.conv2(p1))
+        c2 = self.relu(self.bn2(self.conv2(p1)))
         
         if self.use_dilated_convs:
             c2 = self.relu(self.bn_dilated1(self.dilated_conv1(c2)))
             c2 = self.relu(self.bn_dilated2(self.dilated_conv2(c2)))
+        
+        if self.use_se_blocks:
+            c2 = self.se2(c2)
         
         p2 = self.pool(c2)
 
@@ -215,7 +245,9 @@ class MultiScaleRetinexNet(nn.Module):
             up1, size=p1.shape[2:], mode="bilinear", align_corners=False
         )
         merged = torch.cat([up1, p1], dim=1)
-        c3 = self.relu(self.conv3(merged))
+        c3 = self.relu(self.bn3(self.conv3(merged)))
+        if self.use_se_blocks:
+            c3 = self.se3(c3)
 
         log_illumination_full_res = self.upconv2(c3)
         log_illumination_full_res = F.interpolate(

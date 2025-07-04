@@ -239,6 +239,7 @@ class Runner:
                     predictive_adaptive_curve=cfg.predictive_adaptive_curve,
                     spatially_film=cfg.spatial_film,
                     use_dilated_convs=cfg.use_dilated_convs,
+                    use_se_blocks=cfg.use_se_blocks,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
