@@ -210,6 +210,7 @@ class MultiScaleRetinexNet(nn.Module):
             self.se2 = SEBlock(64)
             self.se3 = SEBlock(32)
 
+        self.use_spatial_attention = use_spatial_attention
         if self.use_spatial_attention:
             self.spatial_att1 = SpatialAttentionModule() 
             self.spatial_att2 = SpatialAttentionModule()
