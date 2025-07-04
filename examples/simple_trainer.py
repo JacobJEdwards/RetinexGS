@@ -31,6 +31,7 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
+from examples.utils import IlluminationOptModule
 from losses import FrequencyLoss, EdgeAwareSmoothingLoss
 from losses import (
     ColourConsistencyLoss,
@@ -188,7 +189,6 @@ class Runner:
             factor=cfg.data_factor,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
-            exp_name="low",
             # is_mip360=True,
         )
         self.trainset = Dataset(
@@ -197,6 +197,21 @@ class Runner:
         self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
+
+        self.illum_module = IlluminationOptModule(len(self.trainset)).to(self.device)
+        self.illum_module.compile()
+        if world_size > 1:
+            self.illum_module = DDP(self.illum_module, device_ids=[local_rank])
+
+        initial_lr = 1e-3 * math.sqrt(cfg.batch_size)
+        self.illum_optimizers = [
+            torch.optim.AdamW(
+                self.illum_module.parameters(),
+                lr=initial_lr,
+                weight_decay=1e-4,
+            )
+        ]
+
 
         if cfg.enable_retinex:
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
@@ -687,10 +702,29 @@ class Runner:
                 render_colors[~masks] = 0
             return render_colors, render_alphas, info
 
-        adjust_k = self.splats["adjust_k"]  # 1090, 1, 3
-        adjust_b = self.splats["adjust_b"]  # 1090, 1, 3
 
-        colors_low = colors * adjust_k + adjust_b  # least squares: x_enh=a*x+b
+        if self.cfg.use_illum_opt:
+
+            image_adjust_k, image_adjust_b = self.illum_module(image_ids)
+
+            sh0_component_from_colors = colors[:, :, :1, :]
+
+            image_adjust_k_expanded = image_adjust_k.unsqueeze(2)
+            image_adjust_b_expanded = image_adjust_b.unsqueeze(2)
+
+            adjusted_sh0_for_colors_low = (
+                    sh0_component_from_colors * image_adjust_k_expanded
+                    + image_adjust_b_expanded
+            )
+
+            colors_low = colors.clone()
+            colors_low[:, :, :1, :] = adjusted_sh0_for_colors_low
+
+        else:
+            adjust_k = self.splats["adjust_k"]  # 1090, 1, 3
+            adjust_b = self.splats["adjust_b"]  # 1090, 1, 3
+
+            colors_low = colors * adjust_k + adjust_b  # least squares: x_enh=a*x+b
 
         (
             render_colors_enh,
@@ -947,6 +981,15 @@ class Runner:
                     self.refinement_optimizer,
                     T_max=cfg.pretrain_steps + cfg.max_steps,
                     eta_min=initial_refinement_lr * 0.01,
+                )
+            )
+
+        for optimizer in self.illum_optimizers:
+            schedulers.append(
+                CosineAnnealingLR(
+                    optimizer,
+                    T_max=cfg.pretrain_steps + cfg.max_steps,
+                    eta_min=optimizer.param_groups[0]["lr"] * 0.01,
                 )
             )
 
@@ -1789,6 +1832,11 @@ class Runner:
                 optimizer.step()
                 optimizer.zero_grad()
             for optimizer in self.bil_grid_optimizers:
+                # scaler.step(optimizer)
+                optimizer.step()
+                optimizer.zero_grad()
+            
+            for optimizer in self.illum_optimizers:
                 # scaler.step(optimizer)
                 optimizer.step()
                 optimizer.zero_grad()

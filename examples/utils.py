@@ -311,3 +311,32 @@ def generate_variational_intrinsics(
     new_Ks[:, 1, 2] = cy_base + principal_point_perturb[:, 1]
 
     return new_Ks
+
+class IlluminationOptModule(nn.Module):
+    def __init__(self, num_images: int, embed_dim: int = 32):
+        super().__init__()
+        self.embeds = nn.Embedding(num_images, embed_dim)
+        
+        self.k_head = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, 3), 
+            nn.Sigmoid() 
+        )
+        self.b_head = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, 3),
+            nn.Tanh()
+        )
+        torch.nn.init.zeros_(self.embeds.weight)
+
+    def forward(self, embed_ids: Tensor):
+        embed = self.embeds(embed_ids) 
+        adjust_k = self.k_head(embed) 
+        adjust_b = self.b_head(embed)
+        
+        # k_factor = 0.5 + k_factor # Maps [0,1] to [0.5, 1.5] for scaling
+        # b_factor = b_factor * 0.1 # Maps [-1,1] to [-0.1, 0.1] for offset
+        
+        return adjust_k.unsqueeze(1), adjust_b.unsqueeze(1)

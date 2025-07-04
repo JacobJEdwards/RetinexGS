@@ -1,4 +1,3 @@
-import os
 import shutil
 from pathlib import Path
 import subprocess
@@ -8,8 +7,6 @@ output_dir = Path("../../result")
 
 for d in input_dir.iterdir():
     if not d.is_dir():
-        continue
-    if d.name == "shrub":
         continue
 
     print(f"Processing {d.name}...")

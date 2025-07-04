@@ -113,8 +113,8 @@ class Config:
     enable_retinex: bool = True
     multi_scale_retinex: bool = True
 
-    lambda_low: float = 0.15
-    lambda_illumination: float = 0.1
+    lambda_low: float = 0.3
+    lambda_illumination: float = 0.3
 
     lambda_reflect: float = 6.0
     lambda_smooth: float = 600.0
@@ -136,6 +136,8 @@ class Config:
     use_refinement_net: bool = False
     use_denoising_net: bool = False
     use_denoising_embedding: bool = False
+    
+    use_illum_opt: bool = True
 
     eval_niqe: bool = False
 
