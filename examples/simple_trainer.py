@@ -706,19 +706,7 @@ class Runner:
         if self.cfg.use_illum_opt:
 
             image_adjust_k, image_adjust_b = self.illum_module(image_ids)
-
-            sh0_component_from_colors = colors[:, :, :1, :]
-
-            image_adjust_k_expanded = image_adjust_k.unsqueeze(2)
-            image_adjust_b_expanded = image_adjust_b.unsqueeze(2)
-
-            adjusted_sh0_for_colors_low = (
-                    sh0_component_from_colors * image_adjust_k_expanded
-                    + image_adjust_b_expanded
-            )
-
-            colors_low = colors.clone()
-            colors_low[:, :, :1, :] = adjusted_sh0_for_colors_low
+            colors_low = colors * image_adjust_k + image_adjust_b  # least squares: x_enh=a*x+b
 
         else:
             adjust_k = self.splats["adjust_k"]  # 1090, 1, 3
