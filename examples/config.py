@@ -13,7 +13,7 @@ class Config:
     render_traj_path: str = "interp"
 
     data_dir: Path = Path("../../NeRF_360/bicycle")
-    data_factor: int = 8
+    data_factor: int = 1
     result_dir: Path = Path("../../result")
     test_every: int = 8
     patch_size: int | None = None
