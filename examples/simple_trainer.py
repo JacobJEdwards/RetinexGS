@@ -236,6 +236,9 @@ class Runner:
                     in_channels=retinex_in_channels,
                     out_channels=retinex_out_channels,
                     use_refinement=cfg.use_refinement_net,
+                    predictive_adaptive_curve=cfg.predictive_adaptive_curve,
+                    spatially_film=cfg.spatial_film,
+                    use_dilated_convs=cfg.use_dilated_convs,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
@@ -766,7 +769,7 @@ class Runner:
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        log_illumination_map = checkpoint(
+        log_illumination_map, alpha, beta = checkpoint(
             self.retinex_net,
             input_image_for_net,
             retinex_embedding,

@@ -125,16 +125,40 @@ class MultiScaleRetinexNet(nn.Module):
         out_channels: int = 3,
         embed_dim: int = 32,
         use_refinement: bool = False,
+        use_dilated_convs: bool = False,
+        predictive_adaptive_curve: bool = False,
+        spatially_film: bool = False,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
-        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
+        
+        self.spatially_film = spatially_film
+        if spatially_film:
+            self.spatial_conditioning_encoder = nn.Sequential(
+                nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2, 2),
+                nn.Conv2d(32, 64, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2, 2), 
+            )
+            self.film1 = SpatiallyFiLMLayer(feature_channels=32)
+        else:
+            self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
 
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(64)
+        
+        self.use_dilated_convs = use_dilated_convs
+        
+        if self.use_dilated_convs:
+            self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2)
+            self.bn_dilated1 = nn.BatchNorm2d(64)
+            self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4)
+            self.bn_dilated2 = nn.BatchNorm2d(64)        
 
         self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
@@ -157,14 +181,34 @@ class MultiScaleRetinexNet(nn.Module):
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
         self.relu = nn.ReLU()
+        
+        self.predictive_adaptive_curve = predictive_adaptive_curve
+        if self.predictive_adaptive_curve:
+            self.adaptive_curve_head = nn.Sequential(
+                nn.Conv2d(32, 32, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(32, 2, kernel_size=1), 
+            )
+            
 
         # self.sigmoid = nn.Sigmoid()
 
-    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
+    def forward(self: Self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None]:
         c1 = self.relu(self.conv1(x))
-        c1_modulated = self.film1(c1, embedding)
+        if self.spatially_film:
+            spatial_cond_features = self.spatial_conditioning_encoder(x)
+            c1_modulated = self.film1(c1, spatial_cond_features)
+        else:
+            c1_modulated = self.film1(c1, embedding)
+            
         p1 = self.pool(c1_modulated)
+        
         c2 = self.relu(self.conv2(p1))
+        
+        if self.use_dilated_convs:
+            c2 = self.relu(self.bn_dilated1(self.dilated_conv1(c2)))
+            c2 = self.relu(self.bn_dilated2(self.dilated_conv2(c2)))
+        
         p2 = self.pool(c2)
 
         up1 = self.upconv1(p2)
@@ -216,5 +260,17 @@ class MultiScaleRetinexNet(nn.Module):
         if self.use_refinement:
             illumination_residual = self.refinement_net(final_illumination, embedding)
             final_illumination = illumination_residual
+        
+        alpha_map = None
+        beta_map = None
+        if self.predictive_adaptive_curve:
+            adaptive_params = self.adaptive_curve_head(c3)
+            adaptive_params = F.interpolate(
+                adaptive_params, size=x.shape[2:], mode="bilinear", align_corners=False
+            )
+            alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
+            alpha_map = 0.5 + 1.0 * torch.sigmoid(alpha_map_raw)
+            beta_map = 0.1 + 0.8 * torch.sigmoid(beta_map_raw)
 
-        return final_illumination
+
+        return final_illumination, alpha_map, beta_map
