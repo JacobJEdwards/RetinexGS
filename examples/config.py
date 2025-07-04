@@ -138,8 +138,8 @@ class Config:
     use_denoising_embedding: bool = False
     
     predictive_adaptive_curve: bool = False
-    spatial_film: bool = True
-    use_dilated_convs: bool = False
+    spatial_film: bool = False
+    use_dilated_convs: bool = True
     
     use_illum_opt: bool = True
     eval_niqe: bool = False
