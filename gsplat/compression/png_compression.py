@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Self
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -74,7 +74,7 @@ class PngCompression:
         else:
             return _decompress_npz
 
-    def compress(self: Self, compress_dir: str, splats: dict[str, Tensor]) -> None:
+    def compress(self, compress_dir: str, splats: dict[str, Tensor]) -> None:
         """Run compression
 
         Args:

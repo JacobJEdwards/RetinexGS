@@ -1,5 +1,4 @@
 import random
-from typing import Self
 
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
@@ -14,7 +13,7 @@ import torch.nn.functional as F
 
 class CrossAttention(nn.Module):
     def __init__(
-        self: Self, img_channels: int = 3, hidden_dim: int = 128, out_dim: int = 255
+        self, img_channels: int = 3, hidden_dim: int = 128, out_dim: int = 255
     ) -> None:
         super(CrossAttention, self).__init__()
 
@@ -36,7 +35,7 @@ class CrossAttention(nn.Module):
         )
         self._init_weights()
 
-    def _init_weights(self: Self) -> None:
+    def _init_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")

@@ -68,7 +68,7 @@ class Parser:
         self.normalize = normalize
         self.test_every = test_every
 
-        colmap_dir = os.path.join(data_dir, "sparse/0/")
+        colmap_dir = os.path.join(data_dir, "colmap/sparse/0/")
         if not os.path.exists(colmap_dir):
             colmap_dir = os.path.join(data_dir, "sparse")
         assert os.path.exists(
@@ -182,7 +182,7 @@ class Parser:
         #     image_dir_suffix = ""
         image_dir_suffix = "_8"
         colmap_image_dir = os.path.join(data_dir, "images")
-        image_dir = os.path.join(data_dir, "images" + image_dir_suffix)
+        image_dir = os.path.join(data_dir, "images_8_multiexposure")
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
                 raise ValueError(f"Image folder {d} does not exist.")
@@ -376,7 +376,7 @@ class Dataset:
         index = self.indices[item]
 
         if self.splat == 'val':
-            image = imageio.imread(self.parser.image_paths[index].replace('_variance',''))[..., :3]
+            image = imageio.imread(self.parser.image_paths[index].replace('_multiexposure',''))[..., :3]
         else:
             image = imageio.imread(self.parser.image_paths[index])[..., :3]
 

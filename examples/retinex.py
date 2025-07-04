@@ -1,4 +1,3 @@
-from typing import Self
 
 import torch
 import torch.nn as nn
@@ -17,11 +16,11 @@ class SpatiallyFiLMLayer(nn.Module):
         return gamma * x + beta
 
 class FiLMLayer(nn.Module):
-    def __init__(self: Self, embed_dim: int, feature_channels: int):
+    def __init__(self, embed_dim: int, feature_channels: int):
         super(FiLMLayer, self).__init__()
         self.layer = nn.Linear(embed_dim, feature_channels * 2)
 
-    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
+    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
         gamma_beta = self.layer(embedding)
         gamma_beta = gamma_beta.view(gamma_beta.size(0), -1, 1, 1)
         gamma, beta = torch.chunk(gamma_beta, 2, dim=1)
@@ -30,7 +29,7 @@ class FiLMLayer(nn.Module):
 
 
 class RefinementNet(nn.Module):
-    def __init__(self: Self, in_channels: int, out_channels: int, embed_dim: int):
+    def __init__(self, in_channels: int, out_channels: int, embed_dim: int):
         super(RefinementNet, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(64)
@@ -53,7 +52,7 @@ class RefinementNet(nn.Module):
 
         self.relu = nn.LeakyReLU(negative_slope=0.01, inplace=True)
 
-    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
+    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
         e1 = self.relu(self.bn1(self.conv1(x)))
         e1 = self.relu(self.bn1_2(self.conv1_2(e1)))
         e2_pre_mod = self.relu(self.bn2(self.conv2(e1)))
@@ -76,7 +75,7 @@ class RefinementNet(nn.Module):
 
 class RetinexNet(nn.Module):
     def __init__(
-        self: Self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
+        self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
     ) -> None:
         super(RetinexNet, self).__init__()
 
@@ -94,7 +93,7 @@ class RetinexNet(nn.Module):
         self.relu = nn.LeakyReLU(0.2, inplace=True)
         # self.sigmoid = nn.Sigmoid() we operate in log space, no need for sigmoid
 
-    def forward(self: Self, x: Tensor, embedding: Tensor) -> Tensor:
+    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
         c1 = self.relu(self.conv1(x))
 
         c1_modulated = self.film1(c1, embedding)
@@ -120,7 +119,7 @@ class RetinexNet(nn.Module):
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
-        self: Self,
+        self,
         in_channels: int = 3,
         out_channels: int = 3,
         embed_dim: int = 32,
@@ -193,7 +192,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         # self.sigmoid = nn.Sigmoid()
 
-    def forward(self: Self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None]:
+    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None]:
         c1 = self.relu(self.conv1(x))
         if self.spatially_film:
             spatial_cond_features = self.spatial_conditioning_encoder(x)

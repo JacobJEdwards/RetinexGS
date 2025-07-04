@@ -1,5 +1,3 @@
-from typing import Self
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -94,7 +92,7 @@ class HistogramPriorLoss(nn.Module):
 # Adaptive Curve Loss
 class AdaptiveCurveLoss(nn.Module):
     def __init__(
-        self: Self,
+        self,
         alpha: float = 0.3,
         beta: float = 0.7,
         low_thresh: float = 0.3,
@@ -122,7 +120,7 @@ class AdaptiveCurveLoss(nn.Module):
         self.lambda2 = lambda2
         self.lambda3 = lambda3
 
-    def forward(self: Self, output: Tensor) -> Tensor:
+    def forward(self, output: Tensor) -> Tensor:
         low_mask = (output < self.low_thresh).float()
         low_light_loss = torch.mean(low_mask * torch.abs(output - self.alpha))
 
@@ -143,10 +141,10 @@ class AdaptiveCurveLoss(nn.Module):
 
 
 class ColourConsistencyLoss(nn.Module):
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         super(ColourConsistencyLoss, self).__init__()
 
-    def forward(self: Self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         eps = torch.finfo(x.dtype).eps
 
         mean_rgb = torch.mean(x, [2, 3], keepdim=True)
@@ -163,12 +161,12 @@ class ColourConsistencyLoss(nn.Module):
 
 # Exposure Loss, control the generated image exposure
 class ExposureLoss(nn.Module):
-    def __init__(self: Self, patch_size: int, mean_val: float = 0.5) -> None:
+    def __init__(self, patch_size: int, mean_val: float = 0.5) -> None:
         super(ExposureLoss, self).__init__()
         self.pool = nn.AvgPool2d(patch_size)
         self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
 
-    def forward(self: Self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         x = torch.mean(x, 1, keepdim=True)
         mean = self.pool(x)
         d = torch.mean(torch.pow(mean - self.mean_val_tensor, 2))
@@ -181,7 +179,7 @@ class SpatialLoss(nn.Module):
     weight_up: Tensor
     weight_down: Tensor
 
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         super(SpatialLoss, self).__init__()
         kernel_left = torch.tensor(
             [[0, 0, 0], [-1, 1, 0], [0, 0, 0]], dtype=torch.float32
@@ -203,7 +201,7 @@ class SpatialLoss(nn.Module):
 
         self.pool = nn.AvgPool2d(4)
 
-    def forward(self: Self, org: Tensor, enhance: Tensor, contrast: int = 8):
+    def forward(self, org: Tensor, enhance: Tensor, contrast: int = 8):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
 
@@ -233,21 +231,21 @@ class SpatialLoss(nn.Module):
 class LaplacianLoss(nn.Module):
     kernel: Tensor
 
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         super(LaplacianLoss, self).__init__()
         kernel = torch.tensor(
             [[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32
         ).view(1, 1, 3, 3)
         self.register_buffer("kernel", kernel)
 
-    def forward(self: Self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         x_gray = torch.mean(x, dim=1, keepdim=True)
         laplacian = F.conv2d(x_gray, self.kernel, padding=1)
         return torch.mean(torch.abs(laplacian))
 
 
 class TotalVariationLoss(nn.Module):
-    def __init__(self: Self, weight: float = 1.0) -> None:
+    def __init__(self, weight: float = 1.0) -> None:
         super(TotalVariationLoss, self).__init__()
         self.weight = weight
 
@@ -255,7 +253,7 @@ class TotalVariationLoss(nn.Module):
     def _tensor_size(t: Tensor) -> int:
         return t.size()[1] * t.size()[2] * t.size()[3]
 
-    def forward(self: Self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         diff_h = x[:, :, 1:, :] - x[:, :, :-1, :]
         diff_w = x[:, :, :, 1:] - x[:, :, :, :-1]
 
@@ -273,7 +271,7 @@ class SmoothingLoss(nn.Module):
     weight_up: Tensor
     weight_down: Tensor
 
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         super(SmoothingLoss, self).__init__()
         kernel_left = torch.tensor(
             [[0, 0, 0], [-1, 1, 0], [0, 0, 0]], dtype=torch.float32
@@ -295,7 +293,7 @@ class SmoothingLoss(nn.Module):
 
         self.pool = nn.AvgPool2d(4)
 
-    def forward(self: Self, enhance: Tensor):
+    def forward(self, enhance: Tensor):
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
         enhance_pool = self.pool(enhance_mean)
 
@@ -318,7 +316,7 @@ class GradientLoss(nn.Module):
     kernel_x: Tensor
     kernel_y: Tensor
 
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         super(GradientLoss, self).__init__()
         kernel_x = torch.tensor(
             [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32
@@ -329,7 +327,7 @@ class GradientLoss(nn.Module):
         self.register_buffer("kernel_x", kernel_x)
         self.register_buffer("kernel_y", kernel_y)
 
-    def forward(self: Self, x: Tensor, y: Tensor) -> Tensor:
+    def forward(self, x: Tensor, y: Tensor) -> Tensor:
         x_gray = torch.mean(x, dim=1, keepdim=True)
         y_gray = torch.mean(y, dim=1, keepdim=True)
 
@@ -346,10 +344,10 @@ class GradientLoss(nn.Module):
 
 
 class FrequencyLoss(nn.Module):
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         super(FrequencyLoss, self).__init__()
 
-    def forward(self: Self, x: Tensor, y: Tensor) -> Tensor:
+    def forward(self, x: Tensor, y: Tensor) -> Tensor:
         x_gray = torch.mean(x, dim=1, keepdim=True).squeeze(1)
         y_gray = torch.mean(y, dim=1, keepdim=True).squeeze(1)
 
@@ -364,11 +362,11 @@ class FrequencyLoss(nn.Module):
 
 
 class EdgeAwareSmoothingLoss(nn.Module):
-    def __init__(self: Self, gamma: float = 0.1) -> None:
+    def __init__(self, gamma: float = 0.1) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
         self.gamma = gamma
 
-    def forward(self: Self, img: Tensor, guide_img: Tensor) -> Tensor:
+    def forward(self, img: Tensor, guide_img: Tensor) -> Tensor:
         if img.shape[1] > 1:
             img_gray = torch.mean(img, dim=1, keepdim=True)
         else:
