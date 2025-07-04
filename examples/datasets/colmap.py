@@ -9,7 +9,7 @@ from PIL import Image
 from pycolmap import SceneManager
 from tqdm import tqdm
 from typing_extensions import assert_never
-import imageio
+import imageio.v2 as imageio
 
 from .normalize import (
     align_principal_axes,
@@ -375,7 +375,7 @@ class Dataset:
     def __getitem__(self, item: int) -> Dict[str, Any]:
         index = self.indices[item]
 
-        if self.splat == 'val':
+        if self.split == 'val':
             image = imageio.imread(self.parser.image_paths[index].replace('_multiexposure',''))[..., :3]
         else:
             image = imageio.imread(self.parser.image_paths[index])[..., :3]
