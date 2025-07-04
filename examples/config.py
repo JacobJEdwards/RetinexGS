@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, assert_never
+from typing import Literal
 
 from gsplat import MCMCStrategy, DefaultStrategy
 
@@ -162,5 +162,3 @@ class Config:
             strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
             strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
             strategy.refine_every = int(strategy.refine_every * factor)
-        else:
-            assert_never(strategy)
