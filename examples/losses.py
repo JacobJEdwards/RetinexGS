@@ -431,7 +431,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
     def __init__(self, initial_gamma: float = 0.1) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
         self.initial_gamma = initial_gamma
-        self.gamma = nn.Parameter(torch.tensor(initial_gamma, dtype=torch.float32)) # TODO: optimise
+        self.gamma = nn.Parameter(torch.tensor(initial_gamma, dtype=torch.float32))
 
     def forward(self, img: Tensor, guide_img: Tensor) -> Tensor:
         if img.shape[1] > 1:
