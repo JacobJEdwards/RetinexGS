@@ -871,7 +871,7 @@ class Runner:
             exposure_local_w = exposure_local_l.item()
         else:
             (reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l,
-             edge_aware_smooth_l) = 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+             edge_aware_smooth_l, exposure_local_l) = 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
             (reflect_w, colour_w, exposure_w, smooth_w, adaptive_curve_w,
                 laplacian_w, gradient_w, frequency_w, edge_aware_smooth_w, exposure_local_w) = (
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1

@@ -194,14 +194,15 @@ class MultiScaleRetinexNet(nn.Module):
         
         self.enable_dynamic_weights = enable_dynamic_weights
         if self.enable_dynamic_weights:
-            self.loss_weight_head = nn.Sequential(
-                nn.AdaptiveAvgPool2d(1),
-                nn.Flatten(),
-                nn.Linear(in_channels, 64), 
-                nn.SiLU(),
-                nn.Linear(64, 10),
-                nn.Sigmoid()
-            )
+            self.log_vars = nn.Parameter(torch.zeros(10))
+            # self.loss_weight_head = nn.Sequential(
+            #     nn.AdaptiveAvgPool2d(1),
+            #     nn.Flatten(),
+            #     nn.Linear(in_channels, 64), 
+            #     nn.SiLU(),
+            #     nn.Linear(64, 10),
+            #     nn.Sigmoid()
+            # )
         
         if self.use_stride_conv:
             self.pool1 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1)
@@ -372,7 +373,8 @@ class MultiScaleRetinexNet(nn.Module):
             beta_map = 0.1 + 0.8 * torch.sigmoid(beta_map_raw)
         
         if self.enable_dynamic_weights:
-            dynamic_weights = self.loss_weight_head(x)
+            # dynamic_weights = self.loss_weight_head(x)
+            dynamic_weights = torch.exp(-self.log_vars)
         else:
             dynamic_weights = None
 
