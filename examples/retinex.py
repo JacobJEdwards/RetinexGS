@@ -271,16 +271,8 @@ class MultiScaleRetinexNet(nn.Module):
         
         self.predictive_adaptive_curve = predictive_adaptive_curve
         if self.predictive_adaptive_curve:
-            self.input_feature_for_adaptive_head = nn.Sequential(
-                nn.Conv2d(in_channels, 16, kernel_size=3, padding=1, stride=2),
-                nn.SiLU(),
-                nn.Conv2d(16, 16, kernel_size=3, padding=1, stride=2),
-                nn.SiLU(),
-                nn.Conv2d(16, 16, kernel_size=1),
-            )
-            
             self.adaptive_curve_head = nn.Sequential(
-                nn.Conv2d(32 + 16, 32, kernel_size=3, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, padding=1),
                 nn.SiLU(),
                 nn.Conv2d(32, 2, kernel_size=1), 
             )
@@ -371,12 +363,7 @@ class MultiScaleRetinexNet(nn.Module):
         alpha_map = None
         beta_map = None
         if self.predictive_adaptive_curve:
-            input_feats = self.input_feature_for_adaptive_head(x)
-            if input_feats.shape[2:] != c3.shape[2:]:
-                input_feats = F.interpolate(input_feats, size=c3.shape[2:], mode='bilinear', align_corners=False)
-
-            combined_feats_for_adaptive = torch.cat([c3, input_feats], dim=1)
-            adaptive_params = self.adaptive_curve_head(combined_feats_for_adaptive)
+            adaptive_params = self.adaptive_curve_head(c3)
             adaptive_params = F.interpolate(
                 adaptive_params, size=x.shape[2:], mode="bilinear", align_corners=False
             )
