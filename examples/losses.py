@@ -398,9 +398,10 @@ class FrequencyLoss(nn.Module):
 
 
 class EdgeAwareSmoothingLoss(nn.Module):
-    def __init__(self, gamma: float = 0.1) -> None:
+    def __init__(self, initial_gamma: float = 0.1) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
-        self.gamma = gamma
+        self.initial_gamma = initial_gamma
+        self.gamma = torch.tensor(initial_gamma, dtype=torch.float32)
 
     def forward(self, img: Tensor, guide_img: Tensor) -> Tensor:
         if img.shape[1] > 1:
