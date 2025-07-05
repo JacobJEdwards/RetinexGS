@@ -243,7 +243,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.use_refinement:
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
-        self.relu = nn.ReLU()
+        self.relu = nn.PReLU()
         
         self.predictive_adaptive_curve = predictive_adaptive_curve
         if self.predictive_adaptive_curve:
