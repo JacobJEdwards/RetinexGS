@@ -242,6 +242,8 @@ class Runner:
                     use_se_blocks=cfg.use_se_blocks,
                     use_spatial_attention=cfg.use_spatial_attention,
                     enable_dynamic_weights=cfg.enable_dynamic_weights,
+                    use_stride_conv=cfg.use_stride_conv,
+                    use_pixel_shuffle=cfg.use_pixel_shuffle,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(

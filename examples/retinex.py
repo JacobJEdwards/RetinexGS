@@ -167,8 +167,13 @@ class MultiScaleRetinexNet(nn.Module):
         use_se_blocks: bool = False,
         enable_dynamic_weights: bool = False,
         use_spatial_attention: bool = False,
+        use_pixel_shuffle: bool = False, 
+        use_stride_conv: bool = False, 
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
+
+        self.use_pixel_shuffle = use_pixel_shuffle
+        self.use_stride_conv = use_stride_conv
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
@@ -197,8 +202,15 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Linear(64, 9),
                 nn.Sigmoid()
             )
+        
+        if self.use_stride_conv:
+            self.pool1 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1)
+            self.pool2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1)
+        else:
+            self.pool1 = nn.MaxPool2d(2, 2)
+            self.pool2 = nn.MaxPool2d(2, 2)
 
-        self.pool = nn.MaxPool2d(2, 2)
+        # self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(64)
         
@@ -222,12 +234,23 @@ class MultiScaleRetinexNet(nn.Module):
             self.spatial_att2 = SpatialAttentionModule()
             self.spatial_att3 = SpatialAttentionModule()
 
+        if self.use_pixel_shuffle: # MODIFIED
+            self.upconv1 = nn.Sequential(
+                nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1), # Output 4x input channels for pixel shuffle factor 2
+                nn.PixelShuffle(2),
+                nn.Conv2d(32, 32, kernel_size=1) # Final 1x1 conv to refine channels
+            )
+            self.upconv2 = nn.Sequential(
+                nn.Conv2d(32, out_channels * (2**2), kernel_size=3, padding=1),
+                nn.PixelShuffle(2),
+                nn.Conv2d(out_channels, out_channels, kernel_size=1)
+            )
+        else: 
+            self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
+            self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
-        self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(32)
-
-        self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
         self.output_head_medium = nn.Conv2d(32, out_channels, kernel_size=3, padding=1)
         self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
@@ -254,9 +277,6 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Conv2d(32, 2, kernel_size=1), 
             )
             
-
-        # self.sigmoid = nn.Sigmoid()
-
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu((self.conv1(x)))
         if self.spatially_film:
@@ -270,7 +290,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.use_spatial_attention:
             c1_modulated = self.spatial_att1(c1_modulated)
             
-        p1 = self.pool(c1_modulated)
+        p1 = self.pool1(c1_modulated)
         
         c2 = self.relu((self.conv2(p1)))
         
@@ -283,7 +303,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.use_spatial_attention:
             c2 = self.spatial_att2(c2)
         
-        p2 = self.pool(c2)
+        p2 = self.pool2(c2)
 
         up1 = self.upconv1(p2)
         up1 = F.interpolate(

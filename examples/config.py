@@ -143,6 +143,8 @@ class Config:
     use_se_blocks: bool = True
     use_spatial_attention: bool = False
     enable_dynamic_weights: bool = True
+    use_pixel_shuffle: bool = True
+    use_stride_conv: bool = True
     
     use_illum_opt: bool = True
     eval_niqe: bool = False
