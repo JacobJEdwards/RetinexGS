@@ -216,6 +216,31 @@ class Runner:
 
 
         if cfg.enable_retinex:
+            self.loss_color = ColourConsistencyLoss().to(self.device)
+            self.loss_color.compile()
+            self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
+            self.loss_exposure.compile()
+            # self.loss_smooth = SmoothingLoss().to(self.device)
+            # self.loss_smooth = LaplacianLoss().to(self.device)
+            self.loss_smooth = TotalVariationLoss().to(self.device)
+            self.loss_smooth.compile()
+            self.loss_spatial = SpatialLoss().to(self.device)
+            self.loss_spatial.compile()
+            self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
+            self.loss_adaptive_curve.compile()
+            self.loss_details = LaplacianLoss().to(self.device)
+            self.loss_details.compile()
+            self.loss_gradient = GradientLoss().to(self.device)
+            self.loss_gradient.compile()
+            self.loss_frequency = FrequencyLoss().to(self.device)
+            self.loss_frequency.compile()
+            self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
+            self.loss_edge_aware_smooth.compile()
+            self.loss_exposure_local = LocalExposureLoss(patch_size=64, patch_grid_size=8).to(self.device)
+            self.loss_exposure_local.compile()
+            self.loss_illum_frequency = IlluminationFrequencyLoss().to(self.device)
+            self.loss_illum_frequency.compile()
+            
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
 
@@ -259,6 +284,7 @@ class Runner:
                 self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
             net_params = list(self.retinex_net.parameters())
+            net_params += self.loss_edge_aware_smooth.parameters()
             # if cfg.use_denoising_net and self.denoising_net is not None:
             #     net_params += list(self.denoising_net.parameters())
 
@@ -288,30 +314,6 @@ class Runner:
                 [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
             )
 
-            self.loss_color = ColourConsistencyLoss().to(self.device)
-            self.loss_color.compile()
-            self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
-            self.loss_exposure.compile()
-            # self.loss_smooth = SmoothingLoss().to(self.device)
-            # self.loss_smooth = LaplacianLoss().to(self.device)
-            self.loss_smooth = TotalVariationLoss().to(self.device)
-            self.loss_smooth.compile()
-            self.loss_spatial = SpatialLoss().to(self.device)
-            self.loss_spatial.compile()
-            self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
-            self.loss_adaptive_curve.compile()
-            self.loss_details = LaplacianLoss().to(self.device)
-            self.loss_details.compile()
-            self.loss_gradient = GradientLoss().to(self.device)
-            self.loss_gradient.compile()
-            self.loss_frequency = FrequencyLoss().to(self.device)
-            self.loss_frequency.compile()
-            self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
-            self.loss_edge_aware_smooth.compile()
-            self.loss_exposure_local = LocalExposureLoss(patch_size=64, patch_grid_size=8).to(self.device)
-            self.loss_exposure_local.compile()
-            self.loss_illum_frequency = IlluminationFrequencyLoss().to(self.device)
-            self.loss_illum_frequency.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -842,6 +844,7 @@ class Runner:
         loss_frequency_val = self.loss_frequency(input_image_for_net, reflectance_map)
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(illumination_map, input_image_for_net)
         loss_exposure_local = self.loss_exposure_local(reflectance_map)
+        loss_illumination_frequency_penalty = self.loss_illum_frequency(illumination_map)
 
         individual_losses = torch.stack([
             loss_reflectance_spa,                 # 0
@@ -853,7 +856,8 @@ class Runner:
             loss_gradient,                        # 6
             loss_frequency_val,                   # 7
             loss_smooth_edge_aware,               # 8
-            loss_exposure_local
+            loss_exposure_local,
+            loss_illumination_frequency_penalty,
         ])
 
         # Original lambda weights (if not using dynamic weighting or for logging)
@@ -868,6 +872,7 @@ class Runner:
             cfg.lambda_frequency,
             cfg.lambda_edge_aware_smooth,
             cfg.lambda_illum_exposure_local,
+            cfg.lambda_illum_frequency,
         ], device=device)
 
 
@@ -891,13 +896,13 @@ class Runner:
             logged_log_vars = torch.zeros_like(individual_losses, device=device)
 
         if step % self.cfg.tb_every == 0:
-            self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step) # MODIFIED name
+            self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)
 
-            # Log individual unweighted and weighted losses
             loss_names = [
                 "reflect_spa", "color_val", "exposure_val", "smoothing",
                 "adaptive_curve", "laplacian_val", "gradient", "frequency_val",
-                "smooth_edge_aware", "illumination_frequency_penalty"
+                "smooth_edge_aware","exposure_local", 
+                "illumination_frequency_penalty"
             ]
 
             for i, name in enumerate(loss_names):
@@ -1037,7 +1042,6 @@ class Runner:
         max_steps = cfg.max_steps
         init_step = 0
 
-        initial_means_lr = self.optimizers["means"].param_groups[0]["lr"]
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
