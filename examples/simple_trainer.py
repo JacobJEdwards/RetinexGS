@@ -307,7 +307,7 @@ class Runner:
             self.loss_frequency.compile()
             self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
             self.loss_edge_aware_smooth.compile()
-            self.loss_exposure_local = LocalExposureLoss(patch_size=64, patch_grid_size=8)
+            self.loss_exposure_local = LocalExposureLoss(patch_size=64, patch_grid_size=8).to(self.device)
             self.loss_exposure_local.compile()
 
         feature_dim = 32 if cfg.app_opt else None
