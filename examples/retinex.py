@@ -24,7 +24,7 @@ class SEBlock(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            nn.PReLU(),
+            nn.SiLU(),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
         )
@@ -87,7 +87,7 @@ class RefinementNet(nn.Module):
 
         self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
 
-        self.relu = nn.PReLU()
+        self.relu = nn.SiLU()
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
         e1 = self.relu((self.conv1(x)))
@@ -127,7 +127,7 @@ class RetinexNet(nn.Module):
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
         self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
-        self.relu = nn.PReLU()
+        self.relu = nn.SiLU()
         # self.sigmoid = nn.Sigmoid() we operate in log space, no need for sigmoid
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
@@ -182,10 +182,10 @@ class MultiScaleRetinexNet(nn.Module):
         if spatially_film:
             self.spatial_conditioning_encoder = nn.Sequential(
                 nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
-                nn.PReLU(),
+                nn.SiLU(),
                 nn.MaxPool2d(2, 2),
                 nn.Conv2d(32, 32, kernel_size=3, padding=1),
-                nn.PReLU(),
+                nn.SiLU(),
                 nn.MaxPool2d(2, 2), 
             )
             self.film1 = SpatiallyFiLMLayer(feature_channels=32)
@@ -198,7 +198,7 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.AdaptiveAvgPool2d(1),
                 nn.Flatten(),
                 nn.Linear(in_channels, 64), 
-                nn.PReLU(),
+                nn.SiLU(),
                 nn.Linear(64, 10),
                 nn.Sigmoid()
             )
@@ -271,9 +271,17 @@ class MultiScaleRetinexNet(nn.Module):
         
         self.predictive_adaptive_curve = predictive_adaptive_curve
         if self.predictive_adaptive_curve:
+            self.input_feature_for_adaptive_head = nn.Sequential(
+                nn.Conv2d(in_channels, 16, kernel_size=3, padding=1, stride=2),
+                self.activation_fn,
+                nn.Conv2d(16, 16, kernel_size=3, padding=1, stride=2),
+                self.activation_fn,
+                nn.Conv2d(16, 16, kernel_size=1),
+            )
+            
             self.adaptive_curve_head = nn.Sequential(
-                nn.Conv2d(32, 32, kernel_size=3, padding=1),
-                nn.PReLU(),
+                nn.Conv2d(32 + 16, 32, kernel_size=3, padding=1),
+                nn.SiLU(),
                 nn.Conv2d(32, 2, kernel_size=1), 
             )
             
@@ -363,7 +371,12 @@ class MultiScaleRetinexNet(nn.Module):
         alpha_map = None
         beta_map = None
         if self.predictive_adaptive_curve:
-            adaptive_params = self.adaptive_curve_head(c3)
+            input_feats = self.input_feature_for_adaptive_head(x)
+            if input_feats.shape[2:] != c3.shape[2:]:
+                input_feats = F.interpolate(input_feats, size=c3.shape[2:], mode='bilinear', align_corners=False)
+
+            combined_feats_for_adaptive = torch.cat([c3, input_feats], dim=1)
+            adaptive_params = self.adaptive_curve_head(combined_feats_for_adaptive)
             adaptive_params = F.interpolate(
                 adaptive_params, size=x.shape[2:], mode="bilinear", align_corners=False
             )
