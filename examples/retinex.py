@@ -199,7 +199,7 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Flatten(),
                 nn.Linear(in_channels, 64), 
                 nn.ReLU(),
-                nn.Linear(64, 9),
+                nn.Linear(64, 10),
                 nn.Sigmoid()
             )
         
@@ -234,11 +234,11 @@ class MultiScaleRetinexNet(nn.Module):
             self.spatial_att2 = SpatialAttentionModule()
             self.spatial_att3 = SpatialAttentionModule()
 
-        if self.use_pixel_shuffle: # MODIFIED
+        if self.use_pixel_shuffle:
             self.upconv1 = nn.Sequential(
-                nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1), # Output 4x input channels for pixel shuffle factor 2
+                nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1), 
                 nn.PixelShuffle(2),
-                nn.Conv2d(32, 32, kernel_size=1) # Final 1x1 conv to refine channels
+                nn.Conv2d(32, 32, kernel_size=1) 
             )
             self.upconv2 = nn.Sequential(
                 nn.Conv2d(32, out_channels * (2**2), kernel_size=3, padding=1),

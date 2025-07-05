@@ -427,6 +427,33 @@ class EdgeAwareSmoothingLoss(nn.Module):
 
         return loss_x + loss_y
 
+class LocalExposureLoss(nn.Module):
+    def __init__(self, patch_size: int, mean_val: float = 0.5, patch_grid_size: int | tuple[int, int] | None = None) -> None:
+        super(LocalExposureLoss, self).__init__()
+        self.patch_size = patch_size 
+        self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
+        self.patch_grid_size = patch_grid_size
+
+        if self.patch_grid_size is not None:
+            if isinstance(self.patch_grid_size, int):
+                self.patch_grid_size = (self.patch_grid_size, self.patch_grid_size)
+            self.patch_pool = nn.AdaptiveAvgPool2d(self.patch_grid_size)
+        else:
+            self.global_pool = nn.AvgPool2d(patch_size)
+
+
+    def forward(self, x: Tensor) -> Tensor:
+        if x.shape[1] > 1:
+            x = torch.mean(x, 1, keepdim=True)
+
+        if self.patch_grid_size is not None:
+            mean_patches = self.patch_pool(x) 
+            d = torch.mean(torch.pow(mean_patches - self.mean_val_tensor, 2))
+        else:
+            mean = self.global_pool(x)
+            d = torch.mean(torch.pow(mean - self.mean_val_tensor, 2))
+
+        return d
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light

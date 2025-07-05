@@ -123,6 +123,7 @@ class Config:
     lambda_illum_variance: float = 0.05
     lambda_illum_contrast: float = 0.1
     lambda_illum_curve: float = 1.5
+    lambda_illum_exposure_local: float = 1.0
 
     lambda_laplacian: float = 0.2
     lambda_gradient: float = 0.01

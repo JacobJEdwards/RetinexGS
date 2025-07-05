@@ -31,6 +31,7 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
+from examples.losses import LocalExposureLoss
 from utils import IlluminationOptModule
 from losses import FrequencyLoss, EdgeAwareSmoothingLoss
 from losses import (
@@ -306,6 +307,8 @@ class Runner:
             self.loss_frequency.compile()
             self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
             self.loss_edge_aware_smooth.compile()
+            self.loss_exposure_local = LocalExposureLoss(patch_size=64, patch_grid_size=8)
+            self.loss_exposure_local.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -829,6 +832,7 @@ class Runner:
 
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         loss_exposure_val = self.loss_exposure(reflectance_map)
+        loss_exposure_local = self.loss_exposure_local(reflectance_map)
 
         con_degree = (0.5 / torch.mean(pixels)).item()
 
@@ -851,7 +855,8 @@ class Runner:
         )
 
         if self.cfg.enable_dynamic_weights:
-            reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l, edge_aware_smooth_l = (
+            (reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l,
+             edge_aware_smooth_l, exposure_local_l) = (
                 weights.unbind(1)
             )
         else:
@@ -870,6 +875,7 @@ class Runner:
             + cfg.lambda_gradient * loss_gradient* gradient_l
             + cfg.lambda_frequency * loss_frequency_val * frequency_l
             + cfg.lambda_edge_aware_smooth * loss_smooth_edge_aware * edge_aware_smooth_l
+            + cfg.lambda_illum_exposure_local * loss_exposure_local * exposure_local_l
         )
 
         if step % self.cfg.tb_every == 0:
@@ -902,6 +908,12 @@ class Runner:
                 loss_adaptive_curve.item() * cfg.lambda_illum_curve,
                 step,
             )
+            self.writer.add_scalar(
+                "retinex_net/loss_exposure_local",
+                loss_exposure_local.item() * cfg.lambda_illum_exposure_local,
+                step,
+            )
+
             self.writer.add_scalar(
                 "retinex_net/loss_laplacian",
                 loss_laplacian_val.item() * cfg.lambda_laplacian,
