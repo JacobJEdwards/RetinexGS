@@ -822,15 +822,14 @@ class Runner:
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
 
-        # --- Calculate individual loss terms ---
         loss_color_val = (
             self.loss_color(illumination_map)
             if not cfg.use_hsv_color_space
             else torch.tensor(0.0, device=device)
         )
         loss_smoothing = self.loss_smooth(illumination_map)
-        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta, input_image_for_net)
-        loss_exposure_val = self.loss_exposure(reflectance_map) 
+        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
+        loss_exposure_val = self.loss_exposure(reflectance_map)
         con_degree = (0.5 / torch.mean(pixels)).item()
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
         loss_laplacian_val = torch.mean(
@@ -851,7 +850,7 @@ class Runner:
             loss_gradient,                        # 6
             loss_frequency_val,                   # 7
             loss_smooth_edge_aware,               # 8
-            loss_exposure_local                     
+            loss_exposure_local
         ])
 
         # Original lambda weights (if not using dynamic weighting or for logging)
@@ -885,6 +884,8 @@ class Runner:
 
         else:
             total_loss = (base_lambdas * individual_losses).sum()
+            logged_weights = base_lambdas
+            logged_log_vars = torch.zeros_like(individual_losses, device=device)
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step) # MODIFIED name
@@ -936,7 +937,7 @@ class Runner:
                 )
 
         return total_loss
-    
+
     def pre_train_retinex(self) -> None:
         cfg = self.cfg
         device = self.device
