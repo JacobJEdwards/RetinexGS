@@ -813,143 +813,105 @@ class Runner:
         return input_image_for_net, illumination_map, reflectance_map, alpha, beta, weights
 
     def retinex_train_step(
-        self, images_ids: Tensor, pixels: Tensor, step: int
+            self, images_ids: Tensor, pixels: Tensor, step: int
     ) -> Tensor:
         cfg = self.cfg
         device = self.device
 
-        input_image_for_net, illumination_map, reflectance_map, alpha, beta, weights = (
+        input_image_for_net, illumination_map, reflectance_map, alpha, beta, dynamic_weights_from_net = ( # MODIFIED name
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
 
+        # --- Calculate individual loss terms ---
         loss_color_val = (
             self.loss_color(illumination_map)
             if not cfg.use_hsv_color_space
             else torch.tensor(0.0, device=device)
         )
         loss_smoothing = self.loss_smooth(illumination_map)
-        # loss_variance = torch.var(illumination_map)
-
-        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
-        loss_exposure_val = self.loss_exposure(reflectance_map)
-        loss_exposure_local = self.loss_exposure_local(reflectance_map)
-
+        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta, input_image_for_net)
+        loss_exposure_val = self.loss_exposure(reflectance_map) 
         con_degree = (0.5 / torch.mean(pixels)).item()
-
-        loss_reflectance_spa = self.loss_spatial(
-            input_image_for_net, reflectance_map, contrast=con_degree
-        )
-        # loss_laplacian_val = self.loss_details(reflectance_map)
+        loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
         loss_laplacian_val = torch.mean(
-            torch.abs(
-                self.loss_details(reflectance_map)
-                - self.loss_details(input_image_for_net)
-            )
+            torch.abs(self.loss_details(reflectance_map) - self.loss_details(input_image_for_net))
         )
-
         loss_gradient = self.loss_gradient(input_image_for_net, reflectance_map)
         loss_frequency_val = self.loss_frequency(input_image_for_net, reflectance_map)
+        loss_smooth_edge_aware = self.loss_edge_aware_smooth(illumination_map, input_image_for_net)
+        loss_exposure_local = self.loss_exposure_local(reflectance_map)
 
-        loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-            illumination_map, input_image_for_net
-        )
+        individual_losses = torch.stack([
+            loss_reflectance_spa,                 # 0
+            loss_color_val,                       # 1
+            loss_exposure_val,                    # 2
+            loss_smoothing,                       # 3
+            loss_adaptive_curve,                  # 4
+            loss_laplacian_val,                   # 5
+            loss_gradient,                        # 6
+            loss_frequency_val,                   # 7
+            loss_smooth_edge_aware,               # 8
+            loss_exposure_local                     
+        ])
+
+        # Original lambda weights (if not using dynamic weighting or for logging)
+        base_lambdas = torch.tensor([
+            cfg.lambda_reflect,
+            cfg.lambda_illum_color,
+            cfg.lambda_illum_exposure,
+            cfg.lambda_smooth,
+            cfg.lambda_illum_curve,
+            cfg.lambda_laplacian,
+            cfg.lambda_gradient,
+            cfg.lambda_frequency,
+            cfg.lambda_edge_aware_smooth,
+            cfg.lambda_illum_exposure_local,
+        ], device=device)
+
 
         if self.cfg.enable_dynamic_weights:
-            (reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l,
-             edge_aware_smooth_l, exposure_local_l) = (
-                weights.unbind(1)
-            )
-            reflect_w = reflect_l.item()
-            colour_w = colour_l.item()
-            exposure_w = exposure_l.item()
-            smooth_w = smooth_l.item()
-            adaptive_curve_w = adaptive_curve_l.item()
-            laplacian_w = laplacian_l.item()
-            gradient_w = gradient_l.item()
-            frequency_w = frequency_l.item()
-            edge_aware_smooth_w = edge_aware_smooth_l.item()
-            exposure_local_w = exposure_local_l.item()
+            if isinstance(self.retinex_net, DDP):
+                log_vars = self.retinex_net.module.log_vars
+            else:
+                log_vars = self.retinex_net.log_vars
+
+            term1 = (base_lambdas * individual_losses * torch.exp(-log_vars) / 2.0).sum()
+            term2 = (0.5 * log_vars).sum()
+
+            total_loss = term1 + term2
+
+            logged_weights = (base_lambdas * torch.exp(-log_vars) / 2.0)
+            logged_log_vars = log_vars
+
         else:
-            (reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l,
-             edge_aware_smooth_l, exposure_local_l) = 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
-            (reflect_w, colour_w, exposure_w, smooth_w, adaptive_curve_w,
-                laplacian_w, gradient_w, frequency_w, edge_aware_smooth_w, exposure_local_w) = (
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1
-            )
-
-
-        loss = (
-            cfg.lambda_reflect * loss_reflectance_spa * reflect_l
-            + cfg.lambda_illum_color * loss_color_val * colour_l
-            + cfg.lambda_illum_exposure * loss_exposure_val * exposure_l
-            + cfg.lambda_smooth * loss_smoothing * smooth_l
-            # + cfg.lambda_illum_variance * loss_variance
-            + cfg.lambda_illum_curve * loss_adaptive_curve * adaptive_curve_l
-            + cfg.lambda_laplacian * loss_laplacian_val * laplacian_l
-            + cfg.lambda_gradient * loss_gradient* gradient_l
-            + cfg.lambda_frequency * loss_frequency_val * frequency_l
-            + cfg.lambda_edge_aware_smooth * loss_smooth_edge_aware * edge_aware_smooth_l
-            + cfg.lambda_illum_exposure_local * loss_exposure_local * exposure_local_l
-        )
+            total_loss = (base_lambdas * individual_losses).sum()
 
         if step % self.cfg.tb_every == 0:
-            self.writer.add_scalar("retinex_net/loss", loss.item(), step)
-            self.writer.add_scalar(
-                "retinex_net/loss_spatial",
-                loss_reflectance_spa.item() * cfg.lambda_reflect * reflect_w,
-                step,
-            )
-            self.writer.add_scalar(
-                "retinex_net/loss_color",
-                loss_color_val.item() * cfg.lambda_illum_color * colour_w,
-                step,
-            )
-            self.writer.add_scalar(
-                "retinex_net/loss_exposure",
-                loss_exposure_val.item() * cfg.lambda_illum_exposure * exposure_w,
-                step,
-            )
-            self.writer.add_scalar(
-                "retinex_net/loss_smooth",
-                loss_smoothing.item() * cfg.lambda_smooth * smooth_w,
-                step,
-            )
-            # self.writer.add_scalar(
-            #     "retinex_net/loss_variance", loss_variance.item(), step
-            # )
-            self.writer.add_scalar(
-                "retinex_net/loss_adaptive_curve",
-                loss_adaptive_curve.item() * cfg.lambda_illum_curve * adaptive_curve_w,
-                step,
-            )
-            self.writer.add_scalar(
-                "retinex_net/loss_exposure_local",
-                loss_exposure_local.item() * cfg.lambda_illum_exposure_local * exposure_local_w,
-                step,
-            )
+            self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step) # MODIFIED name
 
-            self.writer.add_scalar(
-                "retinex_net/loss_laplacian",
-                loss_laplacian_val.item() * cfg.lambda_laplacian * laplacian_w,
-                step,
-            )
-            self.writer.add_scalar(
-                "retinex_net/loss_gradient",
-                loss_gradient.item() * cfg.lambda_gradient * gradient_w,
-                step,
-            )
-            self.writer.add_scalar(
-                "retinex_net/loss_frequency",
-                loss_frequency_val.item() * cfg.lambda_frequency * frequency_w,
-                step,
-            )
-            self.writer.add_scalar(
-                "retinex_net/loss_edge_aware_smooth",
-                loss_smooth_edge_aware.item() * cfg.lambda_edge_aware_smooth * edge_aware_smooth_w,
-                step,
-            )
+            # Log individual unweighted and weighted losses
+            loss_names = [
+                "reflect_spa", "color_val", "exposure_val", "smoothing",
+                "adaptive_curve", "laplacian_val", "gradient", "frequency_val",
+                "smooth_edge_aware", "illumination_frequency_penalty"
+            ]
 
-            # draw image
+            for i, name in enumerate(loss_names):
+                self.writer.add_scalar(f"retinex_net/loss_{name}_unweighted", individual_losses[i].item(), step)
+                if self.cfg.enable_dynamic_weights:
+                    self.writer.add_scalar(f"retinex_net/loss_{name}_weighted_kendall", (individual_losses[i] * logged_weights[i]).item(), step) # Corrected weighted logging
+                    self.writer.add_scalar(f"retinex_net/log_var_{name}", logged_log_vars[i].item(), step)
+                    self.writer.add_scalar(f"retinex_net/effective_weight_{name}", logged_weights[i].item(), step) # New logging for effective weight
+                else:
+                    self.writer.add_scalar(f"retinex_net/loss_{name}_fixed_weighted", (individual_losses[i] * base_lambdas[i]).item(), step)
+
+
+            if not cfg.predictive_adaptive_curve:
+                self.writer.add_scalar("retinex_net/learnable_alpha", self.loss_adaptive_curve.alpha.item(), step)
+                self.writer.add_scalar("retinex_net/learnable_beta", self.loss_adaptive_curve.beta.item(), step)
+
+            self.writer.add_scalar("retinex_net/edge_aware_gamma", self.loss_edge_aware_smooth.gamma.item(), step)
+
             if self.cfg.tb_save_image:
                 self.writer.add_images(
                     "retinex_net/input_image_for_net",
@@ -973,8 +935,8 @@ class Runner:
                     step,
                 )
 
-        return loss
-
+        return total_loss
+    
     def pre_train_retinex(self) -> None:
         cfg = self.cfg
         device = self.device
