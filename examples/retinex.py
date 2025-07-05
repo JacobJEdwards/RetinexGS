@@ -44,6 +44,12 @@ class SpatiallyFiLMLayer(nn.Module):
     def forward(self, x: Tensor, conditioning_features: Tensor) -> Tensor:
         gamma = self.gamma_predictor(conditioning_features)
         beta = self.beta_predictor(conditioning_features)
+        
+        if gamma.shape[2:] != x.shape[2:]:
+            gamma = F.interpolate(gamma, size=x.shape[2:], mode='bilinear', align_corners=False)
+        if beta.shape[2:] != x.shape[2:]:
+            beta = F.interpolate(beta, size=x.shape[2:], mode='bilinear', align_corners=False)
+
         return gamma * x + beta
 
 class FiLMLayer(nn.Module):
