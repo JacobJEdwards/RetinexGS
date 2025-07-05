@@ -273,9 +273,9 @@ class MultiScaleRetinexNet(nn.Module):
         if self.predictive_adaptive_curve:
             self.input_feature_for_adaptive_head = nn.Sequential(
                 nn.Conv2d(in_channels, 16, kernel_size=3, padding=1, stride=2),
-                self.activation_fn,
+                nn.SiLU(),
                 nn.Conv2d(16, 16, kernel_size=3, padding=1, stride=2),
-                self.activation_fn,
+                nn.SiLU(),
                 nn.Conv2d(16, 16, kernel_size=1),
             )
             
