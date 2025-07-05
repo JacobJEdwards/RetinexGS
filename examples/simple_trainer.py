@@ -31,7 +31,6 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
-from examples.losses import LocalExposureLoss
 from utils import IlluminationOptModule
 from losses import FrequencyLoss, EdgeAwareSmoothingLoss
 from losses import (
@@ -42,6 +41,7 @@ from losses import (
     TotalVariationLoss,
     LaplacianLoss,
     GradientLoss,
+    LocalExposureLoss
 )
 from rendering_double import rasterization_dual
 from gsplat import export_splats
