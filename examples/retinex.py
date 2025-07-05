@@ -24,7 +24,7 @@ class SEBlock(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
+            nn.PReLU(),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
         )
@@ -87,7 +87,7 @@ class RefinementNet(nn.Module):
 
         self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
 
-        self.relu = nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        self.relu = nn.PReLU()
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
         e1 = self.relu((self.conv1(x)))
@@ -127,7 +127,7 @@ class RetinexNet(nn.Module):
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
         self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
-        self.relu = nn.LeakyReLU(0.2, inplace=True)
+        self.relu = nn.PReLU()
         # self.sigmoid = nn.Sigmoid() we operate in log space, no need for sigmoid
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
@@ -182,10 +182,10 @@ class MultiScaleRetinexNet(nn.Module):
         if spatially_film:
             self.spatial_conditioning_encoder = nn.Sequential(
                 nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
-                nn.ReLU(),
+                nn.PReLU(),
                 nn.MaxPool2d(2, 2),
                 nn.Conv2d(32, 32, kernel_size=3, padding=1),
-                nn.ReLU(),
+                nn.PReLU(),
                 nn.MaxPool2d(2, 2), 
             )
             self.film1 = SpatiallyFiLMLayer(feature_channels=32)
@@ -198,7 +198,7 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.AdaptiveAvgPool2d(1),
                 nn.Flatten(),
                 nn.Linear(in_channels, 64), 
-                nn.ReLU(),
+                nn.PReLU(),
                 nn.Linear(64, 10),
                 nn.Sigmoid()
             )
@@ -273,7 +273,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.predictive_adaptive_curve:
             self.adaptive_curve_head = nn.Sequential(
                 nn.Conv2d(32, 32, kernel_size=3, padding=1),
-                nn.ReLU(),
+                nn.PReLU(),
                 nn.Conv2d(32, 2, kernel_size=1), 
             )
             
