@@ -84,21 +84,21 @@ class RefinementNet(nn.Module):
         self.relu = nn.LeakyReLU(negative_slope=0.01, inplace=True)
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
-        e1 = self.relu(self.bn1(self.conv1(x)))
-        e1 = self.relu(self.bn1_2(self.conv1_2(e1)))
-        e2_pre_mod = self.relu(self.bn2(self.conv2(e1)))
-        e2_pre_mod = self.relu(self.bn2_2(self.conv2_2(e2_pre_mod)))
+        e1 = self.relu((self.conv1(x)))
+        e1 = self.relu((self.conv1_2(e1)))
+        e2_pre_mod = self.relu((self.conv2(e1)))
+        e2_pre_mod = self.relu((self.conv2_2(e2_pre_mod)))
 
         e2 = self.film_bottleneck(e2_pre_mod, embedding)
 
-        d1 = self.relu(self.bn3(self.upconv1(e2)))
+        d1 = self.relu((self.upconv1(e2)))
         if d1.shape[2:] != e1.shape[2:]:
             d1 = F.interpolate(
                 d1, size=e1.shape[2:], mode="bilinear", align_corners=False
             )
 
         d1 = torch.cat([d1, e1], dim=1)
-        d1 = self.relu(self.bn3_2(self.conv3(d1)))
+        d1 = self.relu((self.conv3(d1)))
 
         output = self.output_layer(d1)
         return output
