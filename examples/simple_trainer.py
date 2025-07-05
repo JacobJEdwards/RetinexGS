@@ -859,9 +859,23 @@ class Runner:
              edge_aware_smooth_l, exposure_local_l) = (
                 weights.unbind(1)
             )
+            reflect_w = reflect_l.item()
+            colour_w = colour_l.item()
+            exposure_w = exposure_l.item()
+            smooth_w = smooth_l.item()
+            adaptive_curve_w = adaptive_curve_l.item()
+            laplacian_w = laplacian_l.item()
+            gradient_w = gradient_l.item()
+            frequency_w = frequency_l.item()
+            edge_aware_smooth_w = edge_aware_smooth_l.item()
+            exposure_local_w = exposure_local_l.item()
         else:
             (reflect_l, colour_l, exposure_l, smooth_l, adaptive_curve_l, laplacian_l, gradient_l, frequency_l,
-             edge_aware_smooth_l) = 1, 1, 1, 1, 1, 1, 1, 1, 1
+             edge_aware_smooth_l) = 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+            (reflect_w, colour_w, exposure_w, smooth_w, adaptive_curve_w,
+                laplacian_w, gradient_w, frequency_w, edge_aware_smooth_w, exposure_local_w) = (
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+            )
 
 
         loss = (
@@ -882,22 +896,22 @@ class Runner:
             self.writer.add_scalar("retinex_net/loss", loss.item(), step)
             self.writer.add_scalar(
                 "retinex_net/loss_spatial",
-                loss_reflectance_spa.item() * cfg.lambda_reflect,
+                loss_reflectance_spa.item() * cfg.lambda_reflect * reflect_w,
                 step,
             )
             self.writer.add_scalar(
                 "retinex_net/loss_color",
-                loss_color_val.item() * cfg.lambda_illum_color,
+                loss_color_val.item() * cfg.lambda_illum_color * colour_w,
                 step,
             )
             self.writer.add_scalar(
                 "retinex_net/loss_exposure",
-                loss_exposure_val.item() * cfg.lambda_illum_exposure,
+                loss_exposure_val.item() * cfg.lambda_illum_exposure * exposure_w,
                 step,
             )
             self.writer.add_scalar(
                 "retinex_net/loss_smooth",
-                loss_smoothing.item() * cfg.lambda_smooth,
+                loss_smoothing.item() * cfg.lambda_smooth * smooth_w,
                 step,
             )
             # self.writer.add_scalar(
@@ -905,33 +919,33 @@ class Runner:
             # )
             self.writer.add_scalar(
                 "retinex_net/loss_adaptive_curve",
-                loss_adaptive_curve.item() * cfg.lambda_illum_curve,
+                loss_adaptive_curve.item() * cfg.lambda_illum_curve * adaptive_curve_w,
                 step,
             )
             self.writer.add_scalar(
                 "retinex_net/loss_exposure_local",
-                loss_exposure_local.item() * cfg.lambda_illum_exposure_local,
+                loss_exposure_local.item() * cfg.lambda_illum_exposure_local * exposure_local_w,
                 step,
             )
 
             self.writer.add_scalar(
                 "retinex_net/loss_laplacian",
-                loss_laplacian_val.item() * cfg.lambda_laplacian,
+                loss_laplacian_val.item() * cfg.lambda_laplacian * laplacian_w,
                 step,
             )
             self.writer.add_scalar(
                 "retinex_net/loss_gradient",
-                loss_gradient.item() * cfg.lambda_gradient,
+                loss_gradient.item() * cfg.lambda_gradient * gradient_w,
                 step,
             )
             self.writer.add_scalar(
                 "retinex_net/loss_frequency",
-                loss_frequency_val.item() * cfg.lambda_frequency,
+                loss_frequency_val.item() * cfg.lambda_frequency * frequency_w,
                 step,
             )
             self.writer.add_scalar(
                 "retinex_net/loss_edge_aware_smooth",
-                loss_smooth_edge_aware.item() * cfg.lambda_edge_aware_smooth,
+                loss_smooth_edge_aware.item() * cfg.lambda_edge_aware_smooth * edge_aware_smooth_w,
                 step,
             )
 
