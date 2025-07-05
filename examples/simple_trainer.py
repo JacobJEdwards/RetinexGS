@@ -31,6 +31,7 @@ from datasets.traj import (
     generate_novel_views,
 )
 from config import Config
+from examples.losses import IlluminationFrequencyLoss
 from utils import IlluminationOptModule
 from losses import FrequencyLoss, EdgeAwareSmoothingLoss
 from losses import (
@@ -309,6 +310,8 @@ class Runner:
             self.loss_edge_aware_smooth.compile()
             self.loss_exposure_local = LocalExposureLoss(patch_size=64, patch_grid_size=8).to(self.device)
             self.loss_exposure_local.compile()
+            self.loss_illum_frequency = IlluminationFrequencyLoss().to(self.device)
+            self.loss_illum_frequency.compile()
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(

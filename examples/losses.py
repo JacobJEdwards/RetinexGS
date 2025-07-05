@@ -396,12 +396,42 @@ class FrequencyLoss(nn.Module):
         loss = F.l1_loss(magnitude_x, magnitude_y)
         return loss
 
+class IlluminationFrequencyLoss(nn.Module):
+    def __init__(self):
+        super(IlluminationFrequencyLoss, self).__init__()
+
+    @staticmethod
+    def forward(illumination_map: Tensor) -> Tensor:
+        if illumination_map.shape[1] > 1:
+            illum_gray = torch.mean(illumination_map, dim=1, keepdim=True).squeeze(1)
+        else:
+            illum_gray = illumination_map.squeeze(1)
+
+        fft_illum = torch.fft.fftshift(torch.fft.rfft2(illum_gray, norm="ortho"))
+        magnitude_illum = torch.log(torch.abs(fft_illum) + 1e-8)
+
+        H, W = illum_gray.shape[1:]
+        center_h, center_w = H // 2, W // 2
+
+        freq_y = torch.linspace(-center_h, H - center_h - 1, H, device=illum_gray.device) if H % 2 == 0 else torch.linspace(-center_h, H - center_h, H, device=illum_gray.device)
+        freq_x = torch.linspace(0, W // 2, W // 2 + 1, device=illum_gray.device)
+
+        mesh_x, mesh_y = torch.meshgrid(freq_x, freq_y, indexing='xy')
+
+        radius = torch.sqrt(mesh_x**2 + mesh_y**2)
+        max_radius = torch.sqrt(torch.tensor((center_h**2 + (W//2)**2), dtype=torch.float32, device=illum_gray.device))
+        normalized_radius = radius / max_radius
+
+        freq_penalty_mask = normalized_radius
+
+        loss = torch.mean(magnitude_illum * freq_penalty_mask)
+        return loss
 
 class EdgeAwareSmoothingLoss(nn.Module):
     def __init__(self, initial_gamma: float = 0.1) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
         self.initial_gamma = initial_gamma
-        self.gamma = torch.tensor(initial_gamma, dtype=torch.float32)
+        self.gamma = nn.Parameter(torch.tensor(initial_gamma, dtype=torch.float32)) # TODO: optimise
 
     def forward(self, img: Tensor, guide_img: Tensor) -> Tensor:
         if img.shape[1] > 1:
@@ -420,8 +450,8 @@ class EdgeAwareSmoothingLoss(nn.Module):
         dx_guide = guide_img_gray[:, :, :, 1:] - guide_img_gray[:, :, :, :-1]
         dy_guide = guide_img_gray[:, :, 1:, :] - guide_img_gray[:, :, :-1, :]
 
-        weights_x = torch.exp(-torch.abs(dx_guide) / self.gamma)
-        weights_y = torch.exp(-torch.abs(dy_guide) / self.gamma)
+        weights_x = torch.exp(-torch.abs(dx_guide) / (self.gamma.abs() + 1e-8))
+        weights_y = torch.exp(-torch.abs(dy_guide) / (self.gamma.abs() + 1e-8))
 
         loss_x = torch.mean(weights_x * torch.abs(dx_img))
         loss_y = torch.mean(weights_y * torch.abs(dy_img))
