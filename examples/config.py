@@ -111,7 +111,7 @@ class Config:
     principal_point_perturb_pixel: int = 10
 
     enable_retinex: bool = True
-    multi_scale_retinex: bool = False
+    multi_scale_retinex: bool = True
 
     lambda_low: float = 0.25
     lambda_illumination: float = 0.3
