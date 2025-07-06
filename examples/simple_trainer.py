@@ -929,11 +929,12 @@ class Runner:
                 self.global_mean_val_param.item(),
                 step,
             )
-            self.writer.add_scalar(
-                "retinex_net/local_mean_val_param",
-                local_exposure_mean.mean().item(),
-                step,
-            )
+            if cfg.multi_scale_retinex:
+                self.writer.add_scalar(
+                    "retinex_net/local_mean_val_param",
+                    local_exposure_mean.mean().item(),
+                    step,
+                )
 
             if self.cfg.tb_save_image:
                 self.writer.add_images(
