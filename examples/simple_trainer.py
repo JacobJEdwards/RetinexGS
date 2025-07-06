@@ -240,7 +240,7 @@ class Runner:
             self.loss_exposure_local.compile()
             self.loss_illum_frequency = IlluminationFrequencyLoss().to(self.device)
             self.loss_illum_frequency.compile()
-            
+
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
 
@@ -769,16 +769,17 @@ class Runner:
     def get_retinex_output(
         self, images_ids: Tensor, pixels: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
+        epsilon = torch.finfo(pixels.dtype).eps
         if self.cfg.use_hsv_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
             pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
             v_channel = pixels_hsv[:, 2:3, :, :]
             input_image_for_net = v_channel
-            log_input_image = torch.log(input_image_for_net + 1e-8)
+            log_input_image = torch.log(input_image_for_net + epsilon)
         else:
             pixels_hsv = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net + 1e-8)
+            log_input_image = torch.log(input_image_for_net + epsilon)
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
@@ -796,7 +797,7 @@ class Runner:
         if self.cfg.use_hsv_color_space:
             reflectance_v_target = torch.exp(log_reflectance_target)
             h_channel = pixels_hsv[:, 0:1, :, :]
-            s_channel_dampened = pixels_hsv[:, 1:2, :, :] * 0.95
+            s_channel_dampened = pixels_hsv[:, 1:2, :, :]
             reflectance_hsv_target = torch.cat(
                 [h_channel, s_channel_dampened, reflectance_v_target], dim=1
             )
@@ -901,7 +902,7 @@ class Runner:
             loss_names = [
                 "reflect_spa", "color_val", "exposure_val", "smoothing",
                 "adaptive_curve", "laplacian_val", "gradient", "frequency_val",
-                "smooth_edge_aware","exposure_local", 
+                "smooth_edge_aware","exposure_local",
                 "illumination_frequency_penalty"
             ]
 
