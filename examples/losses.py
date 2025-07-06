@@ -192,7 +192,7 @@ class AdaptiveCurveLoss(nn.Module):
                 + lambda2_val * high_light_loss
                 + lambda3_val * smooth_loss
         )
-        return total_loss.unsqueeze(0)
+        return total_loss
 
 
 class ColourConsistencyLoss(nn.Module):
@@ -291,7 +291,7 @@ class SpatialLoss(nn.Module):
         D_down = torch.pow(D_org_down * current_contrast - D_enhance_down, 2)
         E = D_left + D_right + D_up + D_down
         
-        return E.mean().unsqueeze(0)
+        return E.mean()
 
 
 class LaplacianLoss(nn.Module):
