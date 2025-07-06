@@ -43,6 +43,8 @@ from losses import (
     LaplacianLoss,
     GradientLoss,
     LocalExposureLoss
+    , ExclusionLoss
+    , TVLoss
 )
 from rendering_double import rasterization_dual
 from gsplat import export_splats
@@ -216,6 +218,12 @@ class Runner:
 
 
         if cfg.enable_retinex:
+            self.l1_loss = nn.SmoothL1Loss().to(self.device)
+            self.mse_loss = nn.MSELoss().to(self.device)
+            self.exclusion_loss =  ExclusionLoss().to(self.device)
+            self.tv_loss = TVLoss().to(self.device)
+            self.gradient_loss = GradientLoss().to(self.device)
+
             self.loss_color = ColourConsistencyLoss().to(self.device)
             self.loss_color.compile()
             self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
@@ -827,10 +835,17 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
+
         (input_image_for_net, illumination_map, reflectance_map, alpha, beta, local_exposure_mean,dynamic_weights_from_net) = (
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
         global_mean_val_target = torch.sigmoid(self.global_mean_val_param)
+
+        self.total_loss = 0.5*self.tv_loss(illumination_map, reflectance_map)
+        self.total_loss += 0.0001*self.tv_loss(reflectance_map)
+        self.total_loss += self.l1_loss(illumination_map, pixels)
+        self.total_loss += self.mse_loss(illumination_map*reflectance_map, pixels)
+        # self.total_loss.backward()
 
         loss_color_val = (
             self.loss_color(illumination_map)
@@ -1261,7 +1276,7 @@ class Runner:
                     input_image_for_net, illumination_map, reflectance_target, alpha, beta, local_exposure, _ = (
                         self.get_retinex_output(images_ids=image_ids, pixels=pixels)
                     )
-                    global_exposure_mean = torch.sigmoid(self.global_exposure_mean_param)
+                    global_exposure_mean = torch.sigmoid(self.global_mean_val_param)
 
                     reflectance_target_permuted = reflectance_target.permute(
                         0, 2, 3, 1
