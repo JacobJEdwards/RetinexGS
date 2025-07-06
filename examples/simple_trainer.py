@@ -880,7 +880,7 @@ class Runner:
         ], device=device)
 
 
-        if self.cfg.enable_dynamic_weights:
+        if self.cfg.enable_dynamic_weights and cfg.multi_scale_retinex:
             if isinstance(self.retinex_net, DDP):
                 log_vars = self.retinex_net.module.log_vars
             else:
@@ -957,6 +957,11 @@ class Runner:
                     reflectance_map,
                     step,
                 )
+
+        loss_clipping_high = torch.mean(torch.relu(reflectance_map - 1.0))
+        loss_clipping_low = torch.mean(torch.relu(0.0 - reflectance_map))
+        lambda_clipping = 0.1
+        total_loss += lambda_clipping * (loss_clipping_high + loss_clipping_low)
 
         return total_loss
 
