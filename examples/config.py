@@ -148,7 +148,7 @@ class Config:
     use_pixel_shuffle: bool = False
     use_stride_conv: bool = False
     
-    learn_spatial_contrast: bool = True
+    learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = True
     
     use_illum_opt: bool = True
