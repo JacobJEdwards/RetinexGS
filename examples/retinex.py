@@ -175,7 +175,7 @@ class MultiScaleRetinexNet(nn.Module):
         self.use_stride_conv = use_stride_conv
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
+        self.bn1 = nn.InstanceNorm2d(32)
         
         self.spatially_film = spatially_film
         if spatially_film:
@@ -212,15 +212,15 @@ class MultiScaleRetinexNet(nn.Module):
 
         # self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
+        self.bn2 = nn.InstanceNorm2d(64)
         
         self.use_dilated_convs = use_dilated_convs
         
         if self.use_dilated_convs:
             self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2)
-            self.bn_dilated1 = nn.BatchNorm2d(64)
+            self.bn_dilated1 = nn.InstanceNorm2d(64)
             self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4)
-            self.bn_dilated2 = nn.BatchNorm2d(64)
+            self.bn_dilated2 = nn.InstanceNorm2d(64)
 
         self.use_se_blocks = use_se_blocks
         if self.use_se_blocks:
@@ -250,7 +250,7 @@ class MultiScaleRetinexNet(nn.Module):
             self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(32)
+        self.bn3 = nn.InstanceNorm2d(32)
 
         self.output_head_medium = nn.Conv2d(32, out_channels, kernel_size=3, padding=1)
         self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
@@ -285,7 +285,7 @@ class MultiScaleRetinexNet(nn.Module):
         )
             
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
-        c1 = self.relu((self.conv1(x)))
+        c1 = self.relu(self.bn1(self.conv1(x)))
         if self.spatially_film:
             spatial_cond_features = self.spatial_conditioning_encoder(x)
             c1_modulated = self.film1(c1, spatial_cond_features)
@@ -299,7 +299,7 @@ class MultiScaleRetinexNet(nn.Module):
             
         p1 = self.pool1(c1_modulated)
         
-        c2 = self.relu((self.conv2(p1)))
+        c2 = self.relu(self.bn2(self.conv2(p1)))
         
         if self.use_dilated_convs:
             c2 = self.relu(self.bn_dilated1(self.dilated_conv1(c2)))
@@ -317,7 +317,7 @@ class MultiScaleRetinexNet(nn.Module):
             up1, size=p1.shape[2:], mode="bilinear", align_corners=False
         )
         merged = torch.cat([up1, p1], dim=1)
-        c3 = self.relu((self.conv3(merged)))
+        c3 = self.relu(self.bn3(self.conv3(merged)))
         
         if self.use_se_blocks:
             c3 = self.se3(c3)
