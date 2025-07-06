@@ -166,7 +166,7 @@ class AdaptiveCurveLoss(nn.Module):
             + lambda3_val * smooth_loss
         )
 
-        return total_loss
+        return total_loss.unsqueeze(0)
             
 
     def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None) -> Tensor:
