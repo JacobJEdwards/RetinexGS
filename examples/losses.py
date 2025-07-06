@@ -91,6 +91,10 @@ class HistogramPriorLoss(nn.Module):
 
 # Adaptive Curve Loss
 class AdaptiveCurveLoss(nn.Module):
+    lambda1: Tensor
+    lambda2: Tensor
+    lambda3: Tensor
+
     def __init__(
         self,
         alpha: float = 0.3,
@@ -100,6 +104,7 @@ class AdaptiveCurveLoss(nn.Module):
         lambda1: float = 1.0,
         lambda2: float = 1.0,
         lambda3: float = 1.0,
+        learn_lambdas: bool = False
     ):
         """
         Custom loss function for controlling curve enhancement and compression.
@@ -116,9 +121,16 @@ class AdaptiveCurveLoss(nn.Module):
         self.beta = beta
         self.low_thresh = low_thresh
         self.high_thresh = high_thresh
-        self.lambda1 = lambda1
-        self.lambda2 = lambda2
-        self.lambda3 = lambda3
+
+        self.learn_lambdas = learn_lambdas
+        if self.learn_lambdas:
+            self.lambda1 = nn.Parameter(torch.tensor([lambda1], dtype=torch.float32))
+            self.lambda2 = nn.Parameter(torch.tensor([lambda2], dtype=torch.float32))
+            self.lambda3 = nn.Parameter(torch.tensor([lambda3], dtype=torch.float32))
+        else:
+            self.register_buffer("lambda1", torch.tensor([lambda1], dtype=torch.float32))
+            self.register_buffer("lambda2", torch.tensor([lambda2], dtype=torch.float32))
+            self.register_buffer("lambda3", torch.tensor([lambda3], dtype=torch.float32))
     
     def forward_with_maps(
         self,
@@ -144,10 +156,14 @@ class AdaptiveCurveLoss(nn.Module):
         grad_x = (output[:, :, :, 1:] - output[:, :, :, :-1]) ** 2
         smooth_loss = torch.mean(grad_x) + torch.mean(grad_y)
 
+        lambda1_val = F.softplus(self.lambda1) if self.learn_lambdas else self.lambda1
+        lambda2_val = F.softplus(self.lambda2) if self.learn_lambdas else self.lambda2
+        lambda3_val = F.softplus(self.lambda3) if self.learn_lambdas else self.lambda3
+
         total_loss = (
-                self.lambda1 * low_light_loss
-                + self.lambda2 * high_light_loss
-                + self.lambda3 * smooth_loss
+            lambda1_val * low_light_loss
+            + lambda2_val * high_light_loss
+            + lambda3_val * smooth_loss
         )
 
         return total_loss
@@ -167,12 +183,15 @@ class AdaptiveCurveLoss(nn.Module):
         grad_x = (output[:, :, :, 1:] - output[:, :, :, :-1]) ** 2
         smooth_loss = torch.mean(grad_x) + torch.mean(grad_y)
 
-        total_loss = (
-            self.lambda1 * low_light_loss
-            + self.lambda2 * high_light_loss
-            + self.lambda3 * smooth_loss
-        )
+        lambda1_val = F.softplus(self.lambda1) if self.learn_lambdas else self.lambda1
+        lambda2_val = F.softplus(self.lambda2) if self.learn_lambdas else self.lambda2
+        lambda3_val = F.softplus(self.lambda3) if self.learn_lambdas else self.lambda3
 
+        total_loss = (
+                lambda1_val * low_light_loss
+                + lambda2_val * high_light_loss
+                + lambda3_val * smooth_loss
+        )
         return total_loss
 
 
@@ -215,8 +234,10 @@ class SpatialLoss(nn.Module):
     weight_right: Tensor
     weight_up: Tensor
     weight_down: Tensor
+    
+    learnable_contrast: Tensor
 
-    def __init__(self) -> None:
+    def __init__(self, learn_contrast: bool = False, initial_contrast: float = 8.0) -> None:
         super(SpatialLoss, self).__init__()
         kernel_left = torch.tensor(
             [[0, 0, 0], [-1, 1, 0], [0, 0, 0]], dtype=torch.float32
@@ -238,6 +259,12 @@ class SpatialLoss(nn.Module):
 
         self.pool = nn.AvgPool2d(4)
 
+        self.learn_contrast = learn_contrast
+        if self.learn_contrast:
+            self.learnable_contrast = nn.Parameter(torch.tensor([initial_contrast], dtype=torch.float32))
+        else:
+            self.register_buffer("learnable_contrast", torch.tensor([initial_contrast], dtype=torch.float32))
+
     def forward(self, org: Tensor, enhance: Tensor, contrast: int = 8):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
@@ -256,12 +283,14 @@ class SpatialLoss(nn.Module):
         D_org_letf, D_org_right, D_org_up, D_org_down = p(org_pool)
         D_enhance_letf, D_enhance_right, D_enhance_up, D_enhance_down = p(enhance_pool)
 
-        D_left = torch.pow(D_org_letf * contrast - D_enhance_letf, 2)
-        D_right = torch.pow(D_org_right * contrast - D_enhance_right, 2)
-        D_up = torch.pow(D_org_up * contrast - D_enhance_up, 2)
-        D_down = torch.pow(D_org_down * contrast - D_enhance_down, 2)
-        E = D_left + D_right + D_up + D_down
+        current_contrast = F.softplus(self.learnable_contrast) if self.learn_contrast else (contrast if contrast is not None else self.learnable_contrast)
 
+        D_left = torch.pow(D_org_letf * current_contrast - D_enhance_letf, 2)
+        D_right = torch.pow(D_org_right * current_contrast - D_enhance_right, 2)
+        D_up = torch.pow(D_org_up * current_contrast - D_enhance_up, 2)
+        D_down = torch.pow(D_org_down * current_contrast - D_enhance_down, 2)
+        E = D_left + D_right + D_up + D_down
+        
         return E.mean()
 
 
@@ -347,58 +376,6 @@ class SmoothingLoss(nn.Module):
         E = torch.mean(D_left + D_right + D_up + D_down)
 
         return E
-
-class TVLoss(nn.Module):
-    def __init__(self):
-        super(TVLoss,self).__init__()
-
-    def forward(self,x,weight_map=None):
-        self.h_x = x.size()[2]
-        self.w_x = x.size()[3]
-        self.batch_size = x.size()[0]
-        if weight_map is None:
-            self.TVLoss_weight=(1, 1)
-        else:
-            # self.h_x = x.size()[2]
-            # self.w_x = x.size()[3]
-            # self.batch_size = x.size()[0]
-            self.TVLoss_weight = self.compute_weight(weight_map)
-
-        count_h = self._tensor_size(x[:,:,1:,:])
-        count_w = self._tensor_size(x[:,:,:,1:])
-
-        h_tv = (self.TVLoss_weight[0]*torch.abs((x[:,:,1:,:]-x[:,:,:self.h_x-1,:]))).sum()
-        w_tv = (self.TVLoss_weight[1]*torch.abs((x[:,:,:,1:]-x[:,:,:,:self.w_x-1]))).sum()
-        # print(self.TVLoss_weight[0],self.TVLoss_weight[1])
-        return (h_tv/count_h+w_tv/count_w)/self.batch_size
-
-    def _tensor_size(self,t):
-        return t.size()[1]*t.size()[2]*t.size()[3]
-
-    def compute_weight(self, img):
-        gradx = torch.abs(img[:, :, 1:, :] - img[:, :, :self.h_x-1, :])
-        grady = torch.abs(img[:, :, :, 1:] - img[:, :, :, :self.w_x-1])
-        TVLoss_weight_x = torch.div(1,torch.exp(gradx))
-        TVLoss_weight_y = torch.div(1, torch.exp(grady))
-
-        # TVLoss_weight_x = torch.div(1, torch.abs(gradx)+0.0001)
-        # TVLoss_weight_y = torch.div(1, torch.abs(grady)+0.0001)
-
-        # TVLoss_weight_x = torch.log2(1+gradx*gradx)
-        # TVLoss_weight_y = torch.log2(1+grady*grady)
-        return TVLoss_weight_x, TVLoss_weight_y
-
-class SimpleGradientLoss(nn.Module):
-    """
-    L1 loss on the gradient of the picture
-    """
-    def __init__(self):
-        super(SimpleGradientLoss, self).__init__()
-
-    def forward(self, a):
-        gradient_a_x = torch.abs(a[:, :, :, :-1] - a[:, :, :, 1:])
-        gradient_a_y = torch.abs(a[:, :, :-1, :] - a[:, :, 1:, :])
-        return torch.mean(gradient_a_x) + torch.mean(gradient_a_y)
 
 class GradientLoss(nn.Module):
     kernel_x: Tensor

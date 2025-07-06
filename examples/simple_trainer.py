@@ -44,7 +44,6 @@ from losses import (
     GradientLoss,
     LocalExposureLoss
     , ExclusionLoss
-    , TVLoss
 )
 from rendering_double import rasterization_dual
 from gsplat import export_splats
@@ -218,12 +217,6 @@ class Runner:
 
 
         if cfg.enable_retinex:
-            self.l1_loss = nn.SmoothL1Loss().to(self.device)
-            self.mse_loss = nn.MSELoss().to(self.device)
-            self.exclusion_loss =  ExclusionLoss().to(self.device)
-            self.tv_loss = TVLoss().to(self.device)
-            self.gradient_loss = GradientLoss().to(self.device)
-
             self.loss_color = ColourConsistencyLoss().to(self.device)
             self.loss_color.compile()
             self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
@@ -232,9 +225,9 @@ class Runner:
             # self.loss_smooth = LaplacianLoss().to(self.device)
             self.loss_smooth = TotalVariationLoss().to(self.device)
             self.loss_smooth.compile()
-            self.loss_spatial = SpatialLoss().to(self.device)
+            self.loss_spatial = SpatialLoss(learn_contrast=cfg.learn_spatial_contrast).to(self.device)
             self.loss_spatial.compile()
-            self.loss_adaptive_curve = AdaptiveCurveLoss().to(self.device)
+            self.loss_adaptive_curve = AdaptiveCurveLoss(learn_lambdas=cfg.learn_adaptive_curve_lambdas).to(self.device)
             self.loss_adaptive_curve.compile()
             self.loss_details = LaplacianLoss().to(self.device)
             self.loss_details.compile()
@@ -295,6 +288,8 @@ class Runner:
 
             net_params = list(self.retinex_net.parameters())
             net_params += self.loss_edge_aware_smooth.parameters()
+            net_params += self.loss_adaptive_curve.parameters()
+            net_params += self.loss_spatial.parameters()
             net_params.append(self.global_mean_val_param)
             # if cfg.use_denoising_net and self.denoising_net is not None:
             #     net_params += list(self.denoising_net.parameters())
