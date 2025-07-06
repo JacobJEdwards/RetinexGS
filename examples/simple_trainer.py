@@ -771,7 +771,7 @@ class Runner:
 
     def get_retinex_output(
         self, images_ids: Tensor, pixels: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         epsilon = torch.finfo(pixels.dtype).eps
         if self.cfg.use_hsv_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
@@ -786,7 +786,7 @@ class Runner:
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        log_illumination_map, alpha, beta, weights = checkpoint(
+        log_illumination_map, alpha, beta, local_exposure, weights = checkpoint(
             self.retinex_net,
             input_image_for_net,
             retinex_embedding,
@@ -819,7 +819,7 @@ class Runner:
 
         reflectance_map = torch.clamp(reflectance_map, 0, 1)
 
-        return input_image_for_net, illumination_map, reflectance_map, alpha, beta, weights
+        return input_image_for_net, illumination_map, reflectance_map, alpha, beta, local_exposure, weights
 
     def retinex_train_step(
             self, images_ids: Tensor, pixels: Tensor, step: int
@@ -827,7 +827,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        input_image_for_net, illumination_map, reflectance_map, alpha, beta, dynamic_weights_from_net = ( # MODIFIED name
+        (input_image_for_net, illumination_map, reflectance_map, alpha, beta, local_exposure_mean,dynamic_weights_from_net) = (
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
         global_mean_val_target = torch.sigmoid(self.global_mean_val_param)
@@ -848,7 +848,7 @@ class Runner:
         loss_gradient = self.loss_gradient(input_image_for_net, reflectance_map)
         loss_frequency_val = self.loss_frequency(input_image_for_net, reflectance_map)
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(illumination_map, input_image_for_net)
-        loss_exposure_local = self.loss_exposure_local(reflectance_map)
+        loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean)
         loss_illumination_frequency_penalty = self.loss_illum_frequency(illumination_map)
 
         individual_losses = torch.stack([
@@ -865,7 +865,6 @@ class Runner:
             loss_illumination_frequency_penalty,
         ])
 
-        # Original lambda weights (if not using dynamic weighting or for logging)
         base_lambdas = torch.tensor([
             cfg.lambda_reflect,
             cfg.lambda_illum_color,
@@ -928,6 +927,11 @@ class Runner:
             self.writer.add_scalar(
                 "retinex_net/global_mean_val_param",
                 self.global_mean_val_param.item(),
+                step,
+            )
+            self.writer.add_scalar(
+                "retinex_net/local_mean_val_param",
+                local_exposure_mean.mean().item(),
                 step,
             )
 
@@ -1248,9 +1252,10 @@ class Runner:
                 info["means2d"].retain_grad()
 
                 if cfg.enable_retinex:
-                    input_image_for_net, illumination_map, reflectance_target, alpha, beta, _ = (
+                    input_image_for_net, illumination_map, reflectance_target, alpha, beta, local_exposure, _ = (
                         self.get_retinex_output(images_ids=image_ids, pixels=pixels)
                     )
+                    global_exposure_mean = torch.sigmoid(self.global_exposure_mean_param)
 
                     reflectance_target_permuted = reflectance_target.permute(
                         0, 2, 3, 1
@@ -1299,7 +1304,7 @@ class Runner:
                     # loss_illum_variance = torch.var(illumination_map)
 
                     loss_adaptive_curve = self.loss_adaptive_curve(reflectance_target, alpha, beta)
-                    loss_illum_exposure = self.loss_exposure(reflectance_target)
+                    loss_illum_exposure = self.loss_exposure(reflectance_target, global_exposure_mean)
 
                     con_degree = (0.5 / torch.mean(pixels)).item()
                     loss_illum_contrast = self.loss_spatial(

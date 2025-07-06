@@ -276,8 +276,15 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.PReLU(),
                 nn.Conv2d(32, 2, kernel_size=1), 
             )
+
+        self.predictive_local_exposure_mean = nn.Sequential(
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.PReLU(),
+            nn.Conv2d(32, 1, kernel_size=1),
+            nn.Sigmoid()
+        )
             
-    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
+    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu((self.conv1(x)))
         if self.spatially_film:
             spatial_cond_features = self.spatial_conditioning_encoder(x)
@@ -377,5 +384,9 @@ class MultiScaleRetinexNet(nn.Module):
         else:
             dynamic_weights = None
 
+        predicted_local_mean_val = self.predictive_local_exposure_mean(c3)
+        predicted_local_mean_val = F.interpolate(
+            predicted_local_mean_val, size=x.shape[2:], mode="bilinear", align_corners=False
+        )
 
-        return final_illumination, alpha_map, beta_map, dynamic_weights
+        return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights
