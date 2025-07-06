@@ -291,7 +291,7 @@ class SpatialLoss(nn.Module):
         D_down = torch.pow(D_org_down * current_contrast - D_enhance_down, 2)
         E = D_left + D_right + D_up + D_down
         
-        return E.mean()
+        return E.mean().unsqueeze(0)
 
 
 class LaplacianLoss(nn.Module):
