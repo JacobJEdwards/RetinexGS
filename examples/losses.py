@@ -192,7 +192,7 @@ class AdaptiveCurveLoss(nn.Module):
                 + lambda2_val * high_light_loss
                 + lambda3_val * smooth_loss
         )
-        return total_loss
+        return total_loss.unsqueeze(0)
 
 
 class ColourConsistencyLoss(nn.Module):
