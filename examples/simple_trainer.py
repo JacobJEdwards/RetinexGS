@@ -839,7 +839,7 @@ class Runner:
         )
         loss_smoothing = self.loss_smooth(illumination_map)
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
-        loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target.detach())
+        loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target)
         con_degree = (0.5 / torch.mean(pixels)).item()
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
         loss_laplacian_val = torch.mean(
