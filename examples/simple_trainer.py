@@ -244,6 +244,8 @@ class Runner:
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
 
+            self.global_mean_val_param = nn.Parameter(torch.tensor([0.5], dtype=torch.float32)).to(self.device)
+
             if cfg.use_denoising_net:
                 pass
                 # self.denoising_net = DenoisingNet(
@@ -285,6 +287,7 @@ class Runner:
 
             net_params = list(self.retinex_net.parameters())
             net_params += self.loss_edge_aware_smooth.parameters()
+            net_params += [self.global_mean_val_param]
             # if cfg.use_denoising_net and self.denoising_net is not None:
             #     net_params += list(self.denoising_net.parameters())
 
@@ -827,6 +830,7 @@ class Runner:
         input_image_for_net, illumination_map, reflectance_map, alpha, beta, dynamic_weights_from_net = ( # MODIFIED name
             self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         )
+        global_mean_val_target = torch.sigmoid(self.global_mean_val_param)
 
         loss_color_val = (
             self.loss_color(illumination_map)
@@ -835,7 +839,7 @@ class Runner:
         )
         loss_smoothing = self.loss_smooth(illumination_map)
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
-        loss_exposure_val = self.loss_exposure(reflectance_map)
+        loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target.detach())
         con_degree = (0.5 / torch.mean(pixels)).item()
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
         loss_laplacian_val = torch.mean(

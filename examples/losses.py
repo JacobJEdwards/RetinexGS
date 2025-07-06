@@ -202,10 +202,11 @@ class ExposureLoss(nn.Module):
         self.pool = nn.AvgPool2d(patch_size)
         self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, exposure: Tensor | None = None) -> Tensor:
         x = torch.mean(x, 1, keepdim=True)
         mean = self.pool(x)
-        d = torch.mean(torch.pow(mean - self.mean_val_tensor, 2))
+        target = exposure if exposure is not None else self.mean_val_tensor
+        d = torch.mean(torch.pow(mean - target, 2))
         return d
 
 
@@ -473,16 +474,17 @@ class LocalExposureLoss(nn.Module):
             self.global_pool = nn.AvgPool2d(patch_size)
 
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, mean_val: Tensor | None = None) -> Tensor:
         if x.shape[1] > 1:
             x = torch.mean(x, 1, keepdim=True)
 
+        mean_val = self.mean_val_tensor if mean_val is None else mean_val
         if self.patch_grid_size is not None:
             mean_patches = self.patch_pool(x) 
-            d = torch.mean(torch.pow(mean_patches - self.mean_val_tensor, 2))
+            d = torch.mean(torch.pow(mean_patches - mean_val, 2))
         else:
             mean = self.global_pool(x)
-            d = torch.mean(torch.pow(mean - self.mean_val_tensor, 2))
+            d = torch.mean(torch.pow(mean - mean_val, 2))
 
         return d
 
