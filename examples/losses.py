@@ -123,17 +123,14 @@ class AdaptiveCurveLoss(nn.Module):
         self.high_thresh = high_thresh
 
         self.learn_lambdas = learn_lambdas
-        self.lambda1 = lambda1
-        self.lambda2 = lambda2
-        self.lambda3 = lambda3
-        # if self.learn_lambdas:
-        #     self.lambda1 = nn.Parameter(torch.tensor([lambda1], dtype=torch.float32))
-        #     self.lambda2 = nn.Parameter(torch.tensor([lambda2], dtype=torch.float32))
-        #     self.lambda3 = nn.Parameter(torch.tensor([lambda3], dtype=torch.float32))
-        # else:
-        #     self.register_buffer("lambda1", torch.tensor([lambda1], dtype=torch.float32))
-        #     self.register_buffer("lambda2", torch.tensor([lambda2], dtype=torch.float32))
-        #     self.register_buffer("lambda3", torch.tensor([lambda3], dtype=torch.float32))
+        if self.learn_lambdas:
+            self.lambda1 = nn.Parameter(torch.tensor([lambda1], dtype=torch.float32))
+            self.lambda2 = nn.Parameter(torch.tensor([lambda2], dtype=torch.float32))
+            self.lambda3 = nn.Parameter(torch.tensor([lambda3], dtype=torch.float32))
+        else:
+            self.register_buffer("lambda1", torch.tensor([lambda1], dtype=torch.float32))
+            self.register_buffer("lambda2", torch.tensor([lambda2], dtype=torch.float32))
+            self.register_buffer("lambda3", torch.tensor([lambda3], dtype=torch.float32))
     
     def forward_with_maps(
         self,
@@ -159,12 +156,9 @@ class AdaptiveCurveLoss(nn.Module):
         grad_x = (output[:, :, :, 1:] - output[:, :, :, :-1]) ** 2
         smooth_loss = torch.mean(grad_x) + torch.mean(grad_y)
 
-        # lambda1_val = F.softplus(self.lambda1) if self.learn_lambdas else self.lambda1
-        # lambda2_val = F.softplus(self.lambda2) if self.learn_lambdas else self.lambda2
-        # lambda3_val = F.softplus(self.lambda3) if self.learn_lambdas else self.lambda3
-        lambda1_val = self.lambda1
-        lambda2_val = self.lambda2
-        lambda3_val = self.lambda3
+        lambda1_val = F.softplus(self.lambda1) if self.learn_lambdas else self.lambda1
+        lambda2_val = F.softplus(self.lambda2) if self.learn_lambdas else self.lambda2
+        lambda3_val = F.softplus(self.lambda3) if self.learn_lambdas else self.lambda3
 
         total_loss = (
             lambda1_val * low_light_loss
@@ -172,7 +166,7 @@ class AdaptiveCurveLoss(nn.Module):
             + lambda3_val * smooth_loss
         )
 
-        return total_loss
+        return total_loss.squeeze()
             
 
     def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None) -> Tensor:
@@ -198,7 +192,7 @@ class AdaptiveCurveLoss(nn.Module):
                 + lambda2_val * high_light_loss
                 + lambda3_val * smooth_loss
         )
-        return total_loss
+        return total_loss.squeeze()
 
 
 class ColourConsistencyLoss(nn.Module):

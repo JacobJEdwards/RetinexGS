@@ -940,6 +940,29 @@ class Runner:
                     step,
                 )
 
+            if cfg.learn_spatial_contrast:
+                self.writer.add_scalar(
+                    "retinex_net/learned_spatial_contrast",
+                    self.loss_spatial.learnable_contrast.item(),
+                )
+
+            if cfg.learn_adaptive_curve_lambdas:
+                self.writer.add_scalar(
+                    "retinex_net/learnable_adaptive_curve_lambda1",
+                    self.loss_adaptive_curve.lambda1.item(),
+                    step,
+                )
+                self.writer.add_scalar(
+                    "retinex_net/learnable_adaptive_curve_lambda2",
+                    self.loss_adaptive_curve.lambda2.item(),
+                    step,
+                )
+                self.writer.add_scalar(
+                    "retinex_net/learnable_adaptive_curve_lambda3",
+                    self.loss_adaptive_curve.lambda3.item(),
+                    step,
+                )
+
             if self.cfg.tb_save_image:
                 self.writer.add_images(
                     "retinex_net/input_image_for_net",
