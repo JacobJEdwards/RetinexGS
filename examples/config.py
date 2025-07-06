@@ -143,7 +143,7 @@ class Config:
     spatial_film: bool = False
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
-    use_spatial_attention: bool = False
+    use_spatial_attention: bool = True
     enable_dynamic_weights: bool = True
     use_pixel_shuffle: bool = False
     use_stride_conv: bool = False
