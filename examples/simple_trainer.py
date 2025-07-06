@@ -287,7 +287,7 @@ class Runner:
 
             net_params = list(self.retinex_net.parameters())
             net_params += self.loss_edge_aware_smooth.parameters()
-            net_params += [self.global_mean_val_param]
+            net_params.append(self.global_mean_val_param)
             # if cfg.use_denoising_net and self.denoising_net is not None:
             #     net_params += list(self.denoising_net.parameters())
 
