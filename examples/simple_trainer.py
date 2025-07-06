@@ -296,7 +296,7 @@ class Runner:
                 lr=1e-4 * math.sqrt(cfg.batch_size),
                 weight_decay=1e-4,
             )
-            if self.retinex_net.use_refinement:
+            if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
                 self.refinement_optimizer = torch.optim.AdamW(
                     self.retinex_net.refinement_net.parameters(),
                     lr=1e-4 * math.sqrt(cfg.batch_size),
@@ -990,7 +990,7 @@ class Runner:
             ),
         ]
 
-        if self.retinex_net.use_refinement:
+        if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
             initial_refinement_lr = self.refinement_optimizer.param_groups[0]["lr"]
             schedulers.append(
                 CosineAnnealingLR(
@@ -1029,7 +1029,7 @@ class Runner:
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
-            if self.retinex_net.use_refinement:
+            if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
                 self.refinement_optimizer.step()
                 self.refinement_optimizer.zero_grad()
 
@@ -1068,7 +1068,7 @@ class Runner:
                     eta_min=initial_retinex_lr * 0.01,
                 )
             )
-            if self.retinex_net.use_refinement:
+            if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
                 initial_refinement_lr = self.refinement_optimizer.param_groups[0]["lr"]
                 schedulers.append(
                     CosineAnnealingLR(
@@ -1864,7 +1864,7 @@ class Runner:
                 # scaler.step(self.retinex_embed_optimizer)
                 self.retinex_embed_optimizer.step()
                 self.retinex_embed_optimizer.zero_grad()
-                if self.retinex_net.use_refinement:
+                if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
                     # scaler.step(self.retinex_refinement_optimizer)
                     self.refinement_optimizer.step()
                     self.refinement_optimizer.zero_grad()
