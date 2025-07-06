@@ -841,12 +841,6 @@ class Runner:
         )
         global_mean_val_target = torch.sigmoid(self.global_mean_val_param)
 
-        self.total_loss = 0.5*self.tv_loss(illumination_map, reflectance_map)
-        self.total_loss += 0.0001*self.tv_loss(reflectance_map)
-        self.total_loss += self.l1_loss(illumination_map, pixels)
-        self.total_loss += self.mse_loss(illumination_map*reflectance_map, pixels)
-        # self.total_loss.backward()
-
         loss_color_val = (
             self.loss_color(illumination_map)
             if not cfg.use_hsv_color_space
