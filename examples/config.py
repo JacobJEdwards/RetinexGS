@@ -149,7 +149,7 @@ class Config:
     use_stride_conv: bool = False
     
     learn_spatial_contrast: bool = False
-    learn_adaptive_curve_lambdas: bool = False
+    learn_adaptive_curve_lambdas: bool = True
     
     use_illum_opt: bool = True
     eval_niqe: bool = False
