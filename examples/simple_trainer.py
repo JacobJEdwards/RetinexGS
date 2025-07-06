@@ -244,7 +244,7 @@ class Runner:
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
 
-            self.global_mean_val_param = nn.Parameter(torch.tensor([0.5], dtype=torch.float32)).to(self.device)
+            self.global_mean_val_param = nn.Parameter(torch.tensor([0.5], dtype=torch.float32).to(self.device))
 
             if cfg.use_denoising_net:
                 pass
