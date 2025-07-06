@@ -129,7 +129,7 @@ class RetinexNet(nn.Module):
 
         self.relu = nn.PReLU()
 
-    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
+    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu(self.conv1(x))
 
         c1_modulated = self.film1(c1, embedding)
@@ -150,7 +150,7 @@ class RetinexNet(nn.Module):
             log_illumination, size=x.shape[2:], mode="bilinear", align_corners=False
         )
 
-        return final_illumination
+        return final_illumination, None, None, None, None
 
 
 class MultiScaleRetinexNet(nn.Module):
