@@ -197,7 +197,7 @@ class MultiScaleRetinexNet(nn.Module):
             # self.loss_weight_head = nn.Sequential(
             #     nn.AdaptiveAvgPool2d(1),
             #     nn.Flatten(),
-            #     nn.Linear(in_channels, 64), 
+            #     nn.Linear(in_channels, 64),
             #     nn.SiLU(),
             #     nn.Linear(64, 10),
             #     nn.Sigmoid()
@@ -388,5 +388,6 @@ class MultiScaleRetinexNet(nn.Module):
         predicted_local_mean_val = F.interpolate(
             predicted_local_mean_val, size=x.shape[2:], mode="bilinear", align_corners=False
         )
+        predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_val, output_size=8)
 
         return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights
