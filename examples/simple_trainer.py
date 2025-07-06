@@ -925,6 +925,11 @@ class Runner:
                 self.writer.add_scalar("retinex_net/learnable_beta", self.loss_adaptive_curve.beta.item(), step)
 
             self.writer.add_scalar("retinex_net/edge_aware_gamma", self.loss_edge_aware_smooth.gamma.item(), step)
+            self.writer.add_scalar(
+                "retinex_net/global_mean_val_param",
+                self.global_mean_val_param.item(),
+                step,
+            )
 
             if self.cfg.tb_save_image:
                 self.writer.add_images(
