@@ -190,7 +190,7 @@ class Runner:
             # is_mip360=True,
         )
         self.trainset = Dataset(
-            self.parser, patch_size=cfg.patch_size, load_depths=False
+            self.parser, patch_size=cfg.patch_size
         )
         self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
@@ -327,8 +327,6 @@ class Runner:
             shN_lr=cfg.shN_lr,
             scene_scale=self.scene_scale,
             sh_degree=cfg.sh_degree,
-            sparse_grad=False,
-            visible_adam=False,
             batch_size=cfg.batch_size,
             feature_dim=feature_dim,
             device=self.device,
@@ -360,17 +358,6 @@ class Runner:
             )
         else:
             raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
-
-        self.niqe_metric = None
-        if cfg.eval_niqe:
-            try:
-                self.niqe_metric = piq.BRISQUELoss(data_range=1.0).to(self.device)
-                print("BRISQUE metric initialized for evaluation.")
-            except Exception as e:
-                print(
-                    f"Error initializing BRISQUE: {e}. BRISQUE evaluation will be skipped."
-                )
-                cfg.eval_niqe = False
 
         # Running stats for prunning & growing.
         n_gauss = len(self.splats["means"])
@@ -420,12 +407,9 @@ class Runner:
                     if isinstance(self.cfg.strategy, DefaultStrategy)
                     else False
                 ),
-                sparse_grad=False,
                 rasterize_mode=rasterize_mode,
                 distributed=self.world_size > 1,
                 camera_model=self.cfg.camera_model,
-                with_ut=False,
-                with_eval3d=False,
                 **kwargs,
             )
             if masks is not None:
@@ -467,7 +451,6 @@ class Runner:
                 if isinstance(self.cfg.strategy, DefaultStrategy)
                 else False
             ),
-            sparse_grad=False,
             rasterize_mode=rasterize_mode,
             **kwargs,
         )
@@ -927,16 +910,13 @@ class Runner:
             )  # Defined early
 
             with torch.autocast(enabled=False, device_type=device):
-                camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)
+                camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
 
                 image_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
 
                 masks = data["mask"].to(device) if "mask" in data else None
-
-                points = None
-                depths_gt = None
 
                 height, width = pixels.shape[1:3]
 
@@ -1275,7 +1255,6 @@ class Runner:
                     state=self.strategy_state,
                     step=step,
                     info=info,
-                    packed=False,
                 )
             elif isinstance(self.cfg.strategy, MCMCStrategy):
                 self.cfg.strategy.step_post_backward(
@@ -1513,8 +1492,6 @@ class Runner:
         os.makedirs(video_dir, exist_ok=True)
         video_path = f"{video_dir}/traj_{step}.mp4"
         video_writer = imageio.get_writer(video_path, fps=30)
-
-        all_frame_niqe_scores = []
 
         for i in tqdm.trange(len(camtoworlds_all_torch), desc="Rendering trajectory"):
             cam_c2w = camtoworlds_all_torch[i : i + 1]
