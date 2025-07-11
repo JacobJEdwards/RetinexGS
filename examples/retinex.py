@@ -405,8 +405,8 @@ class MultiScaleRetinexNet(nn.Module):
                 adaptive_params, size=x.shape[2:], mode="bilinear", align_corners=False
             )
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
-            alpha_map = 0.5 + 1.0 * torch.sigmoid(alpha_map_raw)
-            beta_map = 0.1 + 0.8 * torch.sigmoid(beta_map_raw)
+            alpha_map = torch.sigmoid(alpha_map_raw)
+            beta_map = torch.sigmoid(beta_map_raw)
 
         if self.enable_dynamic_weights:
             dynamic_weights = torch.exp(-self.log_vars)
