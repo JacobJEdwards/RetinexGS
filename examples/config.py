@@ -95,23 +95,23 @@ class Config:
     lambda_low: float = 0.25
     lambda_illumination: float = 0.3
 
-    lambda_reflect: float = 1.0  # Reduced to balance with other losses
-    lambda_smooth: float = 200.0  # Reduced as edge-aware is more effective
-    lambda_illum_color: float = 2.0  # Increased to enforce color constancy
+    lambda_reflect: float = 1.0  
+    lambda_smooth: float = 200.0 
+    lambda_illum_color: float = 2.0
     lambda_illum_exposure: float = 0
     lambda_illum_variance: float = 0.05
     lambda_illum_contrast: float = 0.1
-    lambda_illum_curve: float = 1.0  # Slightly reduced
+    lambda_illum_curve: float = 1.0  
     lambda_illum_exposure_local: float = 0
 
-    lambda_laplacian: float = 0.5  # Increased to preserve details
+    lambda_laplacian: float = 0.5 
     lambda_gradient: float = 0.01
     lambda_frequency: float = 0
-    lambda_edge_aware_smooth: float = 20.0  # Slightly increased
+    lambda_edge_aware_smooth: float = 20.0  
     lambda_illum_frequency: float = 0.1
-    lambda_exclusion: float = 2.0  # Reduced
-    lambda_perceptual: float = 0.8  # Added perceptual loss
-    lambda_clipping: float = 1.5  # Added clipping penalty
+    lambda_exclusion: float = 2.0  
+    lambda_perceptual: float = 0.8 
+    lambda_clipping: float = 1.5 
 
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
@@ -124,8 +124,8 @@ class Config:
     predictive_adaptive_curve: bool = True
     spatial_film: bool = False
     use_dilated_convs: bool = True
-    use_se_blocks: bool = True  # Enabled
-    use_spatial_attention: bool = True  # Enabled
+    use_se_blocks: bool = True  
+    use_spatial_attention: bool = True  
     enable_dynamic_weights: bool = False
     use_pixel_shuffle: bool = True
     use_stride_conv: bool = True
