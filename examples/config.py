@@ -99,7 +99,7 @@ class Config:
     
     lambda_smooth: float = 0.0 
     lambda_illum_color: float = 0.0
-    lambda_illum_exposure: float = 0.0
+    lambda_illum_exposure: float = 1.0
     lambda_illum_exposure_local: float = 0
     lambda_illum_variance: float = 0.0
     lambda_illum_curve: float = 1
