@@ -102,7 +102,7 @@ class Config:
     lambda_illum_exposure: float = 1.0
     lambda_illum_exposure_local: float = 0
     lambda_illum_variance: float = 0.0
-    lambda_illum_curve: float = 1
+    lambda_illum_curve: float = 1.0
 
     lambda_laplacian: float = 0
     lambda_gradient: float = 0
@@ -119,11 +119,11 @@ class Config:
     use_refinement_net: bool = False
     use_reflectance_refinement: bool = False
 
-    predictive_adaptive_curve: bool = True
+    predictive_adaptive_curve: bool = False
     spatial_film: bool = False
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
-    use_spatial_attention: bool = True
+    use_spatial_attention: bool = False
     enable_dynamic_weights: bool = False 
     use_pixel_shuffle: bool = True
     use_stride_conv: bool = True
