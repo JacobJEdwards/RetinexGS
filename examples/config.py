@@ -118,7 +118,7 @@ class Config:
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False
 
-    predictive_adaptive_curve: bool = False
+    predictive_adaptive_curve: bool = True
     spatial_film: bool = False 
     use_dilated_convs: bool = True
     use_se_blocks: bool = True

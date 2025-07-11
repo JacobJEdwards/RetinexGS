@@ -145,11 +145,9 @@ class AdaptiveCurveLoss(nn.Module):
 
 
         low_mask = (output < self.low_thresh).float()
-        # Apply alpha_map directly
         low_light_loss = torch.mean(low_mask * torch.abs(output - alpha_map))
 
         high_mask = (output > self.high_thresh).float()
-        # Apply beta_map directly
         high_light_loss = torch.mean(high_mask * torch.abs(output - beta_map))
 
         grad_y = (output[:, :, 1:, :] - output[:, :, :-1, :]) ** 2
