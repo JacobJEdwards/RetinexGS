@@ -250,7 +250,7 @@ class Runner:
             self.loss_illum_frequency.compile()
             self.loss_exclusion = ExclusionLoss().to(self.device)
             self.loss_exclusion.compile()
-            
+
             self.brisque_loss = piq.BRISQUELoss().to(self.device)
 
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
@@ -789,7 +789,7 @@ class Runner:
                         step,
                     )
 
-            if not cfg.predictive_adaptive_curve:
+            if cfg.predictive_adaptive_curve:
                 self.writer.add_scalar(
                     "retinex_net/learnable_alpha",
                     self.loss_adaptive_curve.alpha.item(),
@@ -857,13 +857,13 @@ class Runner:
                     reflectance_map,
                     step,
                 )
-        
+
         # brisque_score = self.brisque_loss(
         #     reflectance_map.clamp(0, 1)
-        # ) 
-        
+        # )
+
         # total_loss += brisque_score * 10
-        
+
         return total_loss
 
     def pre_train_retinex(self) -> None:
