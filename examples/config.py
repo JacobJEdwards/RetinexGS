@@ -102,7 +102,6 @@ class Config:
     lambda_illum_exposure: float = 0.0
     lambda_illum_exposure_local: float = 0
     lambda_illum_variance: float = 0.0
-    lambda_illum_contrast: float = 1.0
     lambda_illum_curve: float = 1
 
     lambda_laplacian: float = 0
@@ -119,7 +118,7 @@ class Config:
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False
 
-    predictive_adaptive_curve: bool = True
+    predictive_adaptive_curve: bool = False
     spatial_film: bool = False 
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
