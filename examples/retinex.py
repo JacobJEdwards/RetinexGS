@@ -34,22 +34,55 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import Tensor
+
 class SpatiallyFiLMLayer(nn.Module):
-    def __init__(self, feature_channels: int):
-        super(SpatiallyFiLMLayer, self).__init__()
-        self.gamma_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
-        self.beta_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
+    def __init__(self, feature_channels: int, conditioning_channels: int):
+        super().__init__()
+
+        self.param_predictor = nn.Sequential(
+            nn.Conv2d(conditioning_channels, feature_channels, kernel_size=3, padding=1, padding_mode='replicate'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
+        )
+
+        nn.init.zeros_(self.param_predictor[-1].weight)
+        nn.init.zeros_(self.param_predictor[-1].bias)
 
     def forward(self, x: Tensor, conditioning_features: Tensor) -> Tensor:
-        gamma = self.gamma_predictor(conditioning_features)
-        beta = self.beta_predictor(conditioning_features)
+        mod_params = self.param_predictor(conditioning_features)
 
-        if gamma.shape[2:] != x.shape[2:]:
-            gamma = F.interpolate(gamma, size=x.shape[2:], mode='bilinear', align_corners=False)
-        if beta.shape[2:] != x.shape[2:]:
-            beta = F.interpolate(beta, size=x.shape[2:], mode='bilinear', align_corners=False)
+        if mod_params.shape[2:] != x.shape[2:]:
+            mod_params = F.interpolate(
+                mod_params,
+                size=x.shape[2:],
+                mode='bilinear',
+                align_corners=False
+            )
 
-        return gamma * x + beta
+        gamma, beta = torch.chunk(mod_params, 2, dim=1)
+
+        return (1 + gamma) * x + beta
+
+# class SpatiallyFiLMLayer(nn.Module):
+#     def __init__(self, feature_channels: int):
+#         super(SpatiallyFiLMLayer, self).__init__()
+#         self.gamma_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
+#         self.beta_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
+# 
+#     def forward(self, x: Tensor, conditioning_features: Tensor) -> Tensor:
+#         gamma = self.gamma_predictor(conditioning_features)
+#         beta = self.beta_predictor(conditioning_features)
+# 
+#         if gamma.shape[2:] != x.shape[2:]:
+#             gamma = F.interpolate(gamma, size=x.shape[2:], mode='bilinear', align_corners=False)
+#         if beta.shape[2:] != x.shape[2:]:
+#             beta = F.interpolate(beta, size=x.shape[2:], mode='bilinear', align_corners=False)
+# 
+#         return gamma * x + beta
 
 class FiLMLayer(nn.Module):
     def __init__(self, embed_dim: int, feature_channels: int):
@@ -195,14 +228,6 @@ class MultiScaleRetinexNet(nn.Module):
         self.enable_dynamic_weights = enable_dynamic_weights
         if self.enable_dynamic_weights:
             self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
-            # self.loss_weight_head = nn.Sequential(
-            #     nn.AdaptiveAvgPool2d(1),
-            #     nn.Flatten(),
-            #     nn.Linear(in_channels, 64),
-            #     nn.SiLU(),
-            #     nn.Linear(64, 10),
-            #     nn.Sigmoid()
-            # )
 
         if self.use_stride_conv:
             self.pool1 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1, padding_mode="replicate")
@@ -211,7 +236,6 @@ class MultiScaleRetinexNet(nn.Module):
             self.pool1 = nn.MaxPool2d(2, 2)
             self.pool2 = nn.MaxPool2d(2, 2)
 
-        # self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1, padding_mode="replicate")
         self.bn2 = nn.InstanceNorm2d(64)
 
@@ -247,7 +271,7 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Conv2d(out_channels, out_channels, kernel_size=1, padding_mode="replicate")
             )
         else:
-            self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2,)
+            self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
             self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1, padding_mode="replicate")
