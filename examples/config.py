@@ -89,27 +89,6 @@ class Config:
 
     use_fused_bilagrid: bool = False
 
-    enable_clipiqa_loss: bool = False
-    clipiqa_lambda: float = 10
-    clipiqa_model_type: Literal["clipiqa"] = "clipiqa"
-    num_novel_views: int = 100
-    num_novel_to_render: int = 4
-    novel_view_translation_pertube: float = 0.5
-    novel_view_rotation_pertube: float = 20.0
-    enable_loss_schedule: bool = True
-    clipiqa_lambda_start_factor: float = 0.01
-    clipiqa_lambda_warmup_steps: int = 5000
-    clipiqa_novel_view_frequency: int = 8
-
-    enable_hard_view_mining: bool = False
-    hard_view_mining_pool_size: int = 200
-    hard_view_mining_every: int = 1000
-    hard_view_mining_batch_size: int = 1
-
-    enable_variational_intrinsics: bool = False
-    focal_length_perturb_factor: float = 0.1
-    principal_point_perturb_pixel: int = 10
-
     enable_retinex: bool = True
     multi_scale_retinex: bool = True
 
