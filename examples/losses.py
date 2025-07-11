@@ -494,8 +494,9 @@ class IlluminationFrequencyLoss(nn.Module):
         return loss
 
 class EdgeAwareSmoothingLoss(nn.Module):
-    def __init__(self, initial_gamma: float = 0.1) -> None:
+    def __init__(self, initial_gamma: float = 0.1, learn_gamma: bool = True) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
+        self.learn_gamma = learn_gamma
         self.initial_gamma = initial_gamma
         self.gamma = nn.Parameter(torch.tensor(initial_gamma, dtype=torch.float32))
 
@@ -516,8 +517,12 @@ class EdgeAwareSmoothingLoss(nn.Module):
         dx_guide = guide_img_gray[:, :, :, 1:] - guide_img_gray[:, :, :, :-1]
         dy_guide = guide_img_gray[:, :, 1:, :] - guide_img_gray[:, :, :-1, :]
 
-        weights_x = torch.exp(-torch.abs(dx_guide) / (self.gamma.abs() + 1e-8))
-        weights_y = torch.exp(-torch.abs(dy_guide) / (self.gamma.abs() + 1e-8))
+        if self.learn_gamma:
+            weights_x = torch.exp(-torch.abs(dx_guide) / (self.gamma.abs() + 1e-8))
+            weights_y = torch.exp(-torch.abs(dy_guide) / (self.gamma.abs() + 1e-8))
+        else:
+            weights_x = torch.exp(-torch.abs(dx_guide) / (self.initial_gamma + 1e-8))
+            weights_y = torch.exp(-torch.abs(dy_guide) / (self.initial_gamma + 1e-8))
 
         loss_x = torch.mean(weights_x * torch.abs(dx_img))
         loss_y = torch.mean(weights_y * torch.abs(dy_img))
