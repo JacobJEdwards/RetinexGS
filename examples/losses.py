@@ -123,13 +123,13 @@ class AdaptiveCurveLoss(nn.Module):
 
         # self.low_thresh = low_thresh
         # self.high_thresh = high_thresh
-        self.learn_thresholds = learn_thresholds
-        if self.learn_thresholds:
-            self.low_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_low_thresh, dtype=torch.float32))]))
-            self.high_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_high_thresh, dtype=torch.float32))]))
-        else:
-            self.low_thresh = initial_low_thresh
-            self.high_thresh = initial_high_thresh
+        # self.learn_thresholds = learn_thresholds
+        # if self.learn_thresholds:
+        #     self.low_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_low_thresh, dtype=torch.float32))]))
+        #     self.high_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_high_thresh, dtype=torch.float32))]))
+        # else:
+        self.low_thresh = initial_low_thresh
+        self.high_thresh = initial_high_thresh
 
         self.learn_lambdas = learn_lambdas
         if self.learn_lambdas:
@@ -152,12 +152,12 @@ class AdaptiveCurveLoss(nn.Module):
         if beta_map.shape[2:] != output.shape[2:]:
             beta_map = F.interpolate(beta_map, size=output.shape[2:], mode='bilinear', align_corners=False)
 
-        if self.learn_thresholds:
-            low_thresh_val = torch.sigmoid(self.low_thresh)
-            high_thresh_val = torch.sigmoid(self.high_thresh)
-        else:
-            low_thresh_val = self.low_thresh
-            high_thresh_val = self.high_thresh
+        # if self.learn_thresholds:
+        #     low_thresh_val = torch.sigmoid(self.low_thresh)
+        #     high_thresh_val = torch.sigmoid(self.high_thresh)
+        # else:
+        low_thresh_val = self.low_thresh
+        high_thresh_val = self.high_thresh
 
         low_mask = (output < low_thresh_val).float()
         low_light_loss = torch.mean(low_mask * torch.abs(output - alpha_map))
