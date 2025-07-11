@@ -6,7 +6,7 @@ from torch import Tensor
 class SpatialAttentionModule(nn.Module):
     def __init__(self, kernel_size: int = 7) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False)
+        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False, padding_mode='replicate')
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: Tensor) -> Tensor:
