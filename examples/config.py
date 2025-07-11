@@ -112,14 +112,14 @@ class Config:
     lambda_exclusion: float = 5.0
     lambda_clipping: float = 10.0
 
-    pretrain_retinex: bool = False
+    pretrain_retinex: bool = True
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False
 
     predictive_adaptive_curve: bool = True
-    spatial_film: bool = True 
+    spatial_film: bool = False 
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
     use_spatial_attention: bool = False
@@ -129,7 +129,7 @@ class Config:
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
-    learn_local_exposure: bool = False
+    learn_local_exposure: bool = True
     learn_global_exposure: bool = True
 
     use_illum_opt: bool = True
