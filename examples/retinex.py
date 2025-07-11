@@ -314,9 +314,9 @@ class MultiScaleRetinexNet(nn.Module):
             init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             if m.bias is not None:
                 init.constant_(m.bias, 0)
-        elif isinstance(m, nn.InstanceNorm2d):
-            init.constant_(m.weight, 1)
-            init.constant_(m.bias, 0)
+        # elif isinstance(m, nn.InstanceNorm2d):
+        #     init.constant_(m.weight, 1)
+        #     init.constant_(m.bias, 0)
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu(self.bn1(self.conv1(x)))
