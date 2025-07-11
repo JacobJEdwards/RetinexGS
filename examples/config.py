@@ -121,7 +121,7 @@ class Config:
     use_denoising_embedding: bool = False
     
     predictive_adaptive_curve: bool = True
-    spatial_film: bool = False
+    spatial_film: bool = True
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
     use_spatial_attention: bool = False
