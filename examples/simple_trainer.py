@@ -3,11 +3,10 @@ import math
 import os
 import time
 from collections import defaultdict
-from typing import cast, Any
+from typing import Any
 
 import imageio
 import kornia.color
-import kornia.augmentation as K
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -47,19 +46,16 @@ from losses import (
 )
 from rendering_double import rasterization_dual
 from gsplat import export_splats
-from gsplat.compression import PngCompression
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
 from gsplat.rendering import rasterization
 from gsplat.strategy import MCMCStrategy, DefaultStrategy
 from utils import (
-    AppearanceOptModule,
-    CameraOptModule,
     knn,
     rgb_to_sh,
     set_random_seed,
 )
-from retinex import RetinexNet, MultiScaleRetinexNet, RefinementNet
+from retinex import RetinexNet, MultiScaleRetinexNet
 
 
 def create_splats_with_optimizers(
@@ -194,7 +190,7 @@ class Runner:
             # is_mip360=True,
         )
         self.trainset = Dataset(
-            self.parser, patch_size=cfg.patch_size, load_depths=cfg.depth_loss
+            self.parser, patch_size=cfg.patch_size, load_depths=False
         )
         self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
@@ -315,7 +311,7 @@ class Runner:
                 [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
             )
 
-        feature_dim = 32 if cfg.app_opt else None
+        feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
             self.parser,
             init_type=cfg.init_type,
@@ -331,8 +327,8 @@ class Runner:
             shN_lr=cfg.shN_lr,
             scene_scale=self.scene_scale,
             sh_degree=cfg.sh_degree,
-            sparse_grad=cfg.sparse_grad,
-            visible_adam=cfg.visible_adam,
+            sparse_grad=False,
+            visible_adam=False,
             batch_size=cfg.batch_size,
             feature_dim=feature_dim,
             device=self.device,
@@ -350,76 +346,6 @@ class Runner:
             self.strategy_state = self.cfg.strategy.initialize_state()
         else:
             assert_never(self.cfg.strategy)
-
-        self.compression_method = None
-        if cfg.compression is not None:
-            if cfg.compression == "png":
-                self.compression_method = PngCompression()
-            else:
-                raise ValueError(f"Unknown compression strategy: {cfg.compression}")
-
-        self.pose_optimizers = []
-        if cfg.pose_opt:
-            self.pose_adjust = CameraOptModule(len(self.trainset)).to(self.device)
-            self.pose_adjust.compile()
-            self.pose_adjust.zero_init()
-            self.pose_optimizers = [
-                torch.optim.AdamW(
-                    self.pose_adjust.parameters(),
-                    lr=cfg.pose_opt_lr * math.sqrt(cfg.batch_size),
-                    weight_decay=cfg.pose_opt_reg,
-                )
-            ]
-            if world_size > 1:
-                self.pose_adjust = DDP(self.pose_adjust)
-
-        if cfg.pose_noise > 0.0:
-            self.pose_perturb = CameraOptModule(len(self.trainset)).to(self.device)
-            self.pose_perturb.compile()
-            self.pose_perturb.random_init(cfg.pose_noise)
-            if world_size > 1:
-                self.pose_perturb = DDP(self.pose_perturb)
-
-        self.app_optimizers = []
-        if cfg.app_opt:
-            assert feature_dim is not None
-            self.app_module = AppearanceOptModule(
-                len(self.trainset), feature_dim, cfg.app_embed_dim, cfg.sh_degree
-            ).to(self.device)
-            self.app_module.compile()
-            torch.nn.init.zeros_(cast(Tensor, self.app_module.color_head[-1].weight))
-            torch.nn.init.zeros_(cast(Tensor, self.app_module.color_head[-1].bias))
-            self.app_optimizers = [
-                torch.optim.Adam(
-                    self.app_module.embeds.parameters(),
-                    lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size) * 10.0,
-                    weight_decay=cfg.app_opt_reg,
-                ),
-                torch.optim.Adam(
-                    self.app_module.color_head.parameters(),
-                    lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size),
-                ),
-            ]
-            if world_size > 1:
-                self.app_module = DDP(self.app_module)
-
-        self.bil_grid_optimizers = []
-        if cfg.use_bilateral_grid:
-            global BilateralGrid
-            assert BilateralGrid is not None
-            self.bil_grids = BilateralGrid(
-                len(self.trainset),
-                grid_X=cfg.bilateral_grid_shape[0],
-                grid_Y=cfg.bilateral_grid_shape[1],
-                grid_W=cfg.bilateral_grid_shape[2],
-            ).to(self.device)
-            self.bil_grid_optimizers = [
-                torch.optim.AdamW(
-                    self.bil_grids.parameters(),
-                    lr=2e-3 * math.sqrt(cfg.batch_size),
-                    eps=1e-15,
-                )
-            ]
 
         self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
         self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
@@ -471,20 +397,10 @@ class Runner:
         opacities = torch.sigmoid(self.splats["opacities"])
 
         image_ids = kwargs.pop("image_ids", None)
-        if self.cfg.app_opt:
-            colors_feat = self.app_module(
-                features=self.splats["features"],
-                embed_ids=image_ids,
-                dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
-                sh_degree=kwargs.pop("sh_degree", self.cfg.sh_degree),
-            )
-            colors_feat = colors_feat + self.splats["colors"]
-            colors = torch.sigmoid(colors_feat)
-        else:
-            colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
+        colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
         rasterize_mode: Literal["antialiased", "classic"] = (
-            "antialiased" if self.cfg.antialiased else "classic"
+           "classic"
         )
 
         if not self.cfg.enable_retinex:
@@ -498,18 +414,18 @@ class Runner:
                 Ks=Ks,
                 width=width,
                 height=height,
-                packed=self.cfg.packed,
+                packed=False,
                 absgrad=(
                     self.cfg.strategy.absgrad
                     if isinstance(self.cfg.strategy, DefaultStrategy)
                     else False
                 ),
-                sparse_grad=self.cfg.sparse_grad,
+                sparse_grad=False,
                 rasterize_mode=rasterize_mode,
                 distributed=self.world_size > 1,
                 camera_model=self.cfg.camera_model,
-                with_ut=self.cfg.with_ut,
-                with_eval3d=self.cfg.with_eval3d,
+                with_ut=False,
+                with_eval3d=False,
                 **kwargs,
             )
             if masks is not None:
@@ -545,13 +461,13 @@ class Runner:
             Ks=Ks,  # [C, 3, 3]
             width=width,
             height=height,
-            packed=self.cfg.packed,
+            packed=False,
             absgrad=(
                 self.cfg.strategy.absgrad
                 if isinstance(self.cfg.strategy, DefaultStrategy)
                 else False
             ),
-            sparse_grad=self.cfg.sparse_grad,
+            sparse_grad=False,
             rasterize_mode=rasterize_mode,
             **kwargs,
         )
@@ -979,30 +895,6 @@ class Runner:
                 )
             )
 
-        if cfg.pose_opt:
-            schedulers.append(
-                torch.optim.lr_scheduler.ExponentialLR(
-                    self.pose_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
-                )
-            )
-        if cfg.use_bilateral_grid:
-            global total_variation_loss
-
-            schedulers.append(
-                torch.optim.lr_scheduler.ChainedScheduler(
-                    [
-                        torch.optim.lr_scheduler.LinearLR(
-                            self.bil_grid_optimizers[0],
-                            start_factor=0.01,
-                            total_iters=1000,
-                        ),
-                        torch.optim.lr_scheduler.ExponentialLR(
-                            self.bil_grid_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
-                        ),
-                    ]
-                )
-            )
-
         if cfg.pretrain_retinex and cfg.enable_retinex:
             self.pre_train_retinex()
 
@@ -1043,19 +935,10 @@ class Runner:
 
                 masks = data["mask"].to(device) if "mask" in data else None
 
-                if cfg.depth_loss:
-                    points = data["points"].to(device)
-                    depths_gt = data["depths"].to(device)
-                else:
-                    points = None
-                    depths_gt = None
+                points = None
+                depths_gt = None
 
                 height, width = pixels.shape[1:3]
-
-                if cfg.pose_noise:
-                    camtoworlds = self.pose_perturb(camtoworlds, image_ids)
-                if cfg.pose_opt:
-                    camtoworlds = self.pose_adjust(camtoworlds, image_ids)
 
                 out = self.rasterize_splats(
                     camtoworlds=camtoworlds,
@@ -1066,7 +949,7 @@ class Runner:
                     near_plane=cfg.near_plane,
                     far_plane=cfg.far_plane,
                     image_ids=image_ids,
-                    render_mode="RGB+ED" if cfg.depth_loss else "RGB",
+                    render_mode="RGB",
                     masks=masks,
                 )
 
@@ -1092,37 +975,6 @@ class Runner:
                 colors_low = torch.clamp(colors_low, 0.0, 1.0)
                 colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
-
-                if cfg.use_bilateral_grid:
-                    assert slice_func is not None, (
-                        "slice_func must be defined for bilateral grid slicing"
-                    )
-
-                    grid_y, grid_x = torch.meshgrid(
-                        (torch.arange(height, device=self.device) + 0.5) / height,
-                        (torch.arange(width, device=self.device) + 0.5) / width,
-                        indexing="ij",
-                        )
-                    grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)
-
-                    colors_low = slice_func(
-                        self.bil_grids,
-                        grid_xy.expand(colors_low.shape[0], -1, -1, -1),
-                        colors_low,
-                        image_ids.unsqueeze(-1),
-                    )["rgb"]
-
-                    colors_enh = slice_func(
-                        self.bil_grids,
-                        grid_xy.expand(colors_enh.shape[0], -1, -1, -1),
-                        colors_enh,
-                        image_ids.unsqueeze(-1),
-                    )["rgb"]
-
-                if cfg.random_bkgd:
-                    bkgd = torch.rand(1, 3, device=device)
-                    colors_low += bkgd * (1.0 - alphas_low)
-                    colors_enh += bkgd * (1.0 - alphas_enh)
 
                 info["means2d"].retain_grad()
 
@@ -1263,77 +1115,6 @@ class Runner:
                     info=info,
                 )
 
-                depthloss_value = torch.tensor(0.0, device=device)
-
-                if cfg.depth_loss:
-                    assert depths_gt is not None, (
-                        "Depth ground truth is required for depth loss"
-                    )
-                    assert points is not None, "Points are required for depth loss"
-                    assert depths_low is not None, (
-                        "Low-resolution depths are required for depth loss"
-                    )
-
-                    # query depths from depth map
-                    points = torch.stack(
-                        [
-                            points[:, :, 0] / (width - 1) * 2 - 1,
-                            points[:, :, 1] / (height - 1) * 2 - 1,
-                            ],
-                        dim=-1,
-                    )  # normalize to [-1, 1]
-                    grid = points.unsqueeze(2)  # [1, M, 1, 2]
-                    depths_low = F.grid_sample(
-                        depths_low.permute(0, 3, 1, 2), grid, align_corners=True
-                    )  # [1, 1, M, 1]
-                    depths_low = depths_low.squeeze(3).squeeze(1)  # [1, M]
-                    # calculate loss in disparity space
-                    disp = torch.where(
-                        depths_low > 0.0, 1.0 / depths_low, torch.zeros_like(depths_low)
-                    )
-                    disp_gt = 1.0 / depths_gt  # [1, M]
-                    depthloss = F.l1_loss(disp, disp_gt) * self.scene_scale
-                    loss += depthloss * cfg.depth_lambda
-
-                    if cfg.enable_retinex:
-                        assert depths_enh is not None, (
-                            "Enhanced depths are required for enhanced depth loss"
-                        )
-
-                        # query depths from depth map
-                        points = torch.stack(
-                            [
-                                points[:, :, 0] / (width - 1) * 2 - 1,
-                                points[:, :, 1] / (height - 1) * 2 - 1,
-                                ],
-                            dim=-1,
-                        )  # normalize to [-1, 1]
-                        grid = points.unsqueeze(2)  # [1, M, 1, 2]
-                        depths_enh = F.grid_sample(
-                            depths_enh.permute(0, 3, 1, 2), grid, align_corners=True
-                        )  # [1, 1, M, 1]
-                        depths_enh = depths_enh.squeeze(3).squeeze(1)  # [1, M]
-                        # calculate loss in disparity space
-                        disp = torch.where(
-                            depths_enh > 0.0,
-                            1.0 / depths_enh,
-                            torch.zeros_like(depths_enh),
-                            )
-                        disp_gt = 1.0 / depths_gt  # [1, M]
-                        depthloss_enh = F.l1_loss(disp, disp_gt) * self.scene_scale
-                        loss += depthloss_enh * cfg.depth_lambda
-
-                tvloss_value: Tensor = torch.tensor(0.0, device=device)
-                if cfg.use_bilateral_grid:
-                    global total_variation_loss
-
-                    assert total_variation_loss is not None
-
-                    tvloss_value = cast(
-                        Tensor, 10 * total_variation_loss(self.bil_grids.grids)
-                    )
-                    loss += tvloss_value
-
                 if cfg.opacity_reg > 0.0:
                     loss += (
                             cfg.opacity_reg
@@ -1353,13 +1134,6 @@ class Runner:
                     f"retinex_loss={loss_reflectance.item():.3f} "
                 )
             desc_parts.append(f"sh_deg={sh_degree_to_use}")
-            if cfg.depth_loss:
-                desc_parts.append(f"depth_l={depthloss_value.item():.6f}")
-            if cfg.use_bilateral_grid:
-                desc_parts.append(f"tv_l={tvloss_value.item():.6f}")
-            if cfg.pose_opt and cfg.pose_noise:
-                pose_err = F.l1_loss(camtoworlds_gt, camtoworlds)
-                desc_parts.append(f"pose_err={pose_err.item():.6f}")
             pbar.set_description("| ".join(desc_parts))
 
             if world_rank == 0 and cfg.tb_every > 0 and step % cfg.tb_every == 0:
@@ -1396,12 +1170,6 @@ class Runner:
                     self.writer.add_scalar(
                         "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
                     )
-                if cfg.depth_loss:
-                    self.writer.add_scalar(
-                        "train/depthloss", depthloss_value.item(), step
-                    )
-                if cfg.use_bilateral_grid:
-                    self.writer.add_scalar("train/tvloss", tvloss_value.item(), step)
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(
@@ -1450,25 +1218,6 @@ class Runner:
                 ) as f:
                     json.dump(stats_save, f)
                 data_save = {"step": step, "splats": self.splats.state_dict()}
-                if cfg.pose_opt:
-                    data_save["pose_adjust"] = (
-                        self.pose_adjust.module.state_dict()
-                        if world_size > 1
-                        else self.pose_adjust.state_dict()
-                    )
-                if cfg.app_opt:
-                    data_save["app_module"] = (
-                        self.app_module.module.state_dict()
-                        if world_size > 1
-                        else self.app_module.state_dict()
-                    )
-                if cfg.use_bilateral_grid:
-                    data_save["bil_grids"] = (
-                        self.bil_grids.module.state_dict()
-                        if world_size > 1
-                        else self.bil_grids.state_dict()
-                    )
-
                 if cfg.enable_retinex:
                     data_save["retinex_net"] = (
                         self.retinex_net.module.state_dict()
@@ -1481,22 +1230,9 @@ class Runner:
             if (
                     step in [i - 1 for i in cfg.ply_steps] or step == max_steps - 1
             ) and cfg.save_ply:
-                if self.cfg.app_opt:
-                    rgb_export_feat = self.app_module(
-                        features=self.splats["features"],
-                        embed_ids=None,
-                        dirs=torch.zeros_like(self.splats["means"][None, :, :]),
-                        sh_degree=sh_degree_to_use,
-                    )
-                    rgb_export_feat = rgb_export_feat + self.splats["colors"]
-                    rgb_export = torch.sigmoid(rgb_export_feat).squeeze(0).unsqueeze(1)
-                    sh0_export = rgb_to_sh(rgb_export)
-                    shN_export = torch.empty(
-                        [sh0_export.shape[0], 0, 3], device=sh0_export.device
-                    )
-                else:
-                    sh0_export = self.splats["sh0"]
-                    shN_export = self.splats["shN"]
+                sh0_export = self.splats["sh0"]
+                shN_export = self.splats["shN"]
+
                 export_splats(
                     means=self.splats["means"],
                     scales=self.splats["scales"],
@@ -1507,47 +1243,8 @@ class Runner:
                     save_to=f"{self.ply_dir}/point_cloud_{step}.ply",
                 )
 
-            if cfg.sparse_grad:
-                assert cfg.packed
-                gaussian_ids = info["gaussian_ids"]
-                for k in self.splats.keys():
-                    grad_val = self.splats[k].grad
-                    if grad_val is None or grad_val.is_sparse:
-                        continue
-                    self.splats[k].grad = torch.sparse_coo_tensor(
-                        indices=gaussian_ids[None],
-                        values=grad_val[gaussian_ids],
-                        size=self.splats[k].size(),
-                        is_coalesced=len(Ks) == 1,
-                    )
-
-            if cfg.visible_adam:
-                if cfg.packed:
-                    visibility_mask = torch.zeros_like(
-                        self.splats["opacities"], dtype=torch.bool
-                    )
-                    visibility_mask.scatter_(0, info["gaussian_ids"], 1)
-                else:
-                    visibility_mask = (info["radii"] > 0).all(-1).any(0)
-            else:
-                visibility_mask = None
 
             for optimizer in self.optimizers.values():
-                if cfg.visible_adam:
-                    optimizer.step(visibility_mask)
-                else:
-                    optimizer.step()
-                optimizer.zero_grad()
-            for optimizer in self.pose_optimizers:
-                # scaler.step(optimizer)
-                optimizer.step()
-                optimizer.zero_grad()
-            for optimizer in self.app_optimizers:
-                # scaler.step(optimizer)
-                optimizer.step()
-                optimizer.zero_grad()
-            for optimizer in self.bil_grid_optimizers:
-                # scaler.step(optimizer)
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -1578,7 +1275,7 @@ class Runner:
                     state=self.strategy_state,
                     step=step,
                     info=info,
-                    packed=cfg.packed,
+                    packed=False,
                 )
             elif isinstance(self.cfg.strategy, MCMCStrategy):
                 self.cfg.strategy.step_post_backward(
@@ -1596,8 +1293,6 @@ class Runner:
                 self.eval(step)
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.render_traj(step)
-            if cfg.compression is not None and step in [i - 1 for i in cfg.eval_steps]:
-                self.run_compression(step=step)
 
     @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
@@ -1692,24 +1387,6 @@ class Runner:
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
                 metrics["lpips"].append(self.lpips(colors_p, pixels_p))
 
-                if cfg.eval_niqe and self.niqe_metric is not None:
-                    niqe_score = self.niqe_metric(colors_p.contiguous())
-                    metrics["niqe"].append(niqe_score)
-
-                    if cfg.enable_retinex:
-                        colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-                        niqe_score_enh = self.niqe_metric(colors_enh_p.contiguous())
-                        metrics["niqe_enh"].append(niqe_score_enh)
-
-                if cfg.use_bilateral_grid:
-                    global color_correct
-                    assert color_correct is not None
-                    cc_colors = color_correct(colors_low, pixels)
-                    cc_colors_p = cc_colors.permute(0, 3, 1, 2)
-                    metrics["cc_psnr"].append(self.psnr(cc_colors_p, pixels_p))
-                    metrics["cc_ssim"].append(self.ssim(cc_colors_p, pixels_p))
-                    metrics["cc_lpips"].append(self.lpips(cc_colors_p, pixels_p))
-
                 if cfg.enable_retinex:
                     with torch.no_grad():
                         # _, _, reflectance_target = self.get_retinex_output(image_id, pixels)
@@ -1748,18 +1425,6 @@ class Runner:
                 f"SSIM: {stats_eval.get('ssim', 0):.4f}",
                 f"LPIPS: {stats_eval.get('lpips', 0):.3f}",
             ]
-            if cfg.eval_niqe and self.niqe_metric is not None and "niqe" in stats_eval:
-                print_parts_eval.append(
-                    f"BRISQUE: {stats_eval.get('niqe', 0):.3f} (lower is better)"
-                )
-            if cfg.use_bilateral_grid:
-                print_parts_eval.extend(
-                    [
-                        f"CC_PSNR: {stats_eval.get('cc_psnr', 0):.3f}",
-                        f"CC_SSIM: {stats_eval.get('cc_ssim', 0):.4f}",
-                        f"CC_LPIPS: {stats_eval.get('cc_lpips', 0):.3f}",
-                    ]
-                )
             print_parts_eval.extend(
                 [
                     f"Time: {stats_eval.get('ellipse_time', 0):.3f}s/image",
@@ -1877,44 +1542,15 @@ class Runner:
                     depths_traj.max() - depths_traj.min() + 1e-10
             )
 
-            if cfg.eval_niqe and self.niqe_metric is not None:
-                colors_traj_nchw = colors_traj.permute(0, 3, 1, 2).contiguous()
-                niqe_score_traj = self.niqe_metric(colors_traj_nchw)
-                all_frame_niqe_scores.append(niqe_score_traj.item())
-
             canvas_traj_list = [colors_traj, depths_traj_norm.repeat(1, 1, 1, 3)]
             canvas_traj = torch.cat(canvas_traj_list, dim=2).squeeze(0).cpu().numpy()
             canvas_traj_uint8 = (canvas_traj * 255).astype(np.uint8)
             video_writer.append_data(canvas_traj_uint8)
+            
         video_writer.close()
         print(f"Video saved to {video_path}")
 
-        if cfg.eval_niqe and self.niqe_metric is not None and all_frame_niqe_scores:
-            avg_traj_niqe = sum(all_frame_niqe_scores) / len(all_frame_niqe_scores)
-            print(
-                f"Average BRISQUE for trajectory video (step {step}): {avg_traj_niqe:.3f} (Lower is better)"
-            )
-            self.writer.add_scalar(
-                f"render_traj/avg_niqe_step_{step}", avg_traj_niqe, step
-            )
         self.writer.flush()
-
-    @torch.no_grad()
-    def run_compression(self, step: int):
-        if self.compression_method is None:
-            return
-        print("Running compression...")
-        world_rank = self.world_rank
-
-        compress_dir = f"{self.cfg.result_dir}/compression/rank{world_rank}"
-        os.makedirs(compress_dir, exist_ok=True)
-
-        self.compression_method.compress(compress_dir, self.splats.state_dict())
-        splats_c = self.compression_method.decompress(compress_dir)
-        for k_splat in splats_c.keys():
-            self.splats[k_splat].data = splats_c[k_splat].to(self.device)
-        self.eval(step=step, stage="compress")
-
 
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     if world_size > 1 and not cfg_param.disable_viewer:
@@ -1938,24 +1574,10 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
                 runner.splats.load_state_dict(ckpts_loaded[0]["splats"])
 
             step_loaded = ckpts_loaded[0]["step"]
-            if cfg_param.pose_opt and "pose_adjust" in ckpts_loaded[0]:
-                pose_dict = ckpts_loaded[0]["pose_adjust"]
-                if world_size > 1:
-                    runner.pose_adjust.module.load_state_dict(pose_dict)
-                else:
-                    runner.pose_adjust.load_state_dict(pose_dict)
-            if cfg_param.app_opt and "app_module" in ckpts_loaded[0]:
-                app_dict = ckpts_loaded[0]["app_module"]
-                if world_size > 1:
-                    runner.app_module.module.load_state_dict(app_dict)
-                else:
-                    runner.app_module.load_state_dict(app_dict)
 
             print(f"Resuming from checkpoint step {step_loaded}")
             runner.eval(step=step_loaded)
             runner.render_traj(step=step_loaded)
-            if cfg_param.compression is not None:
-                runner.run_compression(step=step_loaded)
     else:
         runner.train()
 
@@ -1988,63 +1610,6 @@ if __name__ == "__main__":
     )
 
     config.adjust_steps(config.steps_scaler)
-
-    if config.use_bilateral_grid or config.use_fused_bilagrid:
-        if config.use_fused_bilagrid:
-            config.use_bilateral_grid = True
-            try:
-                from fused_bilagrid import (
-                    BilateralGrid as FusedBilateralGrid,
-                    color_correct as fused_color_correct,
-                    slice as fused_slice,
-                    total_variation_loss as fused_total_variation_loss,
-                )
-
-                BilateralGrid = FusedBilateralGrid
-                color_correct = fused_color_correct
-                slice_func = fused_slice
-                total_variation_loss = fused_total_variation_loss
-                print("Using Fused Bilateral Grid.")
-            except ImportError:
-                raise ImportError(
-                    "Fused Bilateral Grid components not found. Please ensure it's installed."
-                )
-        else:
-            config.use_bilateral_grid = True
-            try:
-                from lib_bilagrid import (
-                    BilateralGrid as LibBilateralGrid,
-                    color_correct as lib_color_correct,
-                    bi_slice as lib_slice,
-                    total_variation_loss as lib_total_variation_loss,
-                )
-
-                BilateralGrid = LibBilateralGrid
-                color_correct = lib_color_correct
-                slice_func = lib_slice
-                total_variation_loss = lib_total_variation_loss
-                print("Using Standard Bilateral Grid (lib_bilagrid).")
-            except ImportError:
-                raise ImportError(
-                    "Standard Bilateral Grid (lib_bilagrid) components not found."
-                )
-
-    if config.compression == "png":
-        try:
-            import plas
-            import torchpq
-        except ImportError:
-            raise ImportError(
-                "To use PNG compression, you need to install torchpq and plas. "
-                "torchpq: https://github.com/DeMoriarty/TorchPQ "
-                "plas: pip install git+https://github.com/fraunhoferhhi/PLAS.git"
-            )
-
-    if config.with_ut:
-        assert config.with_eval3d, (
-            "Training with UT requires setting `with_eval3d` flag."
-        )
-
     torch.set_float32_matmul_precision("high")
 
     cli(main, config, verbose=True)

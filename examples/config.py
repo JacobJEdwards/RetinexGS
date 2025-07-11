@@ -46,12 +46,6 @@ class Config:
     far_plane: float = 1e10
 
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
-    packed: bool = False
-    sparse_grad: bool = False
-    visible_adam: bool = False
-    antialiased: bool = False
-
-    random_bkgd: bool = False
 
     means_lr: float = 1.6e-4
     scales_lr: float = 5e-3
@@ -63,31 +57,10 @@ class Config:
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 
-    pose_opt: bool = False
-    pose_opt_lr: float = 1e-5
-    pose_opt_reg: float = 1e-6
-    pose_noise: float = 0.0
-
-    app_opt: bool = False
-    app_embed_dim: int = 16
-    app_opt_lr: float = 1e-3
-    app_opt_reg: float = 1e-6
-
-    use_bilateral_grid: bool = False
-    bilateral_grid_shape: tuple[int, int, int] = (16, 16, 8)
-
-    depth_loss: bool = False
-    depth_lambda: float = 1e-2
-
     tb_every: int = 100
     tb_save_image: bool = True
 
     lpips_net: Literal["vgg", "alex"] = "alex"
-
-    with_ut: bool = False
-    with_eval3d: bool = False
-
-    use_fused_bilagrid: bool = False
 
     enable_retinex: bool = True
     multi_scale_retinex: bool = True
@@ -130,12 +103,11 @@ class Config:
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = False
-    learn_local_exposure: bool = False
+    learn_local_exposure: bool = True
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = False
+    learn_edge_aware_gamma: bool = True
 
     use_illum_opt: bool = True
-    eval_niqe: bool = False
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
