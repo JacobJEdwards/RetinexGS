@@ -2,6 +2,35 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+from torchvision import models
+
+# Perceptual Loss (VGG Loss)
+class PerceptualLoss(nn.Module):
+    def __init__(self, feature_layers=None):
+        super(PerceptualLoss, self).__init__()
+        if feature_layers is None:
+            feature_layers = [2, 7, 12, 21, 30]
+        self.vgg = models.vgg19(pretrained=True).features
+        for param in self.vgg.parameters():
+            param.requires_grad = False
+        self.feature_layers = feature_layers
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, x, y):
+        x_features = self.get_features(x)
+        y_features = self.get_features(y)
+        loss = 0
+        for x_feat, y_feat in zip(x_features, y_features):
+            loss += self.mse_loss(x_feat, y_feat)
+        return loss
+
+    def get_features(self, x):
+        features = []
+        for i, model in enumerate(self.vgg):
+            x = model(x)
+            if i in self.feature_layers:
+                features.append(x)
+        return features
 
 
 def gamma_curve(x, g):
@@ -42,9 +71,9 @@ def curve_loss(x, y, z):
     der_z = (z[:, 1:] - z[:, :-1]) / (coor[:, 1:] - coor[:, :-1])
     # consine similarity
     loss = (
-        (1 - torch.mean(F.cosine_similarity(der_x, der_y)))
-        + (1 - torch.mean(F.cosine_similarity(der_y, der_z)))
-        + (1 - torch.mean(F.cosine_similarity(der_x, der_z)))
+            (1 - torch.mean(F.cosine_similarity(der_x, der_y)))
+            + (1 - torch.mean(F.cosine_similarity(der_y, der_z)))
+            + (1 - torch.mean(F.cosine_similarity(der_x, der_z)))
     )
     return loss
 
@@ -83,7 +112,7 @@ class HistogramPriorLoss(nn.Module):
 
         if step >= 3000:
             total_loss = (
-                0.1 * cl + self.lambda_smooth * smooth_loss + 0.5 * psedo_curve_loss
+                    0.1 * cl + self.lambda_smooth * smooth_loss + 0.5 * psedo_curve_loss
             )
 
         return total_loss
@@ -96,15 +125,15 @@ class AdaptiveCurveLoss(nn.Module):
     lambda3: Tensor
 
     def __init__(
-        self,
-        alpha: float = 0.3,
-        beta: float = 0.7,
-        low_thresh: float = 0.3,
-        high_thresh: float = 0.7,
-        lambda1: float = 1.0,
-        lambda2: float = 1.0,
-        lambda3: float = 1.0,
-        learn_lambdas: bool = False
+            self,
+            alpha: float = 0.3,
+            beta: float = 0.7,
+            low_thresh: float = 0.3,
+            high_thresh: float = 0.7,
+            lambda1: float = 1.0,
+            lambda2: float = 1.0,
+            lambda3: float = 1.0,
+            learn_lambdas: bool = False
     ):
         """
         Custom loss function for controlling curve enhancement and compression.
@@ -131,12 +160,12 @@ class AdaptiveCurveLoss(nn.Module):
             self.register_buffer("lambda1", torch.tensor([lambda1], dtype=torch.float32))
             self.register_buffer("lambda2", torch.tensor([lambda2], dtype=torch.float32))
             self.register_buffer("lambda3", torch.tensor([lambda3], dtype=torch.float32))
-    
+
     def forward_with_maps(
-        self,
-        output: Tensor,
-        alpha_map: Tensor, 
-        beta_map: Tensor,
+            self,
+            output: Tensor,
+            alpha_map: Tensor,
+            beta_map: Tensor,
     ) -> Tensor:
         if alpha_map.shape[2:] != output.shape[2:]:
             alpha_map = F.interpolate(alpha_map, size=output.shape[2:], mode='bilinear', align_corners=False)
@@ -161,18 +190,18 @@ class AdaptiveCurveLoss(nn.Module):
         lambda3_val = F.softplus(self.lambda3) if self.learn_lambdas else self.lambda3
 
         total_loss = (
-            lambda1_val * low_light_loss
-            + lambda2_val * high_light_loss
-            + lambda3_val * smooth_loss
+                lambda1_val * low_light_loss
+                + lambda2_val * high_light_loss
+                + lambda3_val * smooth_loss
         )
 
         return total_loss.squeeze()
-            
+
 
     def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None) -> Tensor:
         if alpha_map is not None and beta_map is not None:
             return self.forward_with_maps(output, alpha_map, beta_map)
-        
+
         low_mask = (output < self.low_thresh).float()
         low_light_loss = torch.mean(low_mask * torch.abs(output - self.alpha))
 
@@ -234,7 +263,7 @@ class SpatialLoss(nn.Module):
     weight_right: Tensor
     weight_up: Tensor
     weight_down: Tensor
-    
+
     def __init__(self, learn_contrast: bool = False, initial_contrast: float = 8.0, num_images: int | None = None) -> \
             None:
         super(SpatialLoss, self).__init__()
@@ -298,7 +327,7 @@ class SpatialLoss(nn.Module):
         D_up = torch.pow(D_org_up * current_contrast - D_enhance_up, 2)
         D_down = torch.pow(D_org_down * current_contrast - D_enhance_down, 2)
         E = D_left + D_right + D_up + D_down
-        
+
         return E.mean()
 
 
@@ -498,7 +527,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
 class LocalExposureLoss(nn.Module):
     def __init__(self, patch_size: int, mean_val: float = 0.5, patch_grid_size: int | tuple[int, int] | None = None) -> None:
         super(LocalExposureLoss, self).__init__()
-        self.patch_size = patch_size 
+        self.patch_size = patch_size
         self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
         self.patch_grid_size = patch_grid_size
 
@@ -516,7 +545,7 @@ class LocalExposureLoss(nn.Module):
 
         mean_val = self.mean_val_tensor if mean_val is None else mean_val
         if self.patch_grid_size is not None:
-            mean_patches = self.patch_pool(x) 
+            mean_patches = self.patch_pool(x)
             d = torch.mean(torch.pow(mean_patches - mean_val, 2))
         else:
             mean = self.global_pool(x)
