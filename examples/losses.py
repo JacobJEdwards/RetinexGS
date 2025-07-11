@@ -525,47 +525,72 @@ class ExclusionLoss(nn.Module):
         """
         super(ExclusionLoss, self).__init__()
         self.level = level
-        self.avg_pool = torch.nn.AvgPool2d(2, stride=2).type(torch.cuda.FloatTensor)
-        self.sigmoid = nn.Sigmoid().type(torch.cuda.FloatTensor)
+        self.avg_pool = torch.nn.AvgPool2d(2, stride=2)
+        self.sigmoid = nn.Sigmoid()
 
     def get_gradients(self, img1, img2):
+        img2 = img2.to(img1.device)
+        self.avg_pool = self.avg_pool.to(img1.device)
+        self.sigmoid = self.sigmoid.to(img1.device)
+
         gradx_loss = []
         grady_loss = []
 
+        n_channels = img1.shape[1]
+
         for l in range(self.level):
+            if img1.shape[2:] != img2.shape[2:]:
+                raise ValueError(
+                    f"ExclusionLoss: Input images must have the same spatial dimensions. "
+                    f"Got {img1.shape} and {img2.shape}"
+                )
+
             gradx1, grady1 = self.compute_gradient(img1)
             gradx2, grady2 = self.compute_gradient(img2)
-            # alphax = 2.0 * torch.mean(torch.abs(gradx1)) / torch.mean(torch.abs(gradx2))
-            # alphay = 2.0 * torch.mean(torch.abs(grady1)) / torch.mean(torch.abs(grady2))
-            alphay = 1
-            alphax = 1
+
+            alphax = 1.0
+            alphay = 1.0
+
             gradx1_s = (self.sigmoid(gradx1) * 2) - 1
             grady1_s = (self.sigmoid(grady1) * 2) - 1
             gradx2_s = (self.sigmoid(gradx2 * alphax) * 2) - 1
             grady2_s = (self.sigmoid(grady2 * alphay) * 2) - 1
 
-            # gradx_loss.append(torch.mean(((gradx1_s ** 2) * (gradx2_s ** 2))) ** 0.25)
-            # grady_loss.append(torch.mean(((grady1_s ** 2) * (grady2_s ** 2))) ** 0.25)
             gradx_loss += self._all_comb(gradx1_s, gradx2_s)
             grady_loss += self._all_comb(grady1_s, grady2_s)
+
             img1 = self.avg_pool(img1)
             img2 = self.avg_pool(img2)
-        return gradx_loss, grady_loss
+
+        return gradx_loss, grady_loss, (n_channels**2)
 
     def _all_comb(self, grad1_s, grad2_s):
-        n_channels = grad1_s.shape[1]
+        B, C1, H, W = grad1_s.shape
+        B, C2, H, W = grad2_s.shape
+
+        grad1_s_r = grad1_s.unsqueeze(2)
+        grad2_s_r = grad2_s.unsqueeze(1)
+
+        term = (grad1_s_r ** 2) * (grad2_s_r ** 2)
+
+        loss = torch.mean(term) ** 0.25
 
         v = []
-        for i in range(n_channels):
-            for j in range(n_channels):
-                v.append(torch.mean(((grad1_s[:, j, :, :] ** 2) * (grad2_s[:, i, :, :] ** 2))) ** 0.25)
+        for i in range(C2):
+            for j in range(C1):
+                v.append(torch.mean((grad1_s[:, j, :, :] ** 2) * (grad2_s[:, i, :, :] ** 2)) ** 0.25)
         return v
-
+    
     def forward(self, img1, img2):
-        gradx_loss, grady_loss = self.get_gradients(img1, img2)
-        loss_gradxy = sum(gradx_loss) / (self.level * 9) + sum(grady_loss) / (self.level * 9)
-        return loss_gradxy / 2.0
+        gradx_loss, grady_loss, n_combinations = self.get_gradients(img1, img2)
 
+        if not n_combinations > 0:
+            return torch.tensor(0.0, device=img1.device)
+
+        loss_gradxy = sum(gradx_loss) / (self.level * n_combinations) + sum(grady_loss) / (self.level * n_combinations)
+        
+        return loss_gradxy / 2.0
+    
     def compute_gradient(self, img):
         gradx = img[:, :, 1:, :] - img[:, :, :-1, :]
         grady = img[:, :, :, 1:] - img[:, :, :, :-1]
