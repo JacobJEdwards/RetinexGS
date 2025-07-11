@@ -82,7 +82,7 @@ class Config:
     lambda_frequency: float = 0
     lambda_edge_aware_smooth: float = 20.0
     lambda_illum_frequency: float = 0.0
-    lambda_exclusion: float = 0.0
+    lambda_exclusion: float = 1.0
     lambda_clipping: float = 0.0
 
     pretrain_retinex: bool = True
@@ -101,7 +101,7 @@ class Config:
     learn_adaptive_curve_lambdas: bool = False
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = True
+    learn_edge_aware_gamma: bool = False
 
     use_illum_opt: bool = True
 
