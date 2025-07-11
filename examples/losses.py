@@ -167,7 +167,6 @@ class AdaptiveCurveLoss(nn.Module):
 
         return total_loss.squeeze()
 
-
     def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None) -> Tensor:
         if alpha_map is not None and beta_map is not None:
             return self.forward_with_maps(output, alpha_map, beta_map)
