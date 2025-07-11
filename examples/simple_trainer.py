@@ -256,13 +256,9 @@ class Runner:
                 self.retinex_net = MultiScaleRetinexNet(
                     in_channels=retinex_in_channels,
                     out_channels=retinex_out_channels,
-                    use_refinement=cfg.use_refinement_net,
-                    illumination_refinement=not cfg.use_reflectance_refinement,
                     predictive_adaptive_curve=cfg.predictive_adaptive_curve,
-                    spatially_film=cfg.spatial_film,
                     use_dilated_convs=cfg.use_dilated_convs,
                     use_se_blocks=cfg.use_se_blocks,
-                    use_spatial_attention=cfg.use_spatial_attention,
                     enable_dynamic_weights=cfg.enable_dynamic_weights,
                     use_stride_conv=cfg.use_stride_conv,
                     use_pixel_shuffle=cfg.use_pixel_shuffle,
@@ -290,13 +286,6 @@ class Runner:
                 lr=1e-4 * math.sqrt(cfg.batch_size),
                 weight_decay=1e-4,
             )
-            if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
-                self.refinement_optimizer = torch.optim.AdamW(
-                    self.retinex_net.refinement_net.parameters(),
-                    lr=1e-4 * math.sqrt(cfg.batch_size),
-                    weight_decay=1e-4,
-                )
-
             self.retinex_embed_dim = 32
             self.retinex_embeds = nn.Embedding(
                 len(self.trainset), self.retinex_embed_dim
@@ -503,10 +492,6 @@ class Runner:
             reflectance_map = torch.exp(log_reflectance_target)
 
         reflectance_map = torch.clamp(reflectance_map, 0, 1)
-
-        if self.cfg.use_reflectance_refinement and self.retinex_net.use_refinement:
-            reflectance_residual = self.retinex_net.refinement_net(reflectance_map, retinex_embedding)
-            reflectance_map = reflectance_map + reflectance_residual
 
         return (
             input_image_for_net,
@@ -779,16 +764,6 @@ class Runner:
             ),
         ]
 
-        if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
-            initial_refinement_lr = self.refinement_optimizer.param_groups[0]["lr"]
-            schedulers.append(
-                CosineAnnealingLR(
-                    self.refinement_optimizer,
-                    T_max=cfg.pretrain_steps + cfg.max_steps,
-                    eta_min=initial_refinement_lr * 0.01,
-                )
-            )
-
         for optimizer in self.illum_optimizers:
             schedulers.append(
                 CosineAnnealingLR(
@@ -822,9 +797,6 @@ class Runner:
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
-            if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
-                self.refinement_optimizer.step()
-                self.refinement_optimizer.zero_grad()
 
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
@@ -859,15 +831,6 @@ class Runner:
                     eta_min=initial_retinex_lr * 0.01,
                 )
             )
-            if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
-                initial_refinement_lr = self.refinement_optimizer.param_groups[0]["lr"]
-                schedulers.append(
-                    CosineAnnealingLR(
-                        self.refinement_optimizer,
-                        T_max=max_steps,
-                        eta_min=initial_refinement_lr * 0.01,
-                    )
-                )
 
             initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
             schedulers.append(
@@ -1240,10 +1203,6 @@ class Runner:
                 # scaler.step(self.retinex_embed_optimizer)
                 self.retinex_embed_optimizer.step()
                 self.retinex_embed_optimizer.zero_grad()
-                if cfg.multi_scale_retinex and self.retinex_net.use_refinement:
-                    # scaler.step(self.retinex_refinement_optimizer)
-                    self.refinement_optimizer.step()
-                    self.refinement_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()

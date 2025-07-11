@@ -81,22 +81,18 @@ class Config:
     lambda_gradient: float = 0
     lambda_frequency: float = 0
     lambda_edge_aware_smooth: float = 20.0
-    lambda_illum_frequency: float = 1.0
-    lambda_exclusion: float = 1.0
+    lambda_illum_frequency: float = 0.0
+    lambda_exclusion: float = 0.0
     lambda_clipping: float = 0.0
 
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
-    use_refinement_net: bool = False
-    use_reflectance_refinement: bool = False
 
     predictive_adaptive_curve: bool = False
-    spatial_film: bool = False
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
-    use_spatial_attention: bool = False
     enable_dynamic_weights: bool = False 
     use_pixel_shuffle: bool = True
     use_stride_conv: bool = True

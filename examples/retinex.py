@@ -191,14 +191,10 @@ class MultiScaleRetinexNet(nn.Module):
             in_channels: int = 3,
             out_channels: int = 3,
             embed_dim: int = 32,
-            use_refinement: bool = False,
-            illumination_refinement: bool = False,
             use_dilated_convs: bool = False,
             predictive_adaptive_curve: bool = False,
-            spatially_film: bool = False,
             use_se_blocks: bool = False,
             enable_dynamic_weights: bool = False,
-            use_spatial_attention: bool = False,
             use_pixel_shuffle: bool = False,
             use_stride_conv: bool = False,
             num_weight_scales: int = 11,
@@ -211,19 +207,7 @@ class MultiScaleRetinexNet(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="replicate")
         self.bn1 = nn.InstanceNorm2d(32)
 
-        self.spatially_film = spatially_film
-        if spatially_film:
-            self.spatial_conditioning_encoder = nn.Sequential(
-                nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="replicate"),
-                nn.PReLU(),
-                nn.MaxPool2d(2, 2),
-                nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="replicate"),
-                nn.PReLU(),
-                nn.MaxPool2d(2, 2),
-            )
-            self.film1 = SpatiallyFiLMLayer(feature_channels=32)
-        else:
-            self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
 
         self.enable_dynamic_weights = enable_dynamic_weights
         if self.enable_dynamic_weights:
@@ -253,12 +237,6 @@ class MultiScaleRetinexNet(nn.Module):
             self.se2 = SEBlock(64)
             self.se3 = SEBlock(32)
 
-        self.use_spatial_attention = use_spatial_attention
-        if self.use_spatial_attention:
-            self.spatial_att1 = SpatialAttentionModule()
-            self.spatial_att2 = SpatialAttentionModule()
-            self.spatial_att3 = SpatialAttentionModule()
-
         if self.use_pixel_shuffle:
             self.upconv1 = nn.Sequential(
                 nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1, padding_mode="replicate"),
@@ -286,12 +264,6 @@ class MultiScaleRetinexNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
         )
-
-        self.use_refinement = use_refinement
-        self.illumination_refinement = illumination_refinement
-        if self.use_refinement:
-            out_channels = 3 if not self.illumination_refinement else out_channels
-            self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
         self.relu = nn.PReLU()
 
@@ -325,16 +297,10 @@ class MultiScaleRetinexNet(nn.Module):
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu(self.bn1(self.conv1(x)))
-        if self.spatially_film:
-            spatial_cond_features = self.spatial_conditioning_encoder(x)
-            c1_modulated = self.film1(c1, spatial_cond_features)
-        else:
-            c1_modulated = self.film1(c1, embedding)
+        c1_modulated = self.film1(c1, embedding)
 
         if self.use_se_blocks:
             c1_modulated = self.se1(c1_modulated)
-        if self.use_spatial_attention:
-            c1_modulated = self.spatial_att1(c1_modulated)
 
         p1 = self.pool1(c1_modulated)
 
@@ -346,8 +312,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         if self.use_se_blocks:
             c2 = self.se2(c2)
-        if self.use_spatial_attention:
-            c2 = self.spatial_att2(c2)
 
         p2 = self.pool2(c2)
 
@@ -360,8 +324,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         if self.use_se_blocks:
             c3 = self.se3(c3)
-        if self.use_spatial_attention:
-            c3 = self.spatial_att3(c3)
 
         log_illumination_full_res = self.upconv2(c3)
         log_illumination_full_res = F.interpolate(
@@ -394,9 +356,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.combination_layer(concatenated_maps)
 
-        if self.use_refinement and self.illumination_refinement:
-            illumination_residual = self.refinement_net(final_illumination, embedding)
-            final_illumination = final_illumination + illumination_residual
 
         alpha_map = None
         beta_map = None
