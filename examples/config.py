@@ -121,10 +121,10 @@ class Config:
     use_denoising_embedding: bool = False
     
     predictive_adaptive_curve: bool = True
-    spatial_film: bool = True
+    spatial_film: bool = False
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
-    use_spatial_attention: bool = True
+    use_spatial_attention: bool = False
     enable_dynamic_weights: bool = False
     use_pixel_shuffle: bool = True
     use_stride_conv: bool = True
