@@ -78,7 +78,7 @@ class Config:
     lambda_illum_variance: float = 0.0
 
     lambda_laplacian: float = 0.0
-    lambda_gradient: float = 1.0
+    lambda_gradient: float = 0.0
     lambda_frequency: float = 0
     lambda_illum_frequency: float = 0.0
     lambda_exclusion: float = 0.0
