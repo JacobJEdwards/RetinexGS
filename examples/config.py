@@ -110,7 +110,7 @@ class Config:
     lambda_edge_aware_smooth: float = 20.0  
     lambda_illum_frequency: float = 0.1
     lambda_exclusion: float = 2.0  
-    lambda_perceptual: float = 0.8 
+    lambda_perceptual: float = 0.0
     lambda_clipping: float = 1.5 
 
     pretrain_retinex: bool = True
