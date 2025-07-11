@@ -116,7 +116,7 @@ class Config:
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
-    use_refinement_net: bool = False
+    use_refinement_net: bool = True
 
     predictive_adaptive_curve: bool = False
     spatial_film: bool = False 
