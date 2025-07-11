@@ -785,18 +785,6 @@ class Runner:
                         step,
                     )
 
-            if cfg.predictive_adaptive_curve:
-                self.writer.add_scalar(
-                    "retinex_net/learnable_alpha",
-                    self.loss_adaptive_curve.alpha.item(),
-                    step,
-                )
-                self.writer.add_scalar(
-                    "retinex_net/learnable_beta",
-                    self.loss_adaptive_curve.beta.item(),
-                    step,
-                )
-
             if cfg.learn_edge_aware_gamma:
                 self.writer.add_scalar(
                     "retinex_net/edge_aware_gamma_adjustment",

@@ -119,6 +119,7 @@ class AdaptiveCurveLoss(nn.Module):
         super(AdaptiveCurveLoss, self).__init__()
         self.alpha = alpha
         self.beta = beta
+        
         self.low_thresh = low_thresh
         self.high_thresh = high_thresh
 
