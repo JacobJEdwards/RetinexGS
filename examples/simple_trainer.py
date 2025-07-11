@@ -269,7 +269,7 @@ class Runner:
                     enable_dynamic_weights=cfg.enable_dynamic_weights,
                     use_stride_conv=cfg.use_stride_conv,
                     use_pixel_shuffle=cfg.use_pixel_shuffle,
-                    num_weight_scales=13, 
+                    num_weight_scales=13,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
@@ -677,7 +677,10 @@ class Runner:
             illumination_map
         )
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
-        loss_perceptual_val = self.loss_perceptual(input_image_for_net, reflectance_map)
+        original_image_nchw = pixels.permute(0, 3, 1, 2)
+        loss_perceptual_val = self.loss_perceptual(
+            original_image_nchw, reflectance_map
+        )
 
         individual_losses = torch.stack(
             [
