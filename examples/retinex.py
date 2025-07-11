@@ -175,16 +175,16 @@ class MultiScaleRetinexNet(nn.Module):
         self.use_pixel_shuffle = use_pixel_shuffle
         self.use_stride_conv = use_stride_conv
 
-        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="replicate")
         self.bn1 = nn.InstanceNorm2d(32)
         
         self.spatially_film = spatially_film
         if spatially_film:
             self.spatial_conditioning_encoder = nn.Sequential(
-                nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="reflect"),
+                nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="replicate"),
                 nn.PReLU(),
                 nn.MaxPool2d(2, 2),
-                nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="reflect"),
+                nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="replicate"),
                 nn.PReLU(),
                 nn.MaxPool2d(2, 2), 
             )
@@ -218,10 +218,10 @@ class MultiScaleRetinexNet(nn.Module):
         self.use_dilated_convs = use_dilated_convs
         
         if self.use_dilated_convs:
-            self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2, bias=False, padding_mode="replicate")
-            self.bn_dilated1 = nn.BatchNorm2d(64)
-            self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4, bias=False, padding_mode="replicate")
-            self.bn_dilated2 = nn.BatchNorm2d(64)
+            self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2, padding_mode="replicate")
+            # self.bn_dilated1 = nn.BatchNorm2d(64)
+            self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4, padding_mode="replicate")
+            # self.bn_dilated2 = nn.BatchNorm2d(64)
 
         self.use_se_blocks = use_se_blocks
         if self.use_se_blocks:
@@ -302,8 +302,8 @@ class MultiScaleRetinexNet(nn.Module):
         c2 = self.relu((self.conv2(p1)))
         
         if self.use_dilated_convs:
-            c2 = self.relu(self.bn_dilated1(self.dilated_conv1(c2)))
-            c2 = self.relu(self.bn_dilated2(self.dilated_conv2(c2)))
+            c2 = self.relu((self.dilated_conv1(c2)))
+            c2 = self.relu((self.dilated_conv2(c2)))
         
         if self.use_se_blocks:
             c2 = self.se2(c2)
