@@ -124,9 +124,9 @@ class Config:
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
     use_spatial_attention: bool = False
-    enable_dynamic_weights: bool = True
-    use_pixel_shuffle: bool = True
-    use_stride_conv: bool = True
+    enable_dynamic_weights: bool = False
+    use_pixel_shuffle: bool = False
+    use_stride_conv: bool = False
     
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
