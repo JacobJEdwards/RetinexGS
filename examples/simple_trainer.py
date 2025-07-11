@@ -1369,15 +1369,6 @@ class Runner:
                         + loss_reconstruct_enh * (1.0 - cfg.lambda_low)
                         + loss_illumination * cfg.lambda_illumination
                     )
-
-                    # if cfg.enable_retinex_clipiqa:
-                    #     loss += (
-                    #         cfg.retinex_clipiqa_lambda
-                    #         * self.clipiqa_model(
-                    #             reflectance_target,
-                    #         )
-                    #     )
-
                 else:
                     f1 = F.l1_loss(colors_low, pixels)
                     ssim_loss = 1.0 - self.ssim(
