@@ -235,8 +235,6 @@ class SpatialLoss(nn.Module):
     weight_up: Tensor
     weight_down: Tensor
     
-    learnable_contrast: Tensor
-
     def __init__(self, learn_contrast: bool = False, initial_contrast: float = 8.0, num_images: int | None = None) -> \
             None:
         super(SpatialLoss, self).__init__()
@@ -262,8 +260,8 @@ class SpatialLoss(nn.Module):
 
         self.learn_contrast = learn_contrast
         if self.learn_contrast:
-            self.contrast_embedding = nn.Embedding(num_images, 1) if num_images is not None else nn.Parameter(torch.tensor([initial_contrast], dtype=torch.float32))
-            self.contrast_embedding.weight.data.fill_(initial_contrast)
+            self.learnable_contrast = nn.Embedding(num_images, 1) if num_images is not None else nn.Parameter(torch.tensor([initial_contrast], dtype=torch.float32))
+            self.learnable_contrast.weight.data.fill_(initial_contrast)
         else:
             self.register_buffer("learnable_contrast", torch.tensor([initial_contrast], dtype=torch.float32))
 
@@ -289,7 +287,7 @@ class SpatialLoss(nn.Module):
             if image_id is None:
                 current_contrast = F.softplus(self.learnable_contrast) if self.learn_contrast else (contrast if contrast is not None else self.learnable_contrast)
             else:
-                current_contrast = F.softplus(self.contrast_embedding(image_id))
+                current_contrast = F.softplus(self.learnable_contrast(image_id))
                 current_contrast = current_contrast.view(-1, 1, 1, 1)
         else:
             current_contrast = contrast if contrast is not None else self.learnable_contrast
