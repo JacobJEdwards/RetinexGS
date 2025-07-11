@@ -59,7 +59,7 @@ from utils import (
     rgb_to_sh,
     set_random_seed,
 )
-from retinex import RetinexNet, MultiScaleRetinexNet
+from retinex import RetinexNet, MultiScaleRetinexNet, RefinementNet
 
 
 def create_splats_with_optimizers(
@@ -261,6 +261,7 @@ class Runner:
                     in_channels=retinex_in_channels,
                     out_channels=retinex_out_channels,
                     use_refinement=cfg.use_refinement_net,
+                    illumination_refinement=not cfg.use_reflectance_refinement,
                     predictive_adaptive_curve=cfg.predictive_adaptive_curve,
                     spatially_film=cfg.spatial_film,
                     use_dilated_convs=cfg.use_dilated_convs,
@@ -313,14 +314,6 @@ class Runner:
             self.retinex_embed_optimizer = torch.optim.AdamW(
                 [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
             )
-
-            # Data Augmentation for Retinex training
-            self.retinex_augmentations = K.AugmentationSequential(
-                K.RandomHorizontalFlip(),
-                K.RandomVerticalFlip(),
-                K.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05, p=0.8),
-                data_keys=["input"],
-            ).to(self.device)
 
         feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -611,6 +604,10 @@ class Runner:
             reflectance_map = torch.exp(log_reflectance_target)
 
         reflectance_map = torch.clamp(reflectance_map, 0, 1)
+
+        if self.cfg.use_reflectance_refinement and self.retinex_net.use_refinement:
+            reflectance_residual = self.retinex_net.refinement_net(reflectance_map, retinex_embedding)
+            reflectance_map = reflectance_map + reflectance_residual
 
         return (
             input_image_for_net,

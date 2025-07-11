@@ -159,6 +159,7 @@ class MultiScaleRetinexNet(nn.Module):
             out_channels: int = 3,
             embed_dim: int = 32,
             use_refinement: bool = False,
+            illumination_refinement: bool = False,
             use_dilated_convs: bool = False,
             predictive_adaptive_curve: bool = False,
             spatially_film: bool = False,
@@ -263,6 +264,7 @@ class MultiScaleRetinexNet(nn.Module):
         )
 
         self.use_refinement = use_refinement
+        self.illumination_refinement = illumination_refinement
         if self.use_refinement:
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
@@ -346,14 +348,6 @@ class MultiScaleRetinexNet(nn.Module):
             log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
         )
 
-        # concatenated_maps = torch.add(
-        #     [
-        #         log_illum_coarse_res,
-        #         log_illumination_medium_res,
-        #         log_illumination_full_res,
-        #     ],
-        #     dim=1,
-        # )
         concatenated_maps = (
                 log_illum_coarse_res
                 + log_illumination_medium_res
@@ -362,7 +356,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.combination_layer(concatenated_maps)
 
-        if self.use_refinement:
+        if self.use_refinement and self.illumination_refinement:
             illumination_residual = self.refinement_net(final_illumination, embedding)
             final_illumination = final_illumination + illumination_residual
 
@@ -378,7 +372,6 @@ class MultiScaleRetinexNet(nn.Module):
             beta_map = 0.1 + 0.8 * torch.sigmoid(beta_map_raw)
 
         if self.enable_dynamic_weights:
-            # dynamic_weights = self.loss_weight_head(x)
             dynamic_weights = torch.exp(-self.log_vars)
         else:
             dynamic_weights = None
