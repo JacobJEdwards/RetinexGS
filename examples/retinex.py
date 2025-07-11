@@ -181,10 +181,10 @@ class MultiScaleRetinexNet(nn.Module):
         self.spatially_film = spatially_film
         if spatially_film:
             self.spatial_conditioning_encoder = nn.Sequential(
-                nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
+                nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="reflect"),
                 nn.PReLU(),
                 nn.MaxPool2d(2, 2),
-                nn.Conv2d(32, 32, kernel_size=3, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="reflect"),
                 nn.PReLU(),
                 nn.MaxPool2d(2, 2), 
             )
@@ -205,22 +205,22 @@ class MultiScaleRetinexNet(nn.Module):
             # )
         
         if self.use_stride_conv:
-            self.pool1 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1)
-            self.pool2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1)
+            self.pool1 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1, padding_mode="replicate")
+            self.pool2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1, padding_mode="replicate")
         else:
             self.pool1 = nn.MaxPool2d(2, 2)
             self.pool2 = nn.MaxPool2d(2, 2)
 
         # self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1, padding_mode="replicate")
         self.bn2 = nn.InstanceNorm2d(64)
         
         self.use_dilated_convs = use_dilated_convs
         
         if self.use_dilated_convs:
-            self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2)
+            self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2, bias=False, padding_mode="replicate")
             self.bn_dilated1 = nn.BatchNorm2d(64)
-            self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4)
+            self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4, bias=False, padding_mode="replicate")
             self.bn_dilated2 = nn.BatchNorm2d(64)
 
         self.use_se_blocks = use_se_blocks
@@ -237,24 +237,24 @@ class MultiScaleRetinexNet(nn.Module):
 
         if self.use_pixel_shuffle:
             self.upconv1 = nn.Sequential(
-                nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1), 
+                nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1, padding_mode="replicate"), 
                 nn.PixelShuffle(2),
-                nn.Conv2d(32, 32, kernel_size=1) 
+                nn.Conv2d(32, 32, kernel_size=1, padding_mode="replicate")
             )
             self.upconv2 = nn.Sequential(
-                nn.Conv2d(32, out_channels * (2**2), kernel_size=3, padding=1),
+                nn.Conv2d(32, out_channels * (2**2), kernel_size=3, padding=1, padding_mode="replicate"),
                 nn.PixelShuffle(2),
-                nn.Conv2d(out_channels, out_channels, kernel_size=1)
+                nn.Conv2d(out_channels, out_channels, kernel_size=1, padding_mode="replicate")
             )
         else: 
-            self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
+            self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2,)
             self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
-        self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1, padding_mode="replicate")
         self.bn3 = nn.InstanceNorm2d(32)
 
-        self.output_head_medium = nn.Conv2d(32, out_channels, kernel_size=3, padding=1)
-        self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+        self.output_head_medium = nn.Conv2d(32, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
+        self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
 
         self.combination_layer = nn.Conv2d(
             # in_channels=num_scales * out_channels,
@@ -272,13 +272,13 @@ class MultiScaleRetinexNet(nn.Module):
         self.predictive_adaptive_curve = predictive_adaptive_curve
         if self.predictive_adaptive_curve:
             self.adaptive_curve_head = nn.Sequential(
-                nn.Conv2d(32, 32, kernel_size=3, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="replicate"),
                 nn.PReLU(),
                 nn.Conv2d(32, 2, kernel_size=1), 
             )
 
         self.predictive_local_exposure_mean = nn.Sequential(
-            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="replicate"),
             nn.PReLU(),
             nn.Conv2d(32, 1, kernel_size=1),
             nn.Sigmoid()

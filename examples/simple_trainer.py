@@ -784,7 +784,7 @@ class Runner:
 
         loss_clipping_high = torch.mean(torch.relu(reflectance_map - 0.98)**2)
         loss_clipping_low = torch.mean(torch.relu(0.02 - reflectance_map)**2)
-        lambda_clipping = 0.1
+        lambda_clipping = 1.
         total_loss += lambda_clipping * (loss_clipping_high + loss_clipping_low)
 
         return total_loss

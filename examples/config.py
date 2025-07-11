@@ -109,7 +109,7 @@ class Config:
     lambda_frequency: float = 0
     lambda_edge_aware_smooth: float = 15
     lambda_illum_frequency: float = 0.1
-    lambda_exclusion: float = 1.0
+    lambda_exclusion: float = 5.0
 
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
