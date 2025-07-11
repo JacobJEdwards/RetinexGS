@@ -180,8 +180,7 @@ class Parser:
         #     image_dir_suffix = f"_{factor}"
         # else:
         #     image_dir_suffix = ""
-        image_dir_suffix = "_8"
-        colmap_image_dir = os.path.join(data_dir, "images")
+        colmap_image_dir = os.path.join(data_dir, "images_8_multiexposure")
         image_dir = os.path.join(data_dir, "images_8_multiexposure")
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
