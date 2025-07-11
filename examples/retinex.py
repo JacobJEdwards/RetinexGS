@@ -364,7 +364,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         if self.use_refinement:
             illumination_residual = self.refinement_net(final_illumination, embedding)
-            final_illumination = illumination_residual
+            final_illumination = final_illumination + illumination_residual
 
         alpha_map = None
         beta_map = None

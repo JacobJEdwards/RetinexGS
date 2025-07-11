@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import tqdm
 import tyro
 import yaml
+from piq import brisque
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
@@ -249,6 +250,8 @@ class Runner:
             self.loss_illum_frequency.compile()
             self.loss_exclusion = ExclusionLoss().to(self.device)
             self.loss_exclusion.compile()
+            
+            self.brisque_loss = piq.BRISQUELoss().to(self.device)
 
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
@@ -854,7 +857,13 @@ class Runner:
                     reflectance_map,
                     step,
                 )
-
+        
+        brisque_score = self.brisque_loss(
+            reflectance_map.clamp(0, 1)
+        ) 
+        
+        total_loss += brisque_score
+        
         return total_loss
 
     def pre_train_retinex(self) -> None:
