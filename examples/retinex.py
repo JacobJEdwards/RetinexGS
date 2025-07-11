@@ -307,10 +307,9 @@ class MultiScaleRetinexNet(nn.Module):
             nn.Sigmoid()
         )
         
-        self.apply(MultiScaleRetinexNet._init_weights)
+        self.apply(self._init_weights)
 
-    @staticmethod
-    def _init_weights(m: nn.Module) -> None:
+    def _init_weights(self, m: nn.Module) -> None:
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
             init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             if m.bias is not None:
