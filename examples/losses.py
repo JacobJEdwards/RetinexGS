@@ -494,7 +494,7 @@ class IlluminationFrequencyLoss(nn.Module):
         return loss
 
 class EdgeAwareSmoothingLoss(nn.Module):
-    def __init__(self, initial_gamma: float = 0.1, learn_gamma: bool = True) -> None:
+    def __init__(self, initial_gamma: float = 0.1, learn_gamma: bool = False) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
         self.learn_gamma = learn_gamma
         self.initial_gamma = initial_gamma
