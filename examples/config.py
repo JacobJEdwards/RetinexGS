@@ -81,8 +81,8 @@ class Config:
     lambda_gradient: float = 0
     lambda_frequency: float = 0
     lambda_edge_aware_smooth: float = 20.0
-    lambda_illum_frequency: float = 0.0
-    lambda_exclusion: float = 0.0
+    lambda_illum_frequency: float = 1.0
+    lambda_exclusion: float = 1.0
     lambda_clipping: float = 0.0
 
     pretrain_retinex: bool = True
