@@ -67,43 +67,43 @@ class FiLMLayer(nn.Module):
 class RefinementNet(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, embed_dim: int):
         super(RefinementNet, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        self.bn1_2 = nn.BatchNorm2d(64)
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1, padding_mode='replicate')
+        self.bn1 = nn.InstanceNorm2d(64)
+        self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1, padding_mode='replicate')
+        self.bn1_2 = nn.InstanceNorm2d(64)
 
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2)
-        self.bn2 = nn.BatchNorm2d(128)
-        self.conv2_2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-        self.bn2_2 = nn.BatchNorm2d(128)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2, padding_mode='replicate')
+        self.bn2 = nn.InstanceNorm2d(128)
+        self.conv2_2 = nn.Conv2d(128, 128, kernel_size=3, padding=1, stride=2, padding_mode='replicate')
+        self.bn2_2 = nn.InstanceNorm2d(128)
 
         self.film_bottleneck = FiLMLayer(embed_dim=embed_dim, feature_channels=128)
 
         self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        self.bn3 = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
-        self.bn3_2 = nn.BatchNorm2d(64)
+        self.bn3 = nn.InstanceNorm2d(64)
+        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1, padding_mode='replicate')
+        self.bn3_2 = nn.InstanceNorm2d(64)
 
-        self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+        self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1, padding_mode='replicate')
 
         self.relu = nn.PReLU()
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
-        e1 = self.relu((self.conv1(x)))
-        e1 = self.relu((self.conv1_2(e1)))
-        e2_pre_mod = self.relu((self.conv2(e1)))
-        e2_pre_mod = self.relu((self.conv2_2(e2_pre_mod)))
+        e1 = self.relu(self.bn1(self.conv1(x)))
+        e1 = self.relu(self.bn1_2(self.conv1_2(e1)))
+        e2_pre_mod = self.relu(self.bn2(self.conv2(e1)))
+        e2_pre_mod = self.relu(self.bn2_2(self.conv2_2(e2_pre_mod)))
 
         e2 = self.film_bottleneck(e2_pre_mod, embedding)
 
-        d1 = self.relu((self.upconv1(e2)))
+        d1 = self.relu(self.bn3(self.upconv1(e2)))
         if d1.shape[2:] != e1.shape[2:]:
             d1 = F.interpolate(
                 d1, size=e1.shape[2:], mode="bilinear", align_corners=False
             )
 
         d1 = torch.cat([d1, e1], dim=1)
-        d1 = self.relu((self.conv3(d1)))
+        d1 = self.relu(self.bn3_2(self.conv3(d1)))
 
         output = self.output_layer(d1)
         return output
