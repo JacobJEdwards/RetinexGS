@@ -237,7 +237,8 @@ class SpatialLoss(nn.Module):
     
     learnable_contrast: Tensor
 
-    def __init__(self, learn_contrast: bool = False, initial_contrast: float = 8.0) -> None:
+    def __init__(self, learn_contrast: bool = False, initial_contrast: float = 8.0, num_images: int | None = None) -> \
+            None:
         super(SpatialLoss, self).__init__()
         kernel_left = torch.tensor(
             [[0, 0, 0], [-1, 1, 0], [0, 0, 0]], dtype=torch.float32
@@ -261,11 +262,12 @@ class SpatialLoss(nn.Module):
 
         self.learn_contrast = learn_contrast
         if self.learn_contrast:
-            self.learnable_contrast = nn.Parameter(torch.tensor([initial_contrast], dtype=torch.float32))
+            self.contrast_embedding = nn.Embedding(num_images, 1) if num_images is not None else nn.Parameter(torch.tensor([initial_contrast], dtype=torch.float32))
+            self.contrast_embedding.weight.data.fill_(initial_contrast)
         else:
             self.register_buffer("learnable_contrast", torch.tensor([initial_contrast], dtype=torch.float32))
 
-    def forward(self, org: Tensor, enhance: Tensor, contrast: int = 8):
+    def forward(self, org: Tensor, enhance: Tensor, contrast: int = 8, image_id: Tensor | None = None):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
 
@@ -283,7 +285,15 @@ class SpatialLoss(nn.Module):
         D_org_letf, D_org_right, D_org_up, D_org_down = p(org_pool)
         D_enhance_letf, D_enhance_right, D_enhance_up, D_enhance_down = p(enhance_pool)
 
-        current_contrast = F.softplus(self.learnable_contrast) if self.learn_contrast else (contrast if contrast is not None else self.learnable_contrast)
+        if self.learn_contrast:
+            if image_id is None:
+                current_contrast = F.softplus(self.learnable_contrast) if self.learn_contrast else (contrast if contrast is not None else self.learnable_contrast)
+            else:
+                current_contrast = F.softplus(self.contrast_embedding(image_id))
+                current_contrast = current_contrast.view(-1, 1, 1, 1)
+        else:
+            current_contrast = contrast if contrast is not None else self.learnable_contrast
+
 
         D_left = torch.pow(D_org_letf * current_contrast - D_enhance_letf, 2)
         D_right = torch.pow(D_org_right * current_contrast - D_enhance_right, 2)
@@ -580,7 +590,7 @@ class ExclusionLoss(nn.Module):
             for j in range(C1):
                 v.append(torch.mean((grad1_s[:, j, :, :] ** 2) * (grad2_s[:, i, :, :] ** 2)) ** 0.25)
         return v
-    
+
     def forward(self, img1, img2):
         gradx_loss, grady_loss, n_combinations = self.get_gradients(img1, img2)
 
@@ -588,9 +598,9 @@ class ExclusionLoss(nn.Module):
             return torch.tensor(0.0, device=img1.device)
 
         loss_gradxy = sum(gradx_loss) / (self.level * n_combinations) + sum(grady_loss) / (self.level * n_combinations)
-        
+
         return loss_gradxy / 2.0
-    
+
     def compute_gradient(self, img):
         gradx = img[:, :, 1:, :] - img[:, :, :-1, :]
         grady = img[:, :, :, 1:] - img[:, :, :, :-1]

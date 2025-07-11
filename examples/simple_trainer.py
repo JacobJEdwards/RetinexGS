@@ -223,7 +223,7 @@ class Runner:
             # self.loss_smooth = LaplacianLoss().to(self.device)
             self.loss_smooth = TotalVariationLoss().to(self.device)
             self.loss_smooth.compile()
-            self.loss_spatial = SpatialLoss(learn_contrast=cfg.learn_spatial_contrast).to(self.device)
+            self.loss_spatial = SpatialLoss(learn_contrast=cfg.learn_spatial_contrast, num_images=len(self.trainset)).to(self.device)
             self.loss_spatial.compile()
             self.loss_adaptive_curve = AdaptiveCurveLoss(learn_lambdas=cfg.learn_adaptive_curve_lambdas).to(self.device)
             self.loss_adaptive_curve.compile()
@@ -632,9 +632,9 @@ class Runner:
             loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target)
         else:
             loss_exposure_val = self.loss_exposure(reflectance_map)
-            
+
         con_degree = (0.5 / torch.mean(pixels)).item()
-        loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
+        loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids)
         loss_laplacian_val = torch.mean(
             torch.abs(self.loss_details(reflectance_map) - self.loss_details(input_image_for_net))
         )
@@ -1120,7 +1120,7 @@ class Runner:
 
                     con_degree = (0.5 / torch.mean(pixels)).item()
                     loss_illum_contrast = self.loss_spatial(
-                        input_image_for_net, reflectance_target, contrast=con_degree
+                        input_image_for_net, reflectance_target, contrast=con_degree, image_id=image_ids
                     )
                     # loss_illum_laplacian = self.loss_details(reflectance_target)
                     loss_illum_laplacian = torch.mean(
