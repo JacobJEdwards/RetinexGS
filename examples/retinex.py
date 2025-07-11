@@ -303,6 +303,9 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Conv2d(32, 2, kernel_size=1),
             )
 
+            nn.init.zeros_(self.adaptive_curve_head[-1].weight)
+            nn.init.zeros_(self.adaptive_curve_head[-1].bias)
+
         self.predictive_local_exposure_mean = nn.Sequential(
             nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="replicate"),
             nn.PReLU(),
@@ -403,8 +406,13 @@ class MultiScaleRetinexNet(nn.Module):
                 adaptive_params, size=x.shape[2:], mode="bilinear", align_corners=False
             )
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
-            alpha_map = torch.sigmoid(alpha_map_raw)
-            beta_map = torch.sigmoid(beta_map_raw)
+
+            base_alpha = 0.4
+            base_beta = 0.7
+            scale = 0.2
+
+            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
+            beta_map = base_beta + scale * torch.tanh(beta_map_raw)
 
         if self.enable_dynamic_weights:
             dynamic_weights = torch.exp(-self.log_vars)
