@@ -270,7 +270,7 @@ class Runner:
                     enable_dynamic_weights=cfg.enable_dynamic_weights,
                     use_stride_conv=cfg.use_stride_conv,
                     use_pixel_shuffle=cfg.use_pixel_shuffle,
-                    num_weight_scales=13,
+                    num_weight_scales=12,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
@@ -678,10 +678,6 @@ class Runner:
             illumination_map
         )
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
-        original_image_nchw = pixels.permute(0, 3, 1, 2)
-        loss_perceptual_val = self.loss_perceptual(
-            original_image_nchw, reflectance_map
-        )
 
         individual_losses = torch.stack(
             [
@@ -697,7 +693,6 @@ class Runner:
                 loss_exposure_local,  # 9
                 loss_illumination_frequency_penalty,  # 10
                 loss_exclusion_val,  # 11
-                loss_perceptual_val,  # 12
             ]
         )
 
@@ -715,7 +710,6 @@ class Runner:
                 cfg.lambda_illum_exposure_local,
                 cfg.lambda_illum_frequency,
                 cfg.lambda_exclusion,
-                cfg.lambda_perceptual,
             ],
             device=device,
         )
@@ -755,7 +749,6 @@ class Runner:
                 "exposure_local",
                 "illumination_frequency_penalty",
                 "exclusion_val",
-                "perceptual_val",
             ]
 
             for i, name in enumerate(loss_names):
@@ -767,7 +760,7 @@ class Runner:
                         f"retinex_net/loss_{name}_weighted_kendall",
                         (individual_losses[i] * logged_weights[i]).item(),
                         step,
-                    )  # Corrected weighted logging
+                    )
                     self.writer.add_scalar(
                         f"retinex_net/log_var_{name}", logged_log_vars[i].item(), step
                     )
@@ -775,7 +768,7 @@ class Runner:
                         f"retinex_net/effective_weight_{name}",
                         logged_weights[i].item(),
                         step,
-                    )  # New logging for effective weight
+                    )
                 else:
                     self.writer.add_scalar(
                         f"retinex_net/loss_{name}_fixed_weighted",
