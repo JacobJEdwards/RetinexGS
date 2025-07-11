@@ -1,8 +1,33 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+
+# --- NEW: ResidualBlock for a more powerful network backbone ---
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, padding_mode="replicate")
+        self.bn1 = nn.InstanceNorm2d(out_channels)
+        self.relu = nn.PReLU()
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
+        self.bn2 = nn.InstanceNorm2d(out_channels)
+
+        # Shortcut connection to match dimensions if needed
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride),
+                nn.InstanceNorm2d(out_channels)
+            )
+
+    def forward(self, x):
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x) # The residual connection
+        out = self.relu(out)
+        return out
+
 
 class SpatialAttentionModule(nn.Module):
     def __init__(self, kernel_size: int = 7) -> None:
@@ -35,27 +60,46 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
+class ModulationHead(nn.Module):
+    def __init__(self, feature_channels: int):
+        super(ModulationHead, self).__init__()
+        self.head = nn.Sequential(
+            nn.Conv2d(feature_channels, feature_channels, kernel_size=3, padding=1),
+            nn.PReLU(),
+            nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.head(x)
+
+
 class SpatiallyFiLMLayer(nn.Module):
     def __init__(self, feature_channels: int):
         super(SpatiallyFiLMLayer, self).__init__()
-        self.gamma_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
-        self.beta_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
+        self.modulation_head = ModulationHead(feature_channels)
 
     def forward(self, x: Tensor, conditioning_features: Tensor) -> Tensor:
-        gamma = self.gamma_predictor(conditioning_features)
-        beta = self.beta_predictor(conditioning_features)
-        
+        modulation_params = self.modulation_head(conditioning_features)
+        gamma, beta = torch.chunk(modulation_params, 2, dim=1)
+
         if gamma.shape[2:] != x.shape[2:]:
             gamma = F.interpolate(gamma, size=x.shape[2:], mode='bilinear', align_corners=False)
         if beta.shape[2:] != x.shape[2:]:
             beta = F.interpolate(beta, size=x.shape[2:], mode='bilinear', align_corners=False)
 
-        return gamma * x + beta
+        gated_gamma = torch.sigmoid(gamma)
+        return gated_gamma * x + beta
+
 
 class FiLMLayer(nn.Module):
     def __init__(self, embed_dim: int, feature_channels: int):
         super(FiLMLayer, self).__init__()
-        self.layer = nn.Linear(embed_dim, feature_channels * 2)
+        # --- IMPROVEMENT: Using a small MLP for more expressive power ---
+        self.layer = nn.Sequential(
+            nn.Linear(embed_dim, feature_channels),
+            nn.PReLU(),
+            nn.Linear(feature_channels, feature_channels * 2)
+        )
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
         gamma_beta = self.layer(embedding)
@@ -68,25 +112,24 @@ class FiLMLayer(nn.Module):
 class RefinementNet(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, embed_dim: int):
         super(RefinementNet, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1, padding_mode="replicate")
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
         self.bn1 = nn.InstanceNorm2d(64)
-        self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1, padding_mode="replicate")
+        self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.bn1_2 = nn.InstanceNorm2d(64)
 
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2, padding_mode="replicate")
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2)
         self.bn2 = nn.InstanceNorm2d(128)
-        self.conv2_2 = nn.Conv2d(128, 128, kernel_size=3, padding=1, padding_mode="replicate")
+        self.conv2_2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
         self.bn2_2 = nn.InstanceNorm2d(128)
 
         self.film_bottleneck = FiLMLayer(embed_dim=embed_dim, feature_channels=128)
 
-        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2, )
+        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
         self.bn3 = nn.InstanceNorm2d(64)
-        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1, padding_mode="replicate")
+        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
         self.bn3_2 = nn.InstanceNorm2d(64)
 
-        self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
-
+        self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
         self.relu = nn.PReLU()
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
@@ -100,9 +143,7 @@ class RefinementNet(nn.Module):
 
         d1 = self.relu(self.bn3(self.upconv1(e2)))
         if d1.shape[2:] != e1.shape[2:]:
-            d1 = F.interpolate(
-                d1, size=e1.shape[2:], mode="bilinear", align_corners=False
-            )
+            d1 = F.interpolate(d1, size=e1.shape[2:], mode="bilinear", align_corners=False)
 
         d1 = torch.cat([d1, e1], dim=1)
         d1 = self.relu(self.bn3_2(self.conv3(d1)))
@@ -110,118 +151,85 @@ class RefinementNet(nn.Module):
         output = self.output_layer(d1)
         return output
 
+
 class RetinexNet(nn.Module):
     def __init__(
-        self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
+            self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
     ) -> None:
         super(RetinexNet, self).__init__()
-
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
-
         self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
-
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-
         self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
         self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
-
         self.relu = nn.PReLU()
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu(self.conv1(x))
-
         c1_modulated = self.film1(c1, embedding)
-
         p1 = self.pool(c1_modulated)
         c2 = self.relu(self.conv2(p1))
         p2 = self.pool(c2)
-
         up1 = self.upconv1(p2)
-        up1_resized = F.interpolate(
-            up1, size=p1.shape[2:], mode="bilinear", align_corners=False
-        )
-
+        up1_resized = F.interpolate(up1, size=p1.shape[2:], mode="bilinear", align_corners=False)
         merged = torch.cat([up1_resized, p1], dim=1)
         c3 = self.relu(self.conv3(merged))
         log_illumination = self.upconv2(c3)
-        final_illumination = F.interpolate(
-            log_illumination, size=x.shape[2:], mode="bilinear", align_corners=False
-        )
-
+        final_illumination = F.interpolate(log_illumination, size=x.shape[2:], mode="bilinear", align_corners=False)
         return final_illumination, None, None, None, None
 
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
-        self,
-        in_channels: int = 3,
-        out_channels: int = 3,
-        embed_dim: int = 32,
-        use_refinement: bool = False,
-        use_dilated_convs: bool = False,
-        predictive_adaptive_curve: bool = False,
-        spatially_film: bool = False,
-        use_se_blocks: bool = False,
-        enable_dynamic_weights: bool = False,
-        use_spatial_attention: bool = False,
-        use_pixel_shuffle: bool = False, 
-        use_stride_conv: bool = False,
-        num_weight_scales: int = 11,
+            self,
+            in_channels: int = 3,
+            out_channels: int = 3,
+            embed_dim: int = 32,
+            use_refinement: bool = False,
+            use_dilated_convs: bool = False,
+            predictive_adaptive_curve: bool = False,
+            spatially_film: bool = False,
+            use_se_blocks: bool = False,
+            enable_dynamic_weights: bool = False,
+            use_spatial_attention: bool = False,
+            use_pixel_shuffle: bool = False,
+            use_stride_conv: bool = False,
+            num_weight_scales: int = 11,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
         self.use_pixel_shuffle = use_pixel_shuffle
-        self.use_stride_conv = use_stride_conv
 
-        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="replicate")
-        self.bn1 = nn.InstanceNorm2d(32)
-        
+        # --- IMPROVEMENT: Replacing plain convs with ResidualBlocks ---
+        self.layer1 = ResidualBlock(in_channels, 32)
+        self.layer2 = ResidualBlock(32, 64, stride=2) # Downsample
+        self.bottleneck = ResidualBlock(64, 64) # Bottleneck layer
+
         self.spatially_film = spatially_film
         if spatially_film:
             self.spatial_conditioning_encoder = nn.Sequential(
-                nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="replicate"),
+                nn.Conv2d(in_channels, 32, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
                 nn.PReLU(),
                 nn.MaxPool2d(2, 2),
-                nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="replicate"),
+                nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
                 nn.PReLU(),
-                nn.MaxPool2d(2, 2), 
+                nn.MaxPool2d(2, 2),
+                nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
+                nn.PReLU(),
             )
-            self.film1 = SpatiallyFiLMLayer(feature_channels=32)
+            self.film_spatial = SpatiallyFiLMLayer(feature_channels=64)
         else:
-            self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
-        
+            self.film_global = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
+
         self.enable_dynamic_weights = enable_dynamic_weights
         if self.enable_dynamic_weights:
             self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
-            # self.loss_weight_head = nn.Sequential(
-            #     nn.AdaptiveAvgPool2d(1),
-            #     nn.Flatten(),
-            #     nn.Linear(in_channels, 64),
-            #     nn.SiLU(),
-            #     nn.Linear(64, 10),
-            #     nn.Sigmoid()
-            # )
-        
-        if self.use_stride_conv:
-            self.pool1 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1, padding_mode="replicate")
-            self.pool2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1, padding_mode="replicate")
-        else:
-            self.pool1 = nn.MaxPool2d(2, 2)
-            self.pool2 = nn.MaxPool2d(2, 2)
 
-        # self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1, padding_mode="replicate")
-        self.bn2 = nn.InstanceNorm2d(64)
-        
         self.use_dilated_convs = use_dilated_convs
-        
         if self.use_dilated_convs:
-            self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2, padding_mode="replicate")
-            self.bn_dilated1 = nn.InstanceNorm2d(64)
-            self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4, padding_mode="replicate")
-            self.bn_dilated2 = nn.InstanceNorm2d(64)
+            self.dilated_block = ResidualBlock(64, 64)
 
         self.use_se_blocks = use_se_blocks
         if self.use_se_blocks:
@@ -231,13 +239,13 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.use_spatial_attention = use_spatial_attention
         if self.use_spatial_attention:
-            self.spatial_att1 = SpatialAttentionModule() 
+            self.spatial_att1 = SpatialAttentionModule()
             self.spatial_att2 = SpatialAttentionModule()
             self.spatial_att3 = SpatialAttentionModule()
 
         if self.use_pixel_shuffle:
             self.upconv1 = nn.Sequential(
-                nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1, padding_mode="replicate"), 
+                nn.Conv2d(64, 32 * (2**2), kernel_size=3, padding=1, padding_mode="replicate"),
                 nn.PixelShuffle(2),
                 nn.Conv2d(32, 32, kernel_size=1, padding_mode="replicate")
             )
@@ -246,8 +254,8 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.PixelShuffle(2),
                 nn.Conv2d(out_channels, out_channels, kernel_size=1, padding_mode="replicate")
             )
-        else: 
-            self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2,)
+        else:
+            self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
             self.upconv2 = nn.ConvTranspose2d(32, out_channels, kernel_size=2, stride=2)
 
         self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1, padding_mode="replicate")
@@ -256,25 +264,19 @@ class MultiScaleRetinexNet(nn.Module):
         self.output_head_medium = nn.Conv2d(32, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
         self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
 
-        self.combination_layer = nn.Conv2d(
-            # in_channels=num_scales * out_channels,
-            in_channels=out_channels,
-            out_channels=out_channels,
-            kernel_size=1,
-        )
-
+        self.combination_layer = nn.Conv2d(out_channels, out_channels, kernel_size=1)
         self.use_refinement = use_refinement
         if self.use_refinement:
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
         self.relu = nn.PReLU()
-        
+
         self.predictive_adaptive_curve = predictive_adaptive_curve
         if self.predictive_adaptive_curve:
             self.adaptive_curve_head = nn.Sequential(
                 nn.Conv2d(32, 32, kernel_size=3, padding=1, padding_mode="replicate"),
                 nn.PReLU(),
-                nn.Conv2d(32, 2, kernel_size=1), 
+                nn.Conv2d(32, 2, kernel_size=1),
             )
 
         self.predictive_local_exposure_mean = nn.Sequential(
@@ -283,111 +285,71 @@ class MultiScaleRetinexNet(nn.Module):
             nn.Conv2d(32, 1, kernel_size=1),
             nn.Sigmoid()
         )
-            
+
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
-        c1 = self.relu((self.conv1(x)))
+        # --- Encoder with ResidualBlocks ---
+        c1 = self.layer1(x) # [B, 32, H, W]
+        if not self.spatially_film:
+            c1 = self.film_global(c1, embedding)
+        if self.use_se_blocks: c1 = self.se1(c1)
+        if self.use_spatial_attention: c1 = self.spatial_att1(c1)
+
+        c2 = self.layer2(c1) # [B, 64, H/2, W/2]
+
+        # --- Bottleneck ---
+        bottleneck = self.bottleneck(c2) # [B, 64, H/2, W/2]
+
         if self.spatially_film:
             spatial_cond_features = self.spatial_conditioning_encoder(x)
-            c1_modulated = self.film1(c1, spatial_cond_features)
-        else:
-            c1_modulated = self.film1(c1, embedding)
-        
-        if self.use_se_blocks:
-            c1_modulated = self.se1(c1_modulated)
-        if self.use_spatial_attention:
-            c1_modulated = self.spatial_att1(c1_modulated)
-            
-        p1 = self.pool1(c1_modulated)
-        
-        c2 = self.relu((self.conv2(p1)))
-        
-        if self.use_dilated_convs:
-            c2 = self.relu(self.bn_dilated1(self.dilated_conv1(c2)))
-            c2 = self.relu(self.bn_dilated2(self.dilated_conv2(c2)))
-        
-        if self.use_se_blocks:
-            c2 = self.se2(c2)
-        if self.use_spatial_attention:
-            c2 = self.spatial_att2(c2)
-        
-        p2 = self.pool2(c2)
+            if spatial_cond_features.shape[2:] != bottleneck.shape[2:]:
+                aligned_cond_features = F.interpolate(spatial_cond_features, size=bottleneck.shape[2:], mode='bilinear', align_corners=False)
+            else:
+                aligned_cond_features = spatial_cond_features
+            bottleneck = self.film_spatial(bottleneck, aligned_cond_features)
 
+        if self.use_dilated_convs:
+            bottleneck = self.dilated_block(bottleneck)
+        if self.use_se_blocks: bottleneck = self.se2(bottleneck)
+        if self.use_spatial_attention: bottleneck = self.spatial_att2(bottleneck)
+
+        p2 = bottleneck # The output of the encoder/bottleneck is now p2 for the decoder
+
+        # --- Decoder ---
         up1 = self.upconv1(p2)
-        up1 = F.interpolate(
-            up1, size=p1.shape[2:], mode="bilinear", align_corners=False
-        )
-        merged = torch.cat([up1, p1], dim=1)
-        c3 = self.relu((self.conv3(merged)))
-        
-        if self.use_se_blocks:
-            c3 = self.se3(c3)
-        if self.use_spatial_attention:
-            c3 = self.spatial_att3(c3)
+        up1 = F.interpolate(up1, size=c1.shape[2:], mode="bilinear", align_corners=False)
+        merged = torch.cat([up1, c1], dim=1) # Skip connection from c1
+        c3 = self.relu(self.bn3(self.conv3(merged)))
+
+        if self.use_se_blocks: c3 = self.se3(c3)
+        if self.use_spatial_attention: c3 = self.spatial_att3(c3)
 
         log_illumination_full_res = self.upconv2(c3)
-        log_illumination_full_res = F.interpolate(
-            log_illumination_full_res,
-            size=x.shape[2:],
-            mode="bilinear",
-            align_corners=False,
-        )
+        log_illumination_full_res = F.interpolate(log_illumination_full_res, size=x.shape[2:], mode="bilinear", align_corners=False)
 
         log_illumination_medium_res = self.output_head_medium(c3)
-        log_illumination_medium_res = F.interpolate(
-            log_illumination_medium_res,
-            size=x.shape[2:],
-            mode="bilinear",
-            align_corners=False,
-        )
+        log_illumination_medium_res = F.interpolate(log_illumination_medium_res, size=x.shape[2:], mode="bilinear", align_corners=False)
 
-        log_illum_coarse_res = self.output_head_coarse(
-            p2
-        )  # [B, out_channels, H/4, W/4]
-        log_illum_coarse_res = F.interpolate(
-            log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
-        )
+        log_illum_coarse_res = self.output_head_coarse(p2)
+        log_illum_coarse_res = F.interpolate(log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False)
 
-        # concatenated_maps = torch.add(
-        #     [
-        #         log_illum_coarse_res,
-        #         log_illumination_medium_res,
-        #         log_illumination_full_res,
-        #     ],
-        #     dim=1,
-        # )
-        concatenated_maps = (
-            log_illum_coarse_res
-            + log_illumination_medium_res
-            + log_illumination_full_res
-        )
-
+        concatenated_maps = (log_illum_coarse_res + log_illumination_medium_res + log_illumination_full_res)
         final_illumination = self.combination_layer(concatenated_maps)
 
         if self.use_refinement:
-            illumination_residual = self.refinement_net(final_illumination, embedding)
-            final_illumination = illumination_residual
-        
-        alpha_map = None
-        beta_map = None
+            final_illumination = self.refinement_net(final_illumination, embedding)
+
+        alpha_map, beta_map = None, None
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(c3)
-            adaptive_params = F.interpolate(
-                adaptive_params, size=x.shape[2:], mode="bilinear", align_corners=False
-            )
+            adaptive_params = F.interpolate(adaptive_params, size=x.shape[2:], mode="bilinear", align_corners=False)
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             alpha_map = 0.5 + 1.0 * torch.sigmoid(alpha_map_raw)
             beta_map = 0.1 + 0.8 * torch.sigmoid(beta_map_raw)
-        
-        if self.enable_dynamic_weights:
-            # dynamic_weights = self.loss_weight_head(x)
-            dynamic_weights = torch.exp(-self.log_vars)
-        else:
-            dynamic_weights = None
+
+        dynamic_weights = torch.exp(-self.log_vars) if self.enable_dynamic_weights else None
 
         predicted_local_mean_val = self.predictive_local_exposure_mean(c3)
-        predicted_local_mean_val = F.interpolate(
-            predicted_local_mean_val, size=x.shape[2:], mode="bilinear", align_corners=False
-        )
+        predicted_local_mean_val = F.interpolate(predicted_local_mean_val, size=x.shape[2:], mode="bilinear", align_corners=False)
         predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_val, output_size=8)
 
         return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights
