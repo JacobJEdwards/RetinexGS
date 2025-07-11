@@ -4,35 +4,6 @@ import torch.nn.functional as F
 from torch import Tensor
 from torchvision import models
 
-# Perceptual Loss (VGG Loss)
-class PerceptualLoss(nn.Module):
-    def __init__(self, feature_layers=None):
-        super(PerceptualLoss, self).__init__()
-        if feature_layers is None:
-            feature_layers = [2, 7, 12, 21, 30]
-        self.vgg = models.vgg19(pretrained=True).features
-        for param in self.vgg.parameters():
-            param.requires_grad = False
-        self.feature_layers = feature_layers
-        self.mse_loss = nn.MSELoss()
-
-    def forward(self, x, y):
-        x_features = self.get_features(x)
-        y_features = self.get_features(y)
-        loss = 0
-        for x_feat, y_feat in zip(x_features, y_features):
-            loss += self.mse_loss(x_feat, y_feat)
-        return loss
-
-    def get_features(self, x):
-        features = []
-        for i, model in enumerate(self.vgg):
-            x = model(x)
-            if i in self.feature_layers:
-                features.append(x)
-        return features
-
-
 def gamma_curve(x, g):
     # Power Curve, Gamma Correction Curve
     y = torch.clamp(x, 1e-3, 1)
@@ -494,11 +465,17 @@ class IlluminationFrequencyLoss(nn.Module):
         return loss
 
 class EdgeAwareSmoothingLoss(nn.Module):
-    def __init__(self, initial_gamma: float = 0.1, learn_gamma: bool = False) -> None:
+    initial_gamma: Tensor
+
+    def __init__(self, initial_gamma: float = 0.1, learn_gamma: bool = True) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
         self.learn_gamma = learn_gamma
-        self.initial_gamma = initial_gamma
-        self.gamma = nn.Parameter(torch.tensor(initial_gamma, dtype=torch.float32))
+
+        self.register_buffer("initial_gamma", torch.tensor(initial_gamma, dtype=torch.float32))
+
+        if self.learn_gamma:
+            self.gamma_adjustment = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
+
 
     def forward(self, img: Tensor, guide_img: Tensor) -> Tensor:
         if img.shape[1] > 1:
@@ -518,11 +495,14 @@ class EdgeAwareSmoothingLoss(nn.Module):
         dy_guide = guide_img_gray[:, :, 1:, :] - guide_img_gray[:, :, :-1, :]
 
         if self.learn_gamma:
-            weights_x = torch.exp(-torch.abs(dx_guide) / (self.gamma.abs() + 1e-8))
-            weights_y = torch.exp(-torch.abs(dy_guide) / (self.gamma.abs() + 1e-8))
+            effective_gamma = self.initial_gamma + F.softplus(self.gamma_adjustment)
         else:
-            weights_x = torch.exp(-torch.abs(dx_guide) / (self.initial_gamma + 1e-8))
-            weights_y = torch.exp(-torch.abs(dy_guide) / (self.initial_gamma + 1e-8))
+            effective_gamma = self.initial_gamma
+
+        effective_gamma += 1e-8
+
+        weights_x = torch.exp(-torch.abs(dx_guide) / effective_gamma)
+        weights_y = torch.exp(-torch.abs(dy_guide) / effective_gamma)
 
         loss_x = torch.mean(weights_x * torch.abs(dx_img))
         loss_y = torch.mean(weights_y * torch.abs(dy_img))

@@ -9,13 +9,11 @@ import imageio
 import kornia.color
 import kornia.augmentation as K
 import numpy as np
-import piq
 import torch
 import torch.nn.functional as F
 import tqdm
 import tyro
 import yaml
-from piq import brisque
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
@@ -240,7 +238,7 @@ class Runner:
             self.loss_gradient.compile()
             self.loss_frequency = FrequencyLoss().to(self.device)
             self.loss_frequency.compile()
-            self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
+            self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss(learn_gamma=cfg.learn_edge_aware_gamma).to(self.device)
             self.loss_edge_aware_smooth.compile()
             self.loss_exposure_local = LocalExposureLoss(
                 patch_size=64, patch_grid_size=8
@@ -801,11 +799,14 @@ class Runner:
                     step,
                 )
 
-            self.writer.add_scalar(
-                "retinex_net/edge_aware_gamma",
-                self.loss_edge_aware_smooth.gamma.item(),
-                step,
-            )
+            if cfg.learn_edge_aware_gamma:
+                self.writer.add_scalar(
+                    "retinex_net/edge_aware_gamma_adjustment",
+                    self.loss_edge_aware_smooth.gamma_adjustment.item(),
+                    step,
+                )
+
+
             self.writer.add_scalar(
                 "retinex_net/global_mean_val_param",
                 self.global_mean_val_param.item(),
@@ -1262,10 +1263,8 @@ class Runner:
                     loss = f1 * (1.0 - cfg.ssim_lambda) + ssim_loss * cfg.ssim_lambda
 
                     low_loss = loss
-                    loss_illumination = torch.tensor(0.0, device=device)
                     loss_illum_color = torch.tensor(0.0, device=device)
                     loss_illum_smooth = torch.tensor(0.0, device=device)
-                    # loss_illum_variance = torch.tensor(0.0, device=device)
                     loss_adaptive_curve = torch.tensor(0.0, device=device)
                     loss_illum_exposure = torch.tensor(0.0, device=device)
                     loss_illum_contrast = torch.tensor(0.0, device=device)
