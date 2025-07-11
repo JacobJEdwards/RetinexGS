@@ -736,11 +736,11 @@ class Runner:
                     step,
                 )
 
-            if cfg.learn_spatial_contrast:
-                self.writer.add_scalar(
-                    "retinex_net/learned_spatial_contrast",
-                    self.loss_spatial.learnable_contrast.item(),
-                )
+            # if cfg.learn_spatial_contrast:
+            #     self.writer.add_scalar(
+            #         "retinex_net/learned_spatial_contrast",
+            #         self.loss_spatial.learnable_contrast.item(),
+            #     )
 
             if cfg.learn_adaptive_curve_lambdas:
                 self.writer.add_scalar(
