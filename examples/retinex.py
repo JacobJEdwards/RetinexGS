@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+from torch.nn import init
+
 
 class SpatialAttentionModule(nn.Module):
     def __init__(self, kernel_size: int = 7) -> None:
@@ -34,18 +36,13 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch import Tensor
-
 class SpatiallyFiLMLayer(nn.Module):
     def __init__(self, feature_channels: int, conditioning_channels: int):
         super().__init__()
 
         self.param_predictor = nn.Sequential(
             nn.Conv2d(conditioning_channels, feature_channels, kernel_size=3, padding=1, padding_mode='replicate'),
-            nn.ReLU(inplace=True),
+            nn.PReLU(),
             nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
         )
 
@@ -221,7 +218,7 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.PReLU(),
                 nn.MaxPool2d(2, 2),
             )
-            self.film1 = SpatiallyFiLMLayer(feature_channels=32)
+            self.film1 = SpatiallyFiLMLayer(feature_channels=32, conditioning_channels=32)
         else:
             self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=32)
 
@@ -309,6 +306,18 @@ class MultiScaleRetinexNet(nn.Module):
             nn.Conv2d(32, 1, kernel_size=1),
             nn.Sigmoid()
         )
+        
+        self.apply(MultiScaleRetinexNet._init_weights)
+
+    @staticmethod
+    def _init_weights(m: nn.Module) -> None:
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+            init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            if m.bias is not None:
+                init.constant_(m.bias, 0)
+        elif isinstance(m, nn.InstanceNorm2d):
+            init.constant_(m.weight, 1)
+            init.constant_(m.bias, 0)
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu(self.bn1(self.conv1(x)))
