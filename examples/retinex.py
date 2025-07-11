@@ -266,6 +266,7 @@ class MultiScaleRetinexNet(nn.Module):
         self.use_refinement = use_refinement
         self.illumination_refinement = illumination_refinement
         if self.use_refinement:
+            out_channels = 3 if not self.illumination_refinement else out_channels
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
         self.relu = nn.PReLU()
