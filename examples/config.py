@@ -95,44 +95,44 @@ class Config:
     lambda_low: float = 0.25
     lambda_illumination: float = 0.3
 
-    lambda_reflect: float = 1.0  
-    lambda_smooth: float = 200.0 
-    lambda_illum_color: float = 2.0
+    lambda_reflect: float = 6.0
+    lambda_smooth: float = 600.0
+    lambda_illum_color: float = 0.5
     lambda_illum_exposure: float = 0
     lambda_illum_variance: float = 0.05
     lambda_illum_contrast: float = 0.1
-    lambda_illum_curve: float = 1.0  
+    lambda_illum_curve: float = 1.5
     lambda_illum_exposure_local: float = 0
 
-    lambda_laplacian: float = 0.5 
+    lambda_laplacian: float = 0.2
     lambda_gradient: float = 0.01
     lambda_frequency: float = 0
-    lambda_edge_aware_smooth: float = 20.0  
+    lambda_edge_aware_smooth: float = 15
     lambda_illum_frequency: float = 0.1
-    lambda_exclusion: float = 2.0  
-    lambda_perceptual: float = 0.0
-    lambda_clipping: float = 1.5 
+    lambda_exclusion: float = 5.0
 
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False
-
+    use_denoising_net: bool = False
+    use_denoising_embedding: bool = False
+    
     predictive_adaptive_curve: bool = True
     spatial_film: bool = False
     use_dilated_convs: bool = True
-    use_se_blocks: bool = True  
-    use_spatial_attention: bool = True  
+    use_se_blocks: bool = True
+    use_spatial_attention: bool = False
     enable_dynamic_weights: bool = False
     use_pixel_shuffle: bool = True
     use_stride_conv: bool = True
-
+    
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
     learn_local_exposure: bool = False
     learn_global_exposure: bool = True
-
+    
     use_illum_opt: bool = True
     eval_niqe: bool = False
 

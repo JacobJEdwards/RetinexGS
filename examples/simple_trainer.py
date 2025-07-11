@@ -317,8 +317,8 @@ class Runner:
 
             # Data Augmentation for Retinex training
             self.retinex_augmentations = K.AugmentationSequential(
-                K.RandomHorizontalFlip(p=0.5),
-                K.RandomVerticalFlip(p=0.5),
+                K.RandomHorizontalFlip(),
+                K.RandomVerticalFlip(),
                 K.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05, p=0.8),
                 data_keys=["input"],
             ).to(self.device)
@@ -920,10 +920,9 @@ class Runner:
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
 
-                # Apply data augmentation
-                pixels = self.retinex_augmentations(pixels.permute(0, 3, 1, 2)).permute(
-                    0, 2, 3, 1
-                )
+                # pixels = self.retinex_augmentations(pixels.permute(0, 3, 1, 2)).permute(
+                #     0, 2, 3, 1
+                # )
 
                 loss = self.retinex_train_step(
                     images_ids=images_ids, pixels=pixels, step=step
