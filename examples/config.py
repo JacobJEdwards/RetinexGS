@@ -96,7 +96,7 @@ class Config:
     use_pixel_shuffle: bool = True
     use_stride_conv: bool = True
 
-    learn_spatial_contrast: bool = True
+    learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = False
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
