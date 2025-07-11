@@ -130,6 +130,8 @@ class Config:
     
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
+    learn_local_exposure: bool = False
+    learn_global_exposure: bool = True
     
     use_illum_opt: bool = True
     eval_niqe: bool = False

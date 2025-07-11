@@ -628,7 +628,11 @@ class Runner:
         )
         loss_smoothing = self.loss_smooth(illumination_map)
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
-        loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target)
+        if cfg.learn_global_exposure:
+            loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target)
+        else:
+            loss_exposure_val = self.loss_exposure(reflectance_map)
+            
         con_degree = (0.5 / torch.mean(pixels)).item()
         loss_reflectance_spa = self.loss_spatial(input_image_for_net, reflectance_map, contrast=con_degree)
         loss_laplacian_val = torch.mean(
@@ -637,7 +641,11 @@ class Runner:
         loss_gradient = self.loss_gradient(input_image_for_net, reflectance_map)
         loss_frequency_val = self.loss_frequency(input_image_for_net, reflectance_map)
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(illumination_map, input_image_for_net)
-        loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean)
+        if cfg.learn_local_exposure:
+            loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean)
+        else:
+            loss_exposure_local = self.loss_exposure_local(reflectance_map)
+
         loss_illumination_frequency_penalty = self.loss_illum_frequency(illumination_map)
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
 
