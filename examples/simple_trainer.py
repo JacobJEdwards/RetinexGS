@@ -270,7 +270,7 @@ class Runner:
                     enable_dynamic_weights=cfg.enable_dynamic_weights,
                     use_stride_conv=cfg.use_stride_conv,
                     use_pixel_shuffle=cfg.use_pixel_shuffle,
-                    num_weight_scales=12,
+                    num_weight_scales=13,
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
@@ -679,6 +679,13 @@ class Runner:
         )
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
 
+        loss_clipping_high = torch.mean(torch.relu(reflectance_map - 0.98) ** 2)
+        loss_clipping_low = torch.mean(torch.relu(0.02 - reflectance_map) ** 2)
+
+        loss_clipping = (
+            (loss_clipping_high + loss_clipping_low)
+        )
+
         individual_losses = torch.stack(
             [
                 loss_reflectance_spa,  # 0
@@ -693,6 +700,7 @@ class Runner:
                 loss_exposure_local,  # 9
                 loss_illumination_frequency_penalty,  # 10
                 loss_exclusion_val,  # 11
+                loss_clipping
             ]
         )
 
@@ -710,6 +718,7 @@ class Runner:
                 cfg.lambda_illum_exposure_local,
                 cfg.lambda_illum_frequency,
                 cfg.lambda_exclusion,
+                cfg.lambda_clipping,
             ],
             device=device,
         )
@@ -749,6 +758,7 @@ class Runner:
                 "exposure_local",
                 "illumination_frequency_penalty",
                 "exclusion_val",
+                "clipping",
             ]
 
             for i, name in enumerate(loss_names):
@@ -844,11 +854,6 @@ class Runner:
                     reflectance_map,
                     step,
                 )
-
-        # Clipping penalty to prevent oversaturation
-        loss_clipping_high = torch.mean(torch.relu(reflectance_map - 0.98) ** 2)
-        loss_clipping_low = torch.mean(torch.relu(0.02 - reflectance_map) ** 2)
-        total_loss += cfg.lambda_clipping * (loss_clipping_high + loss_clipping_low)
 
         return total_loss
 
