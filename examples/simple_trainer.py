@@ -44,7 +44,6 @@ from losses import (
     GradientLoss,
     LocalExposureLoss,
     ExclusionLoss,
-    PerceptualLoss,
 )
 from rendering_double import rasterization_dual
 from gsplat import export_splats
@@ -216,7 +215,6 @@ class Runner:
         ]
 
         if cfg.enable_retinex:
-            self.loss_perceptual = PerceptualLoss().to(self.device)
             self.loss_color = ColourConsistencyLoss().to(self.device)
             self.loss_color.compile()
             self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
