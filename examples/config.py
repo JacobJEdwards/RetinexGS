@@ -120,7 +120,7 @@ class Config:
     use_reflectance_refinement: bool = False
 
     predictive_adaptive_curve: bool = False
-    spatial_film: bool = True
+    spatial_film: bool = False
     use_dilated_convs: bool = True
     use_se_blocks: bool = True
     use_spatial_attention: bool = True
