@@ -99,8 +99,8 @@ class AdaptiveCurveLoss(nn.Module):
             self,
             alpha: float = 0.3,
             beta: float = 0.7,
-            low_thresh: float = 0.3,
-            high_thresh: float = 0.7,
+            initial_low_thresh: float = 0.3,
+            initial_high_thresh: float = 0.7,
             lambda1: float = 1.0,
             lambda2: float = 1.0,
             lambda3: float = 1.0,
@@ -119,9 +119,11 @@ class AdaptiveCurveLoss(nn.Module):
         super(AdaptiveCurveLoss, self).__init__()
         self.alpha = alpha
         self.beta = beta
-        
-        self.low_thresh = low_thresh
-        self.high_thresh = high_thresh
+
+        # self.low_thresh = low_thresh
+        # self.high_thresh = high_thresh
+        self.low_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_low_thresh, dtype=torch.float32))]))
+        self.high_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_high_thresh, dtype=torch.float32))]))
 
         self.learn_lambdas = learn_lambdas
         if self.learn_lambdas:
@@ -144,11 +146,13 @@ class AdaptiveCurveLoss(nn.Module):
         if beta_map.shape[2:] != output.shape[2:]:
             beta_map = F.interpolate(beta_map, size=output.shape[2:], mode='bilinear', align_corners=False)
 
+        low_thresh_val = torch.sigmoid(self.low_thresh)
+        high_thresh_val = torch.sigmoid(self.high_thresh)
 
-        low_mask = (output < self.low_thresh).float()
+        low_mask = (output < low_thresh_val).float()
         low_light_loss = torch.mean(low_mask * torch.abs(output - alpha_map))
 
-        high_mask = (output > self.high_thresh).float()
+        high_mask = (output > high_thresh_val).float()
         high_light_loss = torch.mean(high_mask * torch.abs(output - beta_map))
 
         grad_y = (output[:, :, 1:, :] - output[:, :, :-1, :]) ** 2
@@ -171,10 +175,13 @@ class AdaptiveCurveLoss(nn.Module):
         if alpha_map is not None and beta_map is not None:
             return self.forward_with_maps(output, alpha_map, beta_map)
 
-        low_mask = (output < self.low_thresh).float()
+        low_thresh_val = torch.sigmoid(self.low_thresh)
+        high_thresh_val = torch.sigmoid(self.high_thresh)
+
+        low_mask = (output < low_thresh_val).float()
         low_light_loss = torch.mean(low_mask * torch.abs(output - self.alpha))
 
-        high_mask = (output > self.high_thresh).float()
+        high_mask = (output > high_thresh_val).float()
         high_light_loss = torch.mean(high_mask * torch.abs(output - self.beta))
 
         grad_y = (output[:, :, 1:, :] - output[:, :, :-1, :]) ** 2
@@ -197,7 +204,8 @@ class ColourConsistencyLoss(nn.Module):
     def __init__(self) -> None:
         super(ColourConsistencyLoss, self).__init__()
 
-    def forward(self, x: Tensor) -> Tensor:
+    @staticmethod
+    def forward(x: Tensor) -> Tensor:
         eps = torch.finfo(x.dtype).eps
 
         mean_rgb = torch.mean(x, [2, 3], keepdim=True)
@@ -418,7 +426,8 @@ class FrequencyLoss(nn.Module):
     def __init__(self) -> None:
         super(FrequencyLoss, self).__init__()
 
-    def forward(self, x: Tensor, y: Tensor) -> Tensor:
+    @staticmethod
+    def forward(x: Tensor, y: Tensor) -> Tensor:
         x_gray = torch.mean(x, dim=1, keepdim=True).squeeze(1)
         y_gray = torch.mean(y, dim=1, keepdim=True).squeeze(1)
 
@@ -584,16 +593,10 @@ class ExclusionLoss(nn.Module):
 
         return gradx_loss, grady_loss, (n_channels**2)
 
-    def _all_comb(self, grad1_s, grad2_s):
+    @staticmethod
+    def _all_comb(grad1_s, grad2_s):
         B, C1, H, W = grad1_s.shape
         B, C2, H, W = grad2_s.shape
-
-        grad1_s_r = grad1_s.unsqueeze(2)
-        grad2_s_r = grad2_s.unsqueeze(1)
-
-        term = (grad1_s_r ** 2) * (grad2_s_r ** 2)
-
-        loss = torch.mean(term) ** 0.25
 
         v = []
         for i in range(C2):
@@ -611,7 +614,8 @@ class ExclusionLoss(nn.Module):
 
         return loss_gradxy / 2.0
 
-    def compute_gradient(self, img):
+    @staticmethod
+    def compute_gradient(img: Tensor) -> tuple[Tensor, Tensor]:
         gradx = img[:, :, 1:, :] - img[:, :, :-1, :]
         grady = img[:, :, :, 1:] - img[:, :, :, :-1]
         return gradx, grady
