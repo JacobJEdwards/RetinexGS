@@ -219,9 +219,9 @@ class MultiScaleRetinexNet(nn.Module):
         
         if self.use_dilated_convs:
             self.dilated_conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=2, dilation=2, padding_mode="replicate")
-            self.bn_dilated1 = nn.BatchNorm2d(64)
+            self.bn_dilated1 = nn.InstanceNorm2d(64)
             self.dilated_conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=4, dilation=4, padding_mode="replicate")
-            self.bn_dilated2 = nn.BatchNorm2d(64)
+            self.bn_dilated2 = nn.InstanceNorm2d(64)
 
         self.use_se_blocks = use_se_blocks
         if self.use_se_blocks:
