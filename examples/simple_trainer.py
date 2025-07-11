@@ -38,7 +38,6 @@ from losses import (
     ExposureLoss,
     SpatialLoss,
     AdaptiveCurveLoss,
-    TotalVariationLoss,
     LaplacianLoss,
     GradientLoss,
     LocalExposureLoss,
@@ -215,8 +214,6 @@ class Runner:
             self.loss_color.compile()
             self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
             self.loss_exposure.compile()
-            self.loss_smooth = TotalVariationLoss().to(self.device)
-            self.loss_smooth.compile()
             self.loss_spatial = SpatialLoss(
                 learn_contrast=cfg.learn_spatial_contrast,
                 num_images=len(self.trainset),
@@ -523,7 +520,6 @@ class Runner:
             if not cfg.use_hsv_color_space
             else torch.tensor(0.0, device=device)
         )
-        loss_smoothing = self.loss_smooth(illumination_map)
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         if cfg.learn_global_exposure:
             loss_exposure_val = self.loss_exposure(
@@ -571,7 +567,6 @@ class Runner:
                 loss_reflectance_spa,  # 0
                 loss_color_val,  # 1
                 loss_exposure_val,  # 2
-                loss_smoothing,  # 3
                 loss_adaptive_curve,  # 4
                 loss_laplacian_val,  # 5
                 loss_gradient,  # 6
@@ -589,7 +584,6 @@ class Runner:
                 cfg.lambda_reflect,
                 cfg.lambda_illum_color,
                 cfg.lambda_illum_exposure,
-                cfg.lambda_smooth,
                 cfg.lambda_illum_curve,
                 cfg.lambda_laplacian,
                 cfg.lambda_gradient,
@@ -629,7 +623,6 @@ class Runner:
                 "reflect_spa",
                 "color_val",
                 "exposure_val",
-                "smoothing",
                 "adaptive_curve",
                 "laplacian_val",
                 "gradient",
@@ -726,11 +719,6 @@ class Runner:
                     step,
                 )
 
-        # brisque_score = self.brisque_loss(
-        #     reflectance_map.clamp(0, 1)
-        # )
-
-        # total_loss += brisque_score * 10
 
         return total_loss
 
@@ -976,8 +964,6 @@ class Runner:
                         if not cfg.use_hsv_color_space
                         else torch.tensor(0.0, device=device)
                     )
-                    loss_illum_smooth = self.loss_smooth(illumination_map)
-                    # loss_illum_variance = torch.var(illumination_map)
 
                     loss_adaptive_curve = self.loss_adaptive_curve(
                         reflectance_target, alpha, beta
@@ -1014,8 +1000,6 @@ class Runner:
                             cfg.lambda_reflect * loss_illum_contrast
                             + cfg.lambda_illum_exposure * loss_illum_exposure
                             + cfg.lambda_illum_color * loss_illum_color
-                            + cfg.lambda_smooth * loss_illum_smooth
-                            # + cfg.lambda_illum_variance * loss_illum_variance
                             + cfg.lambda_illum_curve * loss_adaptive_curve
                             + cfg.lambda_laplacian * loss_illum_laplacian
                             + cfg.lambda_gradient * loss_illum_gradient
@@ -1023,7 +1007,6 @@ class Runner:
                             + cfg.lambda_edge_aware_smooth * loss_illum_edge_aware_smooth
                     )
 
-                    # loss = cfg.lambda_reflect * (1 - cfg.lambda_low) + low_loss * cfg.lambda_low # + loss_illumination
                     loss = (
                             low_loss * cfg.lambda_low
                             + loss_reconstruct_enh * (1.0 - cfg.lambda_low)
@@ -1042,7 +1025,6 @@ class Runner:
 
                     low_loss = loss
                     loss_illum_color = torch.tensor(0.0, device=device)
-                    loss_illum_smooth = torch.tensor(0.0, device=device)
                     loss_adaptive_curve = torch.tensor(0.0, device=device)
                     loss_illum_exposure = torch.tensor(0.0, device=device)
                     loss_illum_contrast = torch.tensor(0.0, device=device)
@@ -1092,9 +1074,6 @@ class Runner:
                     )
                     self.writer.add_scalar(
                         "train/illumination_spatial", loss_illum_contrast.item(), step
-                    )
-                    self.writer.add_scalar(
-                        "train/illumination_smoothing", loss_illum_smooth.item(), step
                     )
                     self.writer.add_scalar(
                         "train/illumination_laplacian",
