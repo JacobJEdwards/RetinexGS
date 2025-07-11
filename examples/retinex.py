@@ -167,7 +167,8 @@ class MultiScaleRetinexNet(nn.Module):
         enable_dynamic_weights: bool = False,
         use_spatial_attention: bool = False,
         use_pixel_shuffle: bool = False, 
-        use_stride_conv: bool = False, 
+        use_stride_conv: bool = False,
+        num_weight_scales: int = 11,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
 
@@ -193,7 +194,7 @@ class MultiScaleRetinexNet(nn.Module):
         
         self.enable_dynamic_weights = enable_dynamic_weights
         if self.enable_dynamic_weights:
-            self.log_vars = nn.Parameter(torch.zeros(11, dtype=torch.float32))
+            self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
             # self.loss_weight_head = nn.Sequential(
             #     nn.AdaptiveAvgPool2d(1),
             #     nn.Flatten(),
@@ -266,7 +267,6 @@ class MultiScaleRetinexNet(nn.Module):
         if self.use_refinement:
             self.refinement_net = RefinementNet(out_channels, out_channels, embed_dim)
 
-        # self.relu = nn.PReLU()
         self.relu = nn.PReLU()
         
         self.predictive_adaptive_curve = predictive_adaptive_curve

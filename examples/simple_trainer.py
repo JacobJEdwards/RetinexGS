@@ -241,25 +241,13 @@ class Runner:
             self.loss_exposure_local.compile()
             self.loss_illum_frequency = IlluminationFrequencyLoss().to(self.device)
             self.loss_illum_frequency.compile()
+            self.loss_exclusion = ExclusionLoss().to(self.device)
+            self.loss_exclusion.compile()
 
             retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
             retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
 
             self.global_mean_val_param = nn.Parameter(torch.tensor([0.5], dtype=torch.float32).to(self.device))
-
-            if cfg.use_denoising_net:
-                pass
-                # self.denoising_net = DenoisingNet(
-                #     # in_channels=3,
-                #     # inner_channels=64,
-                #     # out_channels=3,
-                #     # embed_dim=32 if cfg.use_denoising_embedding else 0
-                #     channels=3,
-                #     base_filters=128
-                # ).to(self.device)
-                # self.denoising_net.compile()
-                # if world_size > 1:
-                #     self.denoising_net = DDP(self.denoising_net, device_ids=[local_rank])
 
             if cfg.multi_scale_retinex:
                 self.retinex_net = MultiScaleRetinexNet(
@@ -274,6 +262,7 @@ class Runner:
                     enable_dynamic_weights=cfg.enable_dynamic_weights,
                     use_stride_conv=cfg.use_stride_conv,
                     use_pixel_shuffle=cfg.use_pixel_shuffle,
+                    num_weight_scales=12
                 ).to(self.device)
             else:
                 self.retinex_net = RetinexNet(
@@ -854,6 +843,7 @@ class Runner:
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(illumination_map, input_image_for_net)
         loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean)
         loss_illumination_frequency_penalty = self.loss_illum_frequency(illumination_map)
+        loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
 
         individual_losses = torch.stack([
             loss_reflectance_spa,                 # 0
@@ -865,8 +855,9 @@ class Runner:
             loss_gradient,                        # 6
             loss_frequency_val,                   # 7
             loss_smooth_edge_aware,               # 8
-            loss_exposure_local,
-            loss_illumination_frequency_penalty,
+            loss_exposure_local,                  # 9
+            loss_illumination_frequency_penalty,  # 10
+            loss_exclusion_val,                   # 11
         ])
 
         base_lambdas = torch.tensor([
@@ -881,6 +872,7 @@ class Runner:
             cfg.lambda_edge_aware_smooth,
             cfg.lambda_illum_exposure_local,
             cfg.lambda_illum_frequency,
+            cfg.lambda_exclusion,
         ], device=device)
 
 
@@ -910,7 +902,7 @@ class Runner:
                 "reflect_spa", "color_val", "exposure_val", "smoothing",
                 "adaptive_curve", "laplacian_val", "gradient", "frequency_val",
                 "smooth_edge_aware","exposure_local",
-                "illumination_frequency_penalty"
+                "illumination_frequency_penalty", "exclusion_val"
             ]
 
             for i, name in enumerate(loss_names):
@@ -986,8 +978,8 @@ class Runner:
                     step,
                 )
 
-        loss_clipping_high = torch.mean(torch.relu(reflectance_map - 1.0))
-        loss_clipping_low = torch.mean(torch.relu(0.0 - reflectance_map))
+        loss_clipping_high = torch.mean(torch.relu(reflectance_map - 0.98)**2)
+        loss_clipping_low = torch.mean(torch.relu(0.02 - reflectance_map)**2)
         lambda_clipping = 0.1
         total_loss += lambda_clipping * (loss_clipping_high + loss_clipping_low)
 
