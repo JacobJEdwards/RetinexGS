@@ -474,7 +474,7 @@ class IlluminationFrequencyLoss(nn.Module):
 class EdgeAwareSmoothingLoss(nn.Module):
     initial_gamma: Tensor
 
-    def __init__(self, initial_gamma: float = 0.1, learn_gamma: bool = True) -> None:
+    def __init__(self, initial_gamma: float = 0.2, learn_gamma: bool = True) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
         self.learn_gamma = learn_gamma
 
@@ -502,7 +502,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
         dy_guide = guide_img_gray[:, :, 1:, :] - guide_img_gray[:, :, :-1, :]
 
         if self.learn_gamma:
-            effective_gamma = self.initial_gamma + F.softplus(self.gamma_adjustment)
+            effective_gamma = self.initial_gamma + 0.1 * torch.tanh(self.gamma_adjustment)
         else:
             effective_gamma = self.initial_gamma
 

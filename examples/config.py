@@ -92,7 +92,7 @@ class Config:
     use_refinement_net: bool = False
     use_reflectance_refinement: bool = False
 
-    predictive_adaptive_curve: bool = True
+    predictive_adaptive_curve: bool = False
     spatial_film: bool = False
     use_dilated_convs: bool = True
     use_se_blocks: bool = True

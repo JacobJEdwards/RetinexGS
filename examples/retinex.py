@@ -409,7 +409,7 @@ class MultiScaleRetinexNet(nn.Module):
 
             base_alpha = 0.4
             base_beta = 0.7
-            scale = 0.2
+            scale = 0.1
 
             alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
             beta_map = base_beta + scale * torch.tanh(beta_map_raw)
