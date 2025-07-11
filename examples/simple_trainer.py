@@ -858,11 +858,11 @@ class Runner:
                     step,
                 )
         
-        brisque_score = self.brisque_loss(
-            reflectance_map.clamp(0, 1)
-        ) 
+        # brisque_score = self.brisque_loss(
+        #     reflectance_map.clamp(0, 1)
+        # ) 
         
-        total_loss += brisque_score * 10
+        # total_loss += brisque_score * 10
         
         return total_loss
 
