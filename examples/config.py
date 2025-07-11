@@ -113,7 +113,7 @@ class Config:
     lambda_clipping: float = 10.0
 
     pretrain_retinex: bool = True
-    pretrain_steps: int = 5000
+    pretrain_steps: int = 100
 
     use_hsv_color_space: bool = True
     use_refinement_net: bool = False

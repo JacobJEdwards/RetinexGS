@@ -1013,6 +1013,9 @@ class Runner:
         if cfg.pretrain_retinex and cfg.enable_retinex:
             self.pre_train_retinex()
 
+            for param in self.retinex_net.parameters():
+                param.requires_grad = False
+
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
             batch_size=cfg.batch_size,
