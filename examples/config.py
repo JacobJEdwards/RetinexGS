@@ -117,7 +117,7 @@ class Config:
 
     use_hsv_color_space: bool = True
     use_refinement_net: bool = True
-    use_reflectance_refinement: bool = True
+    use_reflectance_refinement: bool = False
 
     predictive_adaptive_curve: bool = False
     spatial_film: bool = False 

@@ -287,7 +287,7 @@ class MultiScaleRetinexNet(nn.Module):
         )
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
-        c1 = self.relu((self.conv1(x)))
+        c1 = self.relu(self.bn1(self.conv1(x)))
         if self.spatially_film:
             spatial_cond_features = self.spatial_conditioning_encoder(x)
             c1_modulated = self.film1(c1, spatial_cond_features)
@@ -301,7 +301,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         p1 = self.pool1(c1_modulated)
 
-        c2 = self.relu((self.conv2(p1)))
+        c2 = self.relu(self.bn2(self.conv2(p1)))
 
         if self.use_dilated_convs:
             c2 = self.relu(self.bn_dilated1(self.dilated_conv1(c2)))
@@ -319,7 +319,7 @@ class MultiScaleRetinexNet(nn.Module):
             up1, size=p1.shape[2:], mode="bilinear", align_corners=False
         )
         merged = torch.cat([up1, p1], dim=1)
-        c3 = self.relu((self.conv3(merged)))
+        c3 = self.relu(self.bn3(self.conv3(merged)))
 
         if self.use_se_blocks:
             c3 = self.se3(c3)
