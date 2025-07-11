@@ -107,7 +107,7 @@ class Config:
     lambda_laplacian: float = 0.2
     lambda_gradient: float = 0.01
     lambda_frequency: float = 0
-    lambda_edge_aware_smooth: float = 50.0
+    lambda_edge_aware_smooth: float = 15.0
     lambda_illum_frequency: float = 0.1
     lambda_exclusion: float = 5.0
     lambda_clipping: float = 10.0

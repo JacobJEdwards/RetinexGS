@@ -3,29 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
-        super(ResidualBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, padding_mode="replicate")
-        self.bn1 = nn.InstanceNorm2d(out_channels)
-        self.relu = nn.PReLU()
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
-        self.bn2 = nn.InstanceNorm2d(out_channels)
-
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_channels != out_channels:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride),
-                nn.InstanceNorm2d(out_channels)
-            )
-
-    def forward(self, x):
-        out = self.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
-        out = self.relu(out)
-        return out
-
 class SpatialAttentionModule(nn.Module):
     def __init__(self, kernel_size: int = 7) -> None:
         super().__init__()
@@ -57,46 +34,13 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
-class ModulationHead(nn.Module):
-    def __init__(self, feature_channels: int):
-        super(ModulationHead, self).__init__()
-        self.head = nn.Sequential(
-            nn.Conv2d(feature_channels, feature_channels, kernel_size=3, padding=1, padding_mode="replicate"),
-            nn.PReLU(),
-            nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.head(x)
-
 class SpatiallyFiLMLayer(nn.Module):
-    def __init__(self, feature_channels: int, use_modulation_head: bool = True):
+    def __init__(self, feature_channels: int):
         super(SpatiallyFiLMLayer, self).__init__()
-        self.use_modulation_head = use_modulation_head
-        if self.use_modulation_head:
-            self.modulation_head = ModulationHead(feature_channels)
-        else:
-            self.gamma_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
-            self.beta_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
-
-    def forward_with_modulation_head(self, x: Tensor, conditioning_features: Tensor) -> Tensor:
-        modulation_params = self.modulation_head(conditioning_features)
-
-        gamma, beta = torch.chunk(modulation_params, 2, dim=1)
-
-        if gamma.shape[2:] != x.shape[2:]:
-            gamma = F.interpolate(gamma, size=x.shape[2:], mode='bilinear', align_corners=False)
-        if beta.shape[2:] != x.shape[2:]:
-            beta = F.interpolate(beta, size=x.shape[2:], mode='bilinear', align_corners=False)
-
-        gamma_mod = 1.0 + gamma
-
-        return gamma_mod * x + beta
+        self.gamma_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
+        self.beta_predictor = nn.Conv2d(feature_channels, feature_channels, kernel_size=1)
 
     def forward(self, x: Tensor, conditioning_features: Tensor) -> Tensor:
-        if self.use_modulation_head:
-            return self.forward_with_modulation_head(x, conditioning_features)
-
         gamma = self.gamma_predictor(conditioning_features)
         beta = self.beta_predictor(conditioning_features)
 
@@ -123,47 +67,47 @@ class FiLMLayer(nn.Module):
 class RefinementNet(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, embed_dim: int):
         super(RefinementNet, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1, padding_mode="replicate")
-        self.bn1 = nn.InstanceNorm2d(64)
-        self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1, padding_mode="replicate")
-        self.bn1_2 = nn.InstanceNorm2d(64)
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn1_2 = nn.BatchNorm2d(64)
 
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2, padding_mode="replicate")
-        self.bn2 = nn.InstanceNorm2d(128)
-        self.conv2_2 = nn.Conv2d(128, 128, kernel_size=3, padding=1, padding_mode="replicate")
-        self.bn2_2 = nn.InstanceNorm2d(128)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.conv2_2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.bn2_2 = nn.BatchNorm2d(128)
 
         self.film_bottleneck = FiLMLayer(embed_dim=embed_dim, feature_channels=128)
 
-        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2, )
-        self.bn3 = nn.InstanceNorm2d(64)
-        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1, padding_mode="replicate")
-        self.bn3_2 = nn.InstanceNorm2d(64)
+        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.bn3 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
+        self.bn3_2 = nn.BatchNorm2d(64)
 
-        self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
+        self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
 
         self.relu = nn.PReLU()
 
     def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
-        e1 = self.relu(self.bn1(self.conv1(x)))
-        e1 = self.relu(self.bn1_2(self.conv1_2(e1)))
-
-        e2_pre_mod = self.relu(self.bn2(self.conv2(e1)))
-        e2_pre_mod = self.relu(self.bn2_2(self.conv2_2(e2_pre_mod)))
+        e1 = self.relu((self.conv1(x)))
+        e1 = self.relu((self.conv1_2(e1)))
+        e2_pre_mod = self.relu((self.conv2(e1)))
+        e2_pre_mod = self.relu((self.conv2_2(e2_pre_mod)))
 
         e2 = self.film_bottleneck(e2_pre_mod, embedding)
 
-        d1 = self.relu(self.bn3(self.upconv1(e2)))
+        d1 = self.relu((self.upconv1(e2)))
         if d1.shape[2:] != e1.shape[2:]:
             d1 = F.interpolate(
                 d1, size=e1.shape[2:], mode="bilinear", align_corners=False
             )
 
         d1 = torch.cat([d1, e1], dim=1)
-        d1 = self.relu(self.bn3_2(self.conv3(d1)))
+        d1 = self.relu((self.conv3(d1)))
 
         output = self.output_layer(d1)
         return output
+
 
 class RetinexNet(nn.Module):
     def __init__(
@@ -229,10 +173,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.use_pixel_shuffle = use_pixel_shuffle
         self.use_stride_conv = use_stride_conv
-
-        self.layer1 = ResidualBlock(in_channels, 32)
-        self.layer2 = ResidualBlock(32, 64, stride=2)
-        self.bottleneck = ResidualBlock(64, 64)
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, padding_mode="replicate")
         self.bn1 = nn.InstanceNorm2d(32)
@@ -316,7 +256,8 @@ class MultiScaleRetinexNet(nn.Module):
         self.output_head_coarse = nn.Conv2d(64, out_channels, kernel_size=3, padding=1, padding_mode="replicate")
 
         self.combination_layer = nn.Conv2d(
-            in_channels=out_channels * 3,
+            # in_channels=num_scales * out_channels,
+            in_channels=out_channels,
             out_channels=out_channels,
             kernel_size=1,
         )
@@ -405,13 +346,18 @@ class MultiScaleRetinexNet(nn.Module):
             log_illum_coarse_res, size=x.shape[2:], mode="bilinear", align_corners=False
         )
 
-        concatenated_maps = torch.cat(
-            [
-                log_illum_coarse_res,
-                log_illumination_medium_res,
-                log_illumination_full_res,
-            ],
-            dim=1,
+        # concatenated_maps = torch.add(
+        #     [
+        #         log_illum_coarse_res,
+        #         log_illumination_medium_res,
+        #         log_illumination_full_res,
+        #     ],
+        #     dim=1,
+        # )
+        concatenated_maps = (
+                log_illum_coarse_res
+                + log_illumination_medium_res
+                + log_illumination_full_res
         )
 
         final_illumination = self.combination_layer(concatenated_maps)
@@ -429,7 +375,7 @@ class MultiScaleRetinexNet(nn.Module):
             )
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             alpha_map = 0.5 + 1.0 * torch.sigmoid(alpha_map_raw)
-            beta_map = 0.1 + 0.6 * torch.sigmoid(beta_map_raw)
+            beta_map = 0.1 + 0.8 * torch.sigmoid(beta_map_raw)
 
         if self.enable_dynamic_weights:
             # dynamic_weights = self.loss_weight_head(x)
