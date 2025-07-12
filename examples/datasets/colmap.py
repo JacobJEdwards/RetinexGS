@@ -108,7 +108,7 @@ class Parser:
             cam = manager.cameras[camera_id]
             fx, fy, cx, cy = cam.fx, cam.fy, cam.cx, cam.cy
             K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
-            K[:2, :] /= factor
+            K[:2, :] /= self.factor
             Ks_dict[camera_id] = K
 
             # Get distortion parameters.
@@ -136,7 +136,7 @@ class Parser:
             ), f"Only perspective and fisheye cameras are supported, got {type_}"
 
             params_dict[camera_id] = params
-            imsize_dict[camera_id] = (cam.width // factor, cam.height // factor)
+            imsize_dict[camera_id] = (cam.width // self.factor, cam.height // self.factor)
             mask_dict[camera_id] = None
         print(
             f"[Parser] {len(imdata)} images, taken by {len(set(camera_ids))} cameras."
