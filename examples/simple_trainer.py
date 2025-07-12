@@ -1476,23 +1476,15 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     runner = Runner(local_rank, world_rank, world_size, cfg_param)
 
     if cfg_param.ckpt is not None:
-        ckpts_loaded = [
-            torch.load(file, map_location=runner.device) for file in cfg_param.ckpt
+        ckpts = [
+            torch.load(file, map_location=runner.device, weights_only=True) for file in cfg_param.ckpt
         ]
-        if ckpts_loaded:
-            if len(cfg_param.ckpt) > 1 and world_size > 1:
-                for k_splat in runner.splats.keys():
-                    runner.splats[k_splat].data = torch.cat(
-                        [c["splats"][k_splat] for c in ckpts_loaded]
-                    )
-            else:
-                runner.splats.load_state_dict(ckpts_loaded[0]["splats"])
+        for k in runner.splats.keys():
+            runner.splats[k].data = torch.cat([ckpt["splats"][k] for ckpt in ckpts])
 
-            step_loaded = ckpts_loaded[0]["step"]
-
-            print(f"Resuming from checkpoint step {step_loaded}")
-            runner.eval(step=step_loaded)
-            runner.render_traj(step=step_loaded)
+        step = ckpts[0]["step"]
+        runner.eval(step=step)
+        runner.render_traj(step=step)
     else:
         runner.train()
 
