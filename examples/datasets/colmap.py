@@ -71,6 +71,10 @@ class Parser:
         colmap_dir = os.path.join(data_dir, "colmap/sparse/0/")
         if not os.path.exists(colmap_dir):
             colmap_dir = os.path.join(data_dir, "colmap/sparse")
+        if not os.path.exists(colmap_dir):
+            colmap_dir = os.path.join(data_dir, "sparse/0/")
+        if not os.path.exists(colmap_dir):
+            colmap_dir = os.path.join(data_dir, "sparse")
         assert os.path.exists(
             colmap_dir
         ), f"COLMAP directory {colmap_dir} does not exist."
