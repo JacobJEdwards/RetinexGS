@@ -183,7 +183,7 @@ class Runner:
 
         self.parser = Parser(
             data_dir=str(cfg.data_dir),
-            factor=cfg.data_factor,
+            # factor=cfg.data_factor,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
             # is_mip360=True,

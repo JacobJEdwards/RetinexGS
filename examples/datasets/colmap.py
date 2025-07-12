@@ -59,12 +59,12 @@ class Parser:
     def __init__(
             self,
             data_dir: str,
-            factor: int = 1,
+            # factor: int = 1,
             normalize: bool = False,
             test_every: int = 8,
     ):
         self.data_dir = data_dir
-        self.factor = factor
+        self.factor = 8
         self.normalize = normalize
         self.test_every = test_every
 
@@ -143,7 +143,7 @@ class Parser:
         if not (type_ == 0 or type_ == 1):
             print("Warning: COLMAP Camera is not PINHOLE. Images have distortion.")
 
-        w2c_mats = np.stack(w2c_mats, axis=0)
+        w2c_mats = np.stack(w2c_mats)
 
         # Convert extrinsics to camera-to-world.
         camtoworlds = np.linalg.inv(w2c_mats)
@@ -190,11 +190,11 @@ class Parser:
         # so we need to map between the two sorted lists of files.
         colmap_files = sorted(_get_rel_paths(colmap_image_dir))
         image_files = sorted(_get_rel_paths(image_dir))
-        if factor > 1 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
-            image_dir = _resize_image_folder(
-                colmap_image_dir, image_dir + "_png", factor=factor
-            )
-            image_files = sorted(_get_rel_paths(image_dir))
+        # if factor > 1 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
+        #     image_dir = _resize_image_folder(
+        #         colmap_image_dir, image_dir + "_png", factor=factor
+        #     )
+        #     image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
         image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
 
