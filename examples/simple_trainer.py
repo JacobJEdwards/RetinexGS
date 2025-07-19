@@ -400,7 +400,6 @@ class Runner:
                 colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
 
             elif self.cfg.illum_opt_type == "quantized":
-                input_images_for_illum = kwargs.pop("input_images_for_illum", None)
                 image_gain, image_gamma, commitment_loss = self.illum_module(input_images_for_illum, image_ids)
                 colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
 
