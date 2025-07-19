@@ -890,7 +890,7 @@ class Runner:
                     beta,
                     local_exposure,
                     _,
-                ) = self.get_retinex_output(images_ids=image_ids, pixels=colors_enh)
+                ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
                 global_exposure_mean = torch.sigmoid(self.global_mean_val_param)
 
                 reflectance_target_permuted = reflectance_target.permute(
