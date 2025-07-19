@@ -28,7 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.losses import ExclusionLoss
+from losses import ExclusionLoss
 from utils import IlluminationField, sh_to_rgb
 from rendering_double import rasterization_dual
 from gsplat import export_splats
