@@ -509,11 +509,13 @@ class Runner:
                             colors_enh.permute(0, 3, 1, 2),
                             step,
                         )
-                        self.writer.add_images(
-                            "train/illum_map",
-                            illum_map,
-                            step,
-                        )
+                        vis_illum_map = illum_map
+
+                        if vis_illum_map.shape[1] == 1:
+                            vis_illum_map = vis_illum_map.repeat(1, 3, 1, 1)
+
+                        if vis_illum_map.shape[1] == 3:
+                            self.writer.add_images("train/illum_map_visualization", vis_illum_map, step)
 
                 self.writer.flush()
 
