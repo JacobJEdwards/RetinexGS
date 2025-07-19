@@ -22,6 +22,8 @@ class Config:
     normalize_world_space: bool = True
     camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
 
+    packed: bool = True
+
     port: int = 4000
 
     batch_size: int = 1

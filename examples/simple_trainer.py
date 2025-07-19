@@ -263,6 +263,7 @@ class Runner:
             width=width,
             height=height,
             light_color=light_color,
+            packed=self.cfg.packed,
             backgrounds=kwargs.get("backgrounds")
         )
 
@@ -483,6 +484,7 @@ class Runner:
                     state=self.strategy_state,
                     step=step,
                     info=info,
+                    packed=cfg.packed,
                 )
             elif isinstance(self.cfg.strategy, MCMCStrategy):
                 self.cfg.strategy.step_post_backward(
