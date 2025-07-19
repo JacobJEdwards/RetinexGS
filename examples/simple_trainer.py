@@ -28,7 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.utils import PhysicsAwareIllumination
+from utils import PhysicsAwareIllumination
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
 from utils import IlluminationField, DecomposedIlluminationField
