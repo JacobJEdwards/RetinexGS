@@ -13,8 +13,8 @@ from gsplat.cuda._wrapper import (
     isect_offset_encode,
     isect_tiles,
     rasterize_to_pixels,
+    rasterize_to_pixels_eval3d,
 )
-# The faulty import 'from gsplat.cuda._torch_impl import quat_apply' has been removed.
 from gsplat.distributed import (
     all_gather_int32,
     all_gather_tensor_list,
@@ -115,7 +115,7 @@ def rasterization_pbr(
         albedo: Tensor, # [..., N, 3]
         roughness: Tensor, # [..., N, 1]
         metallic: Tensor, # [..., N, 1]
-        light_color: Tensor, # [..., N, 3]
+        light_color: Tensor, # [..., 3]
         viewmats: Tensor,  # [..., C, 4, 4]
         Ks: Tensor,  # [..., C, 3, 3]
         width: int,
@@ -124,9 +124,10 @@ def rasterization_pbr(
         far_plane: float = 1e10,
         radius_clip: float = 0.0,
         eps2d: float = 0.3,
+        sh_degree: int | None = None, # Added to match rasterization_dual
         packed: bool = True,
         tile_size: int = 16,
-        light_dir: Tensor = torch.tensor([0.5, 0.5, -0.5]),
+        light_dir: Tensor = torch.tensor([0.5, 0.5, -0.5]), # Added for PBR
         backgrounds: Tensor | None = None,
         render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
         sparse_grad: bool = False,
@@ -138,6 +139,7 @@ def rasterization_pbr(
         segmented: bool = False,
         covars: Tensor | None = None,
         with_ut: bool = False,
+        with_eval3d: bool = False,
         # distortion
         radial_coeffs: Tensor | None = None,
         tangential_coeffs: Tensor | None = None,
@@ -170,12 +172,34 @@ def rasterization_pbr(
         tri_indices = ([0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2])
         covars = covars[..., tri_indices[0], tri_indices[1]]
 
+    assert opacities.shape == batch_dims + (N,), opacities.shape
+    assert viewmats.shape == batch_dims + (C, 4, 4), viewmats.shape
+    assert Ks.shape == batch_dims + (C, 3, 3), Ks.shape
+    assert render_mode in ["RGB", "D", "ED", "RGB+D", "RGB+ED"], render_mode
+
     assert albedo.shape == batch_dims + (N, 3), f"Albedo shape mismatch: {albedo.shape}"
     assert roughness.shape == batch_dims + (N, 1), f"Roughness shape mismatch: {roughness.shape}"
     assert metallic.shape == batch_dims + (N, 1), f"Metallic shape mismatch: {metallic.shape}"
 
-    if with_ut:
-        assert (quats is not None) and (scales is not None), "UT requires quats and scales."
+    if absgrad:
+        assert not distributed, "AbsGrad is not supported in distributed mode."
+    if (
+            radial_coeffs is not None
+            or tangential_coeffs is not None
+            or thin_prism_coeffs is not None
+            or rolling_shutter != RollingShutterType.GLOBAL
+    ):
+        assert with_ut, "Distortion and rolling shutter require `with_ut=True`."
+    if rolling_shutter != RollingShutterType.GLOBAL:
+        assert viewmats_rs is not None, "Rolling shutter requires `viewmats_rs`."
+    else:
+        assert viewmats_rs is None, "`viewmats_rs` should be None for global shutter."
+    if with_ut or with_eval3d:
+        assert (quats is not None) and (scales is not None), (
+            "UT and eval3d require quats and scales."
+        )
+        assert not packed, "Packed mode is not supported with UT or eval3d."
+        assert not sparse_grad, "Sparse grad is not supported with UT or eval3d."
 
     def reshape_view(C: int, world_view: torch.Tensor, N_world: list) -> torch.Tensor:
         view_list = list(
@@ -187,6 +211,8 @@ def rasterization_pbr(
         return torch.stack([torch.cat(l, dim=0) for l in zip(*view_list)], dim=0)
 
     if distributed:
+        assert batch_dims == (), "Distributed mode does not support batch dimensions"
+        world_rank = torch.distributed.get_rank()
         world_size = torch.distributed.get_world_size()
         N_world = all_gather_int32(world_size, N, device=device)
         C_world = [C] * world_size
@@ -240,7 +266,7 @@ def rasterization_pbr(
     )
 
 
-# PBR Shading Calculation
+    # PBR Shading Calculation
     campos = torch.inverse(viewmats)[..., :3, 3]
     if viewmats_rs is not None:
         campos_rs = torch.inverse(viewmats_rs)[..., :3, 3]
@@ -264,7 +290,7 @@ def rasterization_pbr(
         colors = pbr_shading(
             V=view_dirs, L=light_dir.expand_as(means_packed), N=normals,
             albedo=torch.sigmoid(albedo_packed), roughness=torch.sigmoid(roughness_packed),
-            metallic=torch.sigmoid(metallic_packed), light_color=light_color_packed
+            metallic=torch.sigmoid(metallic_packed), light_color=torch.sigmoid(light_color_packed)
         )
     else:
         view_dirs = F.normalize(means[..., None, :, :] - campos[..., None, :])
@@ -280,7 +306,7 @@ def rasterization_pbr(
             albedo=torch.sigmoid(torch.broadcast_to(albedo[..., None, :, :], batch_dims + (C, N, 3))),
             roughness=torch.sigmoid(torch.broadcast_to(roughness[..., None, :, :], batch_dims + (C, N, 1))),
             metallic=torch.sigmoid(torch.broadcast_to(metallic[..., None, :, :], batch_dims + (C, N, 1))),
-            light_color=torch.broadcast_to(light_color[..., None, :, :], batch_dims + (C, N, 3))
+            light_color=torch.sigmoid(torch.broadcast_to(light_color[..., None, :, :], batch_dims + (C, N, 3)))
         )
 
     # Distributed data shuffling
@@ -347,26 +373,55 @@ def rasterization_pbr(
     )
 
 
-# Perform rasterization
+    # Perform rasterization
     if colors.shape[-1] > channel_chunk:
         n_chunks = (colors.shape[-1] + channel_chunk - 1) // channel_chunk
         render_colors_list, render_alphas_list = [], []
         for i in range(n_chunks):
             colors_chunk = colors[..., i * channel_chunk : (i + 1) * channel_chunk]
             backgrounds_chunk = backgrounds[..., i * channel_chunk : (i + 1) * channel_chunk] if backgrounds is not None else None
-            rc, ra = rasterize_to_pixels(
-                means2d, conics, colors_chunk, opacities, width, height, tile_size,
-                isect_offsets, flatten_ids, backgrounds=backgrounds_chunk, packed=packed, absgrad=absgrad,
-            )
+
+            if with_eval3d:
+                raise NotImplementedError(
+                    "Chunked rendering for `with_eval3d` is not implemented."
+                )
+            else:
+                rc, ra = rasterize_to_pixels(
+                    means2d, conics, colors_chunk, opacities, width, height, tile_size,
+                    isect_offsets, flatten_ids, backgrounds=backgrounds_chunk, packed=packed, absgrad=absgrad,
+                )
             render_colors_list.append(rc)
             render_alphas_list.append(ra)
         render_colors = torch.cat(render_colors_list, dim=-1)
         render_alphas = render_alphas_list[0]
     else:
-        render_colors, render_alphas = rasterize_to_pixels(
-            means2d, conics, colors, opacities, width, height, tile_size,
-            isect_offsets, flatten_ids, backgrounds=backgrounds, packed=packed, absgrad=absgrad
-        )
+        if with_eval3d:
+            render_colors, render_alphas = rasterize_to_pixels_eval3d(
+                means,
+                quats,
+                scales,
+                colors,
+                opacities,
+                viewmats,
+                Ks,
+                width,
+                height,
+                tile_size,
+                isect_offsets,
+                flatten_ids,
+                backgrounds=backgrounds,
+                camera_model=camera_model,
+                radial_coeffs=radial_coeffs,
+                tangential_coeffs=tangential_coeffs,
+                thin_prism_coeffs=thin_prism_coeffs,
+                rolling_shutter=rolling_shutter,
+                viewmats_rs=viewmats_rs,
+            )
+        else:
+            render_colors, render_alphas = rasterize_to_pixels(
+                means2d, conics, colors, opacities, width, height, tile_size,
+                isect_offsets, flatten_ids, backgrounds=backgrounds, packed=packed, absgrad=absgrad
+            )
 
     # Post-processing for expected depth
     if render_mode in ["ED", "RGB+ED"]:
