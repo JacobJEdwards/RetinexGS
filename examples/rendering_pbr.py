@@ -153,12 +153,15 @@ def rasterization_pbr(
     """
     meta = {}
     batch_dims = means.shape[:-2]
-    num_batch_dims = len(batch_dims)
     B = math.prod(batch_dims)
     N = means.shape[-2]
     C = viewmats.shape[-3]
     I = B * C
     device = means.device
+
+    albedo_act = torch.sigmoid(albedo)
+    roughness_act = torch.sigmoid(roughness)
+    metallic_act = torch.sigmoid(metallic)
 
     assert means.shape == batch_dims + (N, 3), means.shape
     if covars is None:
@@ -276,55 +279,41 @@ def rasterization_pbr(
     light_dir = F.normalize(light_dir.to(device).float(), dim=0)
 
     if packed:
-        means_packed = means.view(B, N, 3)[batch_ids, gaussian_ids]
-        quats_packed = quats.view(B, N, 4)[batch_ids, gaussian_ids]
-        albedo_packed = albedo.view(B, N, 3)[batch_ids, gaussian_ids]
-        roughness_packed = roughness.view(B, N, 1)[batch_ids, gaussian_ids]
-        metallic_packed = metallic.view(B, N, 1)[batch_ids, gaussian_ids]
-        light_color_packed = light_color.view(B, N, 3)[batch_ids, gaussian_ids]
+        means_packed = means[gaussian_ids]
+        quats_packed = quats[gaussian_ids]
+        albedo_packed = albedo_act[gaussian_ids]
+        roughness_packed = roughness_act[gaussian_ids]
+        metallic_packed = metallic_act[gaussian_ids]
+        light_color_packed = light_color[gaussian_ids]
+        light_dir_packed = light_dir[gaussian_ids]
 
-        view_dirs = F.normalize(means_packed - campos.view(B, C, 3)[batch_ids, camera_ids])
+        view_dirs = F.normalize(means_packed - campos[camera_ids])
 
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
         normals = quat_apply(quats_packed, base_normal)
 
-        light_dir_packed = light_dir.view(B, N, 3)[batch_ids, gaussian_ids]
-
-        # Use the packed versions of all properties for shading
         colors = pbr_shading(
-            V=view_dirs,
-            L=light_dir_packed,
-            N=normals,
-            albedo=torch.sigmoid(albedo_packed),
-            roughness=torch.sigmoid(roughness_packed),
-            metallic=torch.sigmoid(metallic_packed),
-            light_color=torch.sigmoid(light_color_packed)
+            V=view_dirs, L=light_dir_packed, N=normals,
+            albedo=albedo_packed, roughness=roughness_packed,
+            metallic=metallic_packed, light_color=light_color_packed
         )
-
     else:
-        view_dirs = F.normalize(means[..., None, :, :] - campos[..., None, :])
-
+        view_dirs = F.normalize(means.unsqueeze(0) - campos.unsqueeze(1)) # [C, N, 3]
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
-        quats_exp = torch.broadcast_to(quats[..., None, :, :], batch_dims + (C, N, 4))
-        normals = quat_apply(quats_exp, base_normal)
+        normals = quat_apply(quats.unsqueeze(0).expand(C, -1, -1), base_normal) # [C, N, 3]
 
-        albedo_exp = albedo.unsqueeze(0).expand(C, N, -1)
-        roughness_exp = roughness.unsqueeze(0).expand(C, N, -1)
-        metallic_exp = metallic.unsqueeze(0).expand(C, N, -1)
+        # Vectorize shading by expanding view-independent tensors
+        albedo_exp = albedo_act.unsqueeze(0).expand(C, N, -1)
+        roughness_exp = roughness_act.unsqueeze(0).expand(C, N, -1)
+        metallic_exp = metallic_act.unsqueeze(0).expand(C, N, -1)
         light_color_exp = light_color.unsqueeze(0).expand(C, N, -1)
         light_dir_exp = light_dir.unsqueeze(0).expand(C, N, -1)
 
-        # Perform shading for all cameras at once
         colors = pbr_shading(
-            V=view_dirs,
-            L=light_dir_exp,
-            N=normals,
-            albedo=albedo_exp,
-            roughness=roughness_exp,
-            metallic=metallic_exp,
-            light_color=light_color_exp
+            V=view_dirs, L=light_dir_exp, N=normals,
+            albedo=albedo_exp, roughness=roughness_exp,
+            metallic=metallic_exp, light_color=light_color_exp
         )
-
         # light_dir_exp = light_dir.expand(*batch_dims, C, N, 3)
         #
         # colors = pbr_shading(
