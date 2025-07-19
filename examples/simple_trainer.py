@@ -28,6 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.utils import PhysicsAwareIllumination
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
 from utils import IlluminationField, DecomposedIlluminationField
@@ -166,17 +167,13 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        if cfg.decomposed_field:
-            self.illumination_field = DecomposedIlluminationField().to(self.device)
-        else:
-            self.illumination_field = IlluminationField().to(self.device)
+        self.illumination_field = PhysicsAwareIllumination().to(self.device)
+
 
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
-        self.illum_field_optimizer = torch.optim.AdamW(
-            self.illumination_field.parameters(), lr=1e-4
-        )
+        self.illum_field_optimizer = torch.optim.AdamW(self.illumination_field.parameters())
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
 
@@ -253,7 +250,7 @@ class Runner:
         roughness = self.splats["roughness"]
         metallic = self.splats["metallic"]
 
-        light_color, _ = self.illumination_field(means)
+        light_color, light_dir = self.illumination_field(means)
 
         return rasterization_pbr(
             means=means, quats=quats, scales=scales, opacities=opacities,
@@ -264,6 +261,7 @@ class Runner:
             height=height,
             light_color=light_color,
             packed=self.cfg.packed,
+            light_dir=light_dir,
             backgrounds=kwargs.get("backgrounds")
         )
 
@@ -365,25 +363,18 @@ class Runner:
                 rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
                 rand_points.requires_grad = True
 
-                if cfg.decomposed_field:
-                    _, direct_params, ambient_params = self.illumination_field(rand_points, return_components=True)
+                rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
+                rand_points.requires_grad = True
 
-                    d_direct = torch.autograd.grad(outputs=direct_params.sum(), inputs=rand_points, create_graph=True)[0]
+                shadow_field_module = self.illumination_field.shadow_field
 
-                    d_ambient = torch.autograd.grad(outputs=ambient_params.sum(), inputs=rand_points, create_graph=True)[0]
+                shadow_values = shadow_field_module(rand_points)
 
-                    loss_illum_smoothness = (10.0 * d_ambient.norm(2, dim=-1).mean()) + \
-                                            (1.0 * d_direct.norm(2, dim=-1).mean())
+                d_shadow = torch.autograd.grad(outputs=shadow_values.sum(), inputs=rand_points, create_graph=True)[0]
 
-                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
-                else:
-                    gain, gamma = self.illumination_field(rand_points)
+                loss_illum_smoothness = d_shadow.norm(2, dim=-1).mean()
+                loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
-                    d_gain = torch.autograd.grad(outputs=gain.sum(), inputs=rand_points, create_graph=True)[0]
-                    d_gamma = torch.autograd.grad(outputs=gamma.sum(), inputs=rand_points, create_graph=True)[0]
-
-                    loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
-                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -453,18 +444,24 @@ class Runner:
             if (
                     step in [i - 1 for i in cfg.ply_steps] or step == max_steps - 1
             ) and cfg.save_ply:
-                sh0_export = self.splats["sh0"]
-                shN_export = self.splats["shN"]
+                # sh0_export = self.splats["sh0"]
+                # shN_export = self.splats["shN"]
+                albedo_export = self.splats["albedo"]
+                metallic_export = self.splats["metallic"]
+                roughness_export = self.splats["roughness"]
 
-                export_splats(
-                    means=self.splats["means"],
-                    scales=self.splats["scales"],
-                    quats=self.splats["quats"],
-                    opacities=self.splats["opacities"],
-                    sh0=sh0_export,
-                    shN=shN_export,
-                    save_to=f"{self.ply_dir}/point_cloud_{step}.ply",
-                )
+
+                # todo: export with pbr
+                # export_splats(
+                #     means=self.splats["means"],
+                #     scales=self.splats["scales"],
+                #     quats=self.splats["quats"],
+                #     opacities=self.splats["opacities"],
+                #     albedo=albedo_export,
+                #     metallic=metallic_export,
+                #     roughness=roughness_export,
+                #     save_to=f"{self.ply_dir}/point_cloud_{step}.ply",
+                # )
 
 
             for optimizer in self.optimizers.values():

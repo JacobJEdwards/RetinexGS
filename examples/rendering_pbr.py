@@ -287,6 +287,17 @@ def rasterization_pbr(
 
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
         normals = quat_apply(quats_packed, base_normal)
+        colors = torch.zeros_like(view_dirs) # [C, N, 3]
+        for i in range(C):
+            colors[i] = pbr_shading(
+                V=view_dirs[i],
+                L=light_dir,
+                N=normals[i],
+                albedo=albedo,
+                roughness=roughness,
+                metallic=metallic,
+                light_color=light_color
+            )
 
         colors = pbr_shading(
             V=view_dirs, L=light_dir.expand_as(means_packed), N=normals,

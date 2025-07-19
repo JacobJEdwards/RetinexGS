@@ -65,8 +65,6 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    decomposed_field: bool = True
-
     lambda_illum_smoothness: float = 0.001
     lambda_exclusion: float = 0.01
     lambda_shn_reg: float = 0.1
