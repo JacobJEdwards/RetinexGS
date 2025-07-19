@@ -209,6 +209,9 @@ def rgb_to_sh(rgb: Tensor) -> Tensor:
     C0 = 0.28209479177387814
     return (rgb - 0.5) / C0
 
+def sh_to_rgb(sh: Tensor) -> Tensor:
+    C0 = 0.28209479177387814
+    return sh * C0 + 0.5
 
 def set_random_seed(seed: int):
     random.seed(seed)
@@ -431,3 +434,40 @@ class QuantizedIlluminationModule(nn.Module):
         # gain, gamma, _ = self.base_module(image_tensor, quantized_embedding)
 
         return gain, gamma, commitment_loss
+
+class PositionalEncoder(nn.Module):
+    def __init__(self, num_freqs: int):
+        super().__init__()
+        self.freq_bands = 2.0 ** torch.linspace(0.0, num_freqs - 1, num_freqs)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [..., 3]
+        # returns: [..., 3 * 2 * num_freqs]
+        x = x.unsqueeze(-1) # [..., 3, 1]
+        projs = x * self.freq_bands.to(x.device) # [..., 3, N_freqs]
+        return torch.cat([torch.sin(projs), torch.cos(projs)], dim=-1).flatten(-2)
+
+
+class IlluminationField(nn.Module):
+    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4):
+        super().__init__()
+        self.encoder = PositionalEncoder(num_freqs)
+        in_dim = 3 * 2 * num_freqs
+
+        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
+        for _ in range(num_layers - 1):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
+        layers.append(nn.Linear(hidden_dim, 6)) # 3 for gain, 3 for gamma
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        # x: [N, 3]
+        encoded_x = self.encoder(x)
+        params = self.mlp(encoded_x) # [N, 6]
+
+        gain, gamma = torch.chunk(params, 2, dim=-1)
+
+        gain = torch.sigmoid(gain)
+        gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
+
+        return gain, gamma
