@@ -509,7 +509,7 @@ class Runner:
                             colors_enh.permute(0, 3, 1, 2),
                             step,
                         )
-                        self.writer.add_images(
+                        self.writer.add_image(
                             "train/illum_map",
                             sh_to_rgb(illum_map).permute(0, 3, 1, 2),
                             step,
