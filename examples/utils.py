@@ -356,7 +356,7 @@ class ContentAwareIlluminationOptModule(nn.Module):
             nn.Linear(feature_dim, 6),
         )
 
-    def forward(self, image_tensor: Tensor, embed_ids: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, image_tensor: Tensor, embed_ids: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         content_features = self.content_encoder(image_tensor)
 
         appearance_embedding = self.embeds(embed_ids)
@@ -369,7 +369,7 @@ class ContentAwareIlluminationOptModule(nn.Module):
         gain = 0.5 + torch.sigmoid(gain)
         gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
 
-        return gain.view(-1, 1, 3), gamma.view(-1, 1, 3)
+        return gain.view(-1, 1, 3), gamma.view(-1, 1, 3), appearance_embedding
 
 
 class VectorQuantizer(nn.Module):

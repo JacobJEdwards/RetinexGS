@@ -396,7 +396,7 @@ class Runner:
         if self.cfg.use_illum_opt:
             input_images_for_illum = kwargs.pop("input_images_for_illum", None)
             if self.cfg.illum_opt_type == "content_aware":
-                image_gain, image_gamma = self.illum_module(input_images_for_illum, image_ids)
+                image_gain, image_gamma, _ = self.illum_module(input_images_for_illum, image_ids)
                 colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
 
             elif self.cfg.illum_opt_type == "quantized":
