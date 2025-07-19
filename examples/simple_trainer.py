@@ -263,8 +263,6 @@ class Runner:
 
         colors_enh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
-        commitment_loss = torch.tensor(0.0, device=self.device)
-
         rasterize_mode: Literal["antialiased", "classic"] = (
            "classic"
         )
@@ -308,8 +306,6 @@ class Runner:
             **kwargs,
         )
 
-        info["commitment_loss"] = commitment_loss
-
         return (
             render_colors_enh,
             render_colors_low,
@@ -317,6 +313,33 @@ class Runner:
             render_low_alphas,
             info,
         )  # return colors and alphas
+
+    @torch.no_grad()
+    def visualize_illumination_field(
+            self,
+            depth_map: Tensor,
+            camtoworld: Tensor,
+            K: Tensor
+    ) -> Tensor:
+        H, W = depth_map.shape[1:3]
+
+        grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(self.device)
+        grid = grid.permute(2, 0, 1).unsqueeze(0)  # [1, 2, H, W]
+
+        points_3d_cam = kornia.geometry.depth.unproject_points(
+            grid.permute(0, 2, 3, 1), depth_map.permute(0, 2, 3, 1), K
+        )
+
+        B, _, _, C = points_3d_cam.shape
+        points_3d_cam = points_3d_cam.reshape(B, -1, C)
+
+        points_3d_world = kornia.geometry.transform_points(camtoworld, points_3d_cam)
+
+        gain, gamma = self.illumination_field(points_3d_world.squeeze(0))
+
+        illum_map_vis = gain.reshape(H, W, 3)
+
+        return illum_map_vis
 
 
     def train(self):
