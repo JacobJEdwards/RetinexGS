@@ -83,7 +83,7 @@ class Config:
     lambda_exclusion: float = 0.1
     lambda_clipping: float = 0.0
 
-    pretrain_retinex: bool = True
+    pretrain_retinex: bool = False
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
