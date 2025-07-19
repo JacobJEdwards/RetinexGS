@@ -19,7 +19,7 @@ from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnne
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
-from typing_extensions import Literal, assert_never
+from typing_extensions import assert_never
 
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
@@ -28,16 +28,15 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
-from utils import IlluminationField, sh_to_rgb, DecomposedIlluminationField
-from rendering_double import rasterization_dual
+from utils import IlluminationField, DecomposedIlluminationField
 from gsplat import export_splats
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
 from gsplat.strategy import MCMCStrategy, DefaultStrategy
 from utils import (
     knn,
-    rgb_to_sh,
     set_random_seed,
 )
 
@@ -53,10 +52,11 @@ def create_splats_with_optimizers(
         scales_lr: float = 5e-3,
         opacities_lr: float = 5e-2,
         quats_lr: float = 1e-3,
-        sh0_lr: float = 2.5e-3,
-        shN_lr: float = 2.5e-3 / 20,
+
+        albedo_lr: float = 2.5e-3,
+        rough_metal_lr: float = 2.5e-3,
+
         scene_scale: float = 1.0,
-        sh_degree: int = 3,
         sparse_grad: bool = False,
         visible_adam: bool = False,
         batch_size: int = 1,
@@ -89,34 +89,19 @@ def create_splats_with_optimizers(
     quats = torch.rand((N, 4))
     opacities = torch.logit(torch.full((N,), init_opacity))
 
+    initial_albedo = torch.logit(rgbs.clamp(0.01, 0.99))
+    initial_roughness = torch.logit(torch.full((N, 1), 0.7))
+    initial_metallic = torch.logit(torch.full((N, 1), 0.1))
+
     params = [
         ("means", torch.nn.Parameter(points), means_lr * scene_scale),
         ("scales", torch.nn.Parameter(scales), scales_lr),
         ("quats", torch.nn.Parameter(quats), quats_lr),
         ("opacities", torch.nn.Parameter(opacities), opacities_lr),
+        ("albedo", torch.nn.Parameter(initial_albedo), albedo_lr),
+        ("roughness", torch.nn.Parameter(initial_roughness), rough_metal_lr),
+        ("metallic", torch.nn.Parameter(initial_metallic), rough_metal_lr),
     ]
-
-    if feature_dim is None:
-        colors = torch.zeros((N, (sh_degree + 1) ** 2, 3))
-        colors[:, 0, :] = rgb_to_sh(rgbs)
-        params.append(("sh0", torch.nn.Parameter(colors[:, :1, :]), sh0_lr))
-        params.append(("shN", torch.nn.Parameter(colors[:, 1:, :]), shN_lr))
-    else:
-        features = torch.rand(N, feature_dim)
-        params.append(("features", torch.nn.Parameter(features), sh0_lr))
-        colors = torch.logit(rgbs)
-        params.append(("colors", torch.nn.Parameter(colors), sh0_lr))
-
-    # lumincance
-    adjust_k = torch.nn.Parameter(
-        torch.ones_like(colors[:, :1, :]), requires_grad=True
-    )  # enhance, for multiply
-    adjust_b = torch.nn.Parameter(
-        torch.zeros_like(colors[:, :1, :]), requires_grad=True
-    )  # bias, for add,
-
-    params.append(("adjust_k", adjust_k, sh0_lr))
-    params.append(("adjust_b", adjust_b, sh0_lr))
 
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
 
@@ -206,10 +191,9 @@ class Runner:
             scales_lr=cfg.scales_lr,
             opacities_lr=cfg.opacities_lr,
             quats_lr=cfg.quats_lr,
-            sh0_lr=cfg.sh0_lr,
-            shN_lr=cfg.shN_lr,
+            albedo_lr=cfg.albedo_lr,
+            rough_metal_lr=cfg.rough_metal_lr,
             scene_scale=self.scene_scale,
-            sh_degree=cfg.sh_degree,
             batch_size=cfg.batch_size,
             feature_dim=feature_dim,
             device=self.device,
@@ -258,65 +242,29 @@ class Runner:
             masks: Tensor | None = None,
             **kwargs,
     ) -> (
-            tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Any]]
+            tuple[Tensor, Tensor, dict[str, Any]]
     ):
         means = self.splats["means"]
         quats = self.splats["quats"]
         scales = torch.exp(self.splats["scales"])
         opacities = torch.sigmoid(self.splats["opacities"])
+        albedo = self.splats["albedo"]
+        roughness = self.splats["roughness"]
+        metallic = self.splats["metallic"]
 
-        colors_enh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
+        light_color, _ = self.illumination_field(means)
 
-        rasterize_mode: Literal["antialiased", "classic"] = (
-           "classic"
-        )
-
-        gain, gamma = self.illumination_field(means)
-
-        base_reflectance_sh = colors_enh[:, 0, :] # (N, 3)
-        base_reflectance_rgb = sh_to_rgb(base_reflectance_sh)
-
-        final_color_rgb = gain * (torch.clamp(base_reflectance_rgb, 1e-6, 1.0) ** gamma)
-
-        final_color_sh0 = rgb_to_sh(final_color_rgb)
-
-        colors_low = colors_enh.clone()
-        colors_low[:, 0, :] = final_color_sh0
-
-        (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
-            info,
-        ) = rasterization_dual(
-            means=means,
-            quats=quats,
-            scales=scales,
-            opacities=opacities,
-            colors=colors_enh,
-            colors_low=colors_low,
-            viewmats=torch.linalg.inv(camtoworlds.float()),  # [C, 4, 4]
-            Ks=Ks,  # [C, 3, 3]
+        return rasterization_pbr(
+            means=means, quats=quats, scales=scales, opacities=opacities,
+            albedo=albedo, roughness=roughness, metallic=metallic,
+            viewmats=torch.linalg.inv(camtoworlds.float()),
+            Ks=Ks,
             width=width,
             height=height,
-            packed=False,
-            absgrad=(
-                self.cfg.strategy.absgrad
-                if isinstance(self.cfg.strategy, DefaultStrategy)
-                else False
-            ),
-            rasterize_mode=rasterize_mode,
-            **kwargs,
+            light_color=light_color,
+            backgrounds=kwargs.get("backgrounds")
         )
 
-        return (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
-            info,
-        )  # return colors and alphas
 
     @torch.no_grad()
     def visualize_illumination_field(
@@ -384,10 +332,6 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
-            sh_degree_to_use = min(
-                step // cfg.sh_degree_interval, cfg.sh_degree
-            )  # Defined early
-
             with torch.autocast(enabled=False, device_type=device):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
@@ -395,34 +339,25 @@ class Runner:
                 height, width = pixels.shape[1:3]
 
                 (
-                    renders_enh,
-                    renders_low,
-                    alphas_enh,
-                    alphas_low,
+                    renders,
+                    alphas,
                     info,
                 ) = self.rasterize_splats(
                     camtoworlds=camtoworlds,
                     Ks=Ks,
                     width=width,
                     height=height,
-                    sh_degree=sh_degree_to_use,
-                    render_mode="RGB+ED",
+                    render_mode="RGB+ED"
                 )
 
-                colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
-                colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
+                colors = torch.clamp(renders[..., :3], 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
+                loss_reconstruct = F.l1_loss(colors, pixels)
+                ssim_loss = 1.0 - self.ssim(colors.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
+                loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct + cfg.ssim_lambda * ssim_loss
+
                 info["means2d"].retain_grad()
-
-                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
-                ssim_loss_low = 1.0 - self.ssim(
-                    colors_low.permute(0, 3, 1, 2),
-                    pixels.permute(0, 3, 1, 2),
-                )
-                low_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
-
-                loss = low_loss
 
                 # smoothness loss for illumination field
                 rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
@@ -448,36 +383,6 @@ class Runner:
                     loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
-                # exclusion loss for illumination field
-                with torch.no_grad():
-                    depth = renders_low[..., 3:4].detach()
-                    H, W = depth.shape[1:3]
-
-                    grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device)
-
-                    points_3d_cam = kornia.geometry.depth.unproject_points(
-                        grid, depth, Ks
-                    )
-
-                    points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam)
-
-                gain_map, gamma_map = self.illumination_field(points_3d_world.squeeze(0)) # [H*W, 3] each
-
-                illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
-
-                reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
-
-                loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
-                loss += cfg.lambda_exclusion * loss_exclusion
-
-                loss_shn_reg = self.splats["shN"].pow(2).mean()
-                loss += cfg.lambda_shn_reg * loss_shn_reg
-
-                reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
-
-                loss_gray_world = (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
-                loss += cfg.lambda_gray_world * loss_gray_world
-
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
                     optimizers=self.optimizers,
@@ -499,22 +404,16 @@ class Runner:
 
             loss.backward()
 
-            desc_parts = [f"loss={loss.item():.3f}",
-                          f"sh_deg={sh_degree_to_use}"]
+            desc_parts = [f"loss={loss.item():.3f}"]
             pbar.set_description("| ".join(desc_parts))
 
             if world_rank == 0 and cfg.tb_every > 0 and step % cfg.tb_every == 0:
                 mem = torch.cuda.max_memory_allocated() / 1024**3
                 self.writer.add_scalar("train/loss", loss.item(), step)
-                self.writer.add_scalar("train/l1_low", loss_reconstruct_low.item(), step)
-                self.writer.add_scalar("train/ssim_low", ssim_loss_low.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
                 if cfg.tb_save_image:
                     with torch.no_grad():
-                        self.writer.add_images(
-                            "train/render_low", colors_low.permute(0, 3, 1, 2), step
-                        )
                         self.writer.add_images(
                             "train/pixels",
                             pixels.permute(0, 3, 1, 2),
@@ -522,16 +421,9 @@ class Runner:
                         )
                         self.writer.add_images(
                             "train/render_enh",
-                            colors_enh.permute(0, 3, 1, 2),
+                            colors.permute(0, 3, 1, 2),
                             step,
                         )
-                        vis_illum_map = illum_map
-
-                        if vis_illum_map.shape[1] == 1:
-                            vis_illum_map = vis_illum_map.repeat(1, 3, 1, 1)
-
-                        if vis_illum_map.shape[1] == 3:
-                            self.writer.add_images("train/illum_map_visualization", vis_illum_map, step)
 
                 self.writer.flush()
 

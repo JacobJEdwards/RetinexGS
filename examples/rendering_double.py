@@ -550,3 +550,4 @@ def rasterization_dual(
         )
 
     return render_colors, render_low_colors, render_alphas, render_low_alphas, meta
+

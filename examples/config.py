@@ -51,8 +51,8 @@ class Config:
     scales_lr: float = 5e-3
     opacities_lr: float = 5e-2
     quats_lr: float = 1e-3
-    sh0_lr: float = 2.5e-3
-    shN_lr: float = 2.5e-3 / 20
+    albedo_lr: float = 2.5e-3
+    rough_metal_lr: float = 2.5e-3 / 20
 
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
