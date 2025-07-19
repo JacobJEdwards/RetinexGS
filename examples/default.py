@@ -91,7 +91,7 @@ class DefaultStrategy(Strategy):
     pause_refine_after_reset: int = 0
     absgrad: bool = False
     revised_opacity: bool = False
-    verbose: bool = False
+    verbose: bool = True
     key_for_gradient: Literal["means2d", "gradient_2dgs"] = "means2d"
 
     def initialize_state(self, scene_scale: float = 1.0) -> Dict[str, Any]:
