@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Any
 
 import imageio
+import kornia
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -27,6 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.losses import ExclusionLoss
 from utils import IlluminationField, sh_to_rgb
 from rendering_double import rasterization_dual
 from gsplat import export_splats
@@ -186,6 +188,8 @@ class Runner:
             self.illumination_field.parameters(), lr=1e-4
         )
 
+        self.loss_exclusion = ExclusionLoss().to(self.device)
+
         feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
             self.parser,
@@ -258,7 +262,6 @@ class Runner:
         opacities = torch.sigmoid(self.splats["opacities"])
 
         colors_enh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
-        colors_low = colors_enh
 
         commitment_loss = torch.tensor(0.0, device=self.device)
 
@@ -320,7 +323,6 @@ class Runner:
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
-        world_size = self.world_size
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
@@ -377,6 +379,7 @@ class Runner:
                     width=width,
                     height=height,
                     sh_degree=sh_degree_to_use,
+                    render_mode="RGB+ED",
                 )
 
                 colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
@@ -394,6 +397,7 @@ class Runner:
 
                 loss = low_loss
 
+                # smoothness loss for illumination field
                 rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
                 rand_points.requires_grad = True
 
@@ -404,6 +408,37 @@ class Runner:
 
                 loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
                 loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+
+                # exclusion loss for illumination field
+                with torch.no_grad():
+                    depth = renders_low[..., 3:4].detach()
+                    H, W = depth.shape[1:3]
+
+                    grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device).squeeze(0)
+                    grid = grid.permute(2, 0, 1).unsqueeze(0)
+
+                    points_3d_cam = kornia.geometry.depth.unproject_points(
+                        grid, depth, Ks.squeeze(0)
+                    )
+
+                    points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam.transpose(1, 2))
+
+                gain_map, gamma_map = self.illumination_field(points_3d_world.squeeze(0)) # [H*W, 3] each
+
+                illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
+
+                reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
+
+                loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
+                loss += cfg.lambda_exclusion * loss_exclusion
+
+                loss_shn_reg = self.splats["shN"].pow(2).mean()
+                loss += cfg.lambda_shn_reg * loss_shn_reg
+
+                reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
+
+                loss_gray_world = (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
+                loss += cfg.lambda_gray_world * loss_gray_world
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -450,6 +485,11 @@ class Runner:
                         self.writer.add_images(
                             "train/render_enh",
                             colors_enh.permute(0, 3, 1, 2),
+                            step,
+                        )
+                        self.writer.add_images(
+                            "train/illum_map",
+                            sh_to_rgb(illum_map).permute(0, 3, 1, 2),
                             step,
                         )
 
@@ -545,7 +585,6 @@ class Runner:
             Ks = data["K"].to(device)
 
             pixels = data["image"].to(device) / 255.0
-            image_id = data["image_id"].to(device)
 
             masks = data["mask"].to(device) if "mask" in data else None
             height, width = pixels.shape[1:3]
