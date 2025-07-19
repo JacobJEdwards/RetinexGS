@@ -918,13 +918,13 @@ class Runner:
                 )
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                # retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step)
+                retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step)
 
 
                 loss = (
                         cfg.lambda_low * low_loss
                         + (1.0 - cfg.lambda_low) * enh_loss
-                        # + cfg.lambda_illumination * retinex_loss
+                        + cfg.lambda_illumination * retinex_loss
                 )
 
                 self.cfg.strategy.step_pre_backward(
@@ -948,40 +948,19 @@ class Runner:
 
             loss.backward()
 
-            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={loss_reflectance.item():.3f} ",
+            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
                           f"sh_deg={sh_degree_to_use}"]
             pbar.set_description("| ".join(desc_parts))
 
             if world_rank == 0 and cfg.tb_every > 0 and step % cfg.tb_every == 0:
                 mem = torch.cuda.max_memory_allocated() / 1024**3
                 self.writer.add_scalar("train/loss", loss.item(), step)
-                self.writer.add_scalar("train/l1loss", loss_reflectance.item(), step)
-                self.writer.add_scalar("train/ssimloss", ssim_loss.item(), step)
+                self.writer.add_scalar("train/l1low", loss_reconstruct_low.item(), step)
+                self.writer.add_scalar("train/ssim_low", ssim_loss_low.item(), step)
+                self.writer.add_scalar("train/l1enh", loss_reconstruct_enh.item(), step)
+                self.writer.add_scalar("train/ssim_enh", ssim_loss_enh.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
-                self.writer.add_scalar(
-                    "train/reflectance_loss", loss_reflectance.item(), step
-                )
-                self.writer.add_scalar(
-                    "train/illumination_spatial", loss_illum_contrast.item(), step
-                )
-                self.writer.add_scalar(
-                    "train/illumination_laplacian",
-                    loss_illum_laplacian.item(),
-                    step,
-                )
-                self.writer.add_scalar(
-                    "train/illumination_color", loss_illum_color.item(), step
-                )
-                self.writer.add_scalar(
-                    "train/illumination_exposure", loss_illum_exposure.item(), step
-                )
-                self.writer.add_scalar(
-                    "train/loss_reconstruct_low", low_loss.item(), step
-                )
-                self.writer.add_scalar(
-                    "train/adaptive_curve_loss", loss_adaptive_curve.item(), step
-                )
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(
@@ -999,17 +978,12 @@ class Runner:
                         )
                         self.writer.add_images(
                             "train/illumination_map",
-                            illumination_map,
+                            gt_illumination_map,
                             step,
                         )
                         self.writer.add_images(
                             "train/reflectance_target",
-                            reflectance_target,
-                            step,
-                        )
-                        self.writer.add_images(
-                            "train/input_image_for_net",
-                            input_image_for_net,
+                            gt_reflectance_target,
                             step,
                         )
 
