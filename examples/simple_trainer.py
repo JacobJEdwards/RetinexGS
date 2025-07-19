@@ -179,7 +179,6 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         self.illumination_field = IlluminationField().to(self.device)
-        self.illumination_field.compile()
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
