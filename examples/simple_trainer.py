@@ -511,7 +511,7 @@ class Runner:
                         )
                         self.writer.add_images(
                             "train/illum_map",
-                            illum_map.permute(0, 3, 1, 2),
+                            illum_map,
                             step,
                         )
 
