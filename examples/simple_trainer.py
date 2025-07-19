@@ -862,7 +862,7 @@ class Runner:
                     image_ids=image_ids,
                     render_mode="RGB",
                     masks=masks,
-                    input_images_for_illum=pixels
+                    input_images_for_illum=pixels.permute(0, 3, 1, 2),
                 )
 
                 if len(out) == 5:
@@ -1104,7 +1104,7 @@ class Runner:
                 far_plane=cfg.far_plane,
                 masks=masks,
                 image_ids=image_id,
-                input_images_for_illum=pixels
+                input_images_for_illum=pixels.permute(0, 3, 1, 2),
             )
 
             if len(out) == 5:

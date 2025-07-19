@@ -369,4 +369,4 @@ class ContentAwareIlluminationOptModule(nn.Module):
         gain = 0.5 + torch.sigmoid(gain)
         gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
 
-        return gain.view(-1, 3, 1, 1), gamma.view(-1, 3, 1, 1)
+        return gain.view(-1, 1, 3), gamma.view(-1, 1, 3)
