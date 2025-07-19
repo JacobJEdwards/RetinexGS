@@ -93,6 +93,10 @@ def quat_apply(q: Tensor, v: Tensor) -> Tensor:
     Returns:
         (..., 3) tensor of rotated vectors.
     """
+
+    if v.dim() == 1:
+        v = v.view((1,) * (q.dim() - 1) + (3,))
+
     # Ensure quaternion is normalized
     q = F.normalize(q, p=2, dim=-1)
     q_w = q[..., :1]
