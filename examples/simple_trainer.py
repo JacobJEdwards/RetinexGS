@@ -196,7 +196,7 @@ class Runner:
 
         if cfg.use_illum_opt:
             if cfg.illum_opt_type == "base":
-                self.illum_module = IlluminationOptModule(num_images=len(self.trainset))
+                self.illum_module = IlluminationOptModule(num_images=len(self.trainset)).to(self.device)
             elif cfg.illum_opt_type == "content_aware":
                 self.illum_module = ContentAwareIlluminationOptModule(
                     num_images=len(self.trainset),
@@ -205,7 +205,7 @@ class Runner:
                 self.illum_module = QuantizedIlluminationModule(
                     num_images=len(self.trainset),
                     vq_commitment_cost=cfg.lambda_vq_commitment,
-                )
+                ).to(self.device)
 
             self.illum_module.compile()
             if world_size > 1:
