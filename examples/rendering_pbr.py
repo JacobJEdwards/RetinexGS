@@ -225,9 +225,22 @@ def rasterization_pbr(
     if compensations is not None:
         opacities *= compensations
 
-    meta.update({"means2d": means2d, "radii": radii, "depths": depths})
 
-    # PBR Shading Calculation
+    meta.update(
+        {
+            "batch_ids": batch_ids,
+            "camera_ids": camera_ids,
+            "gaussian_ids": gaussian_ids,
+            "radii": radii,
+            "means2d": means2d,
+            "depths": depths,
+            "conics": conics,
+            "opacities": opacities,
+        }
+    )
+
+
+# PBR Shading Calculation
     campos = torch.inverse(viewmats)[..., :3, 3]
     if viewmats_rs is not None:
         campos_rs = torch.inverse(viewmats_rs)[..., :3, 3]
@@ -315,8 +328,26 @@ def rasterization_pbr(
         segmented=segmented, packed=packed, n_images=I, image_ids=image_ids, gaussian_ids=gaussian_ids
     )
     isect_offsets = isect_offset_encode(isect_ids, I, tile_width, tile_height)
+    isect_offsets = isect_offsets.reshape(batch_dims + (C, tile_height, tile_width))
 
-    # Perform rasterization
+    meta.update(
+        {
+            "tile_width": tile_width,
+            "tile_height": tile_height,
+            "tiles_per_gauss": tiles_per_gauss,
+            "isect_ids": isect_ids,
+            "flatten_ids": flatten_ids,
+            "isect_offsets": isect_offsets,
+            "width": width,
+            "height": height,
+            "tile_size": tile_size,
+            "n_batches": B,
+            "n_cameras": C,
+        }
+    )
+
+
+# Perform rasterization
     if colors.shape[-1] > channel_chunk:
         n_chunks = (colors.shape[-1] + channel_chunk - 1) // channel_chunk
         render_colors_list, render_alphas_list = [], []
