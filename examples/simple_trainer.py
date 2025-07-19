@@ -902,14 +902,14 @@ class Runner:
                     colors_low.permute(0, 3, 1, 2),
                     pixels.permute(0, 3, 1, 2),
                 )
-                lpips_loss = self.lpips(
-                    colors_low.permute(0, 3, 1, 2),
-                    pixels.permute(0, 3, 1, 2),
-                )
+                # lpips_loss = self.lpips(
+                #     colors_low.permute(0, 3, 1, 2),
+                #     pixels.permute(0, 3, 1, 2),
+                # )
 
                 low_loss = (
                         ssim_loss * cfg.ssim_lambda
-                        # + loss_reconstruct_low * (1.0 - cfg.ssim_lambda)
+                        + loss_reconstruct_low * (1.0 - cfg.ssim_lambda)
                         # + lpips_loss * 0.1
                 )
 
@@ -982,7 +982,7 @@ class Runner:
                 loss = (
                         low_loss * cfg.lambda_low
                         + loss_reconstruct_enh * (1.0 - cfg.lambda_low)
-                        + loss_illumination * cfg.lambda_illumination
+                        # + loss_illumination * cfg.lambda_illumination
                 )
 
                 self.cfg.strategy.step_pre_backward(

@@ -64,7 +64,7 @@ class Config:
 
     multi_scale_retinex: bool = True
 
-    lambda_low: float = 0.75
+    lambda_low: float = 0.05
     lambda_illumination: float = 0.1
 
     lambda_reflect: float = 1.0
