@@ -247,17 +247,18 @@ class DefaultStrategy(Strategy):
             gs_ids = torch.where(sel)[1]  # [nnz]
             grads = grads[sel]  # [nnz, 2]
             radii = info["radii"][sel]  # [nnz]
-        state["grad2d"].index_add_(0, gs_ids, grads.norm(dim=-1))
-        state["count"].index_add_(
-            0, gs_ids, torch.ones_like(gs_ids, dtype=torch.float32)
-        )
-        if self.refine_scale2d_stop_iter > 0:
-            # Should be ideally using scatter max
-            state["radii"][gs_ids] = torch.maximum(
-                state["radii"][gs_ids],
-                # normalize radii to [0, 1] screen space
-                radii / float(max(info["width"], info["height"])),
-                )
+        if gs_ids.numel() > 0:
+            state["grad2d"].index_add_(0, gs_ids, grads.norm(dim=-1))
+            state["count"].index_add_(
+                0, gs_ids, torch.ones_like(gs_ids, dtype=torch.float32)
+            )
+            if self.refine_scale2d_stop_iter > 0:
+                # Should be ideally using scatter max
+                state["radii"][gs_ids] = torch.maximum(
+                    state["radii"][gs_ids],
+                    # normalize radii to [0, 1] screen space
+                    radii / float(max(info["width"], info["height"])),
+                    )
 
     @torch.no_grad()
     def _grow_gs(
