@@ -287,23 +287,39 @@ def rasterization_pbr(
 
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
         normals = quat_apply(quats_packed, base_normal)
-        colors = torch.zeros_like(view_dirs) # [C, N, 3]
-        for i in range(C):
-            colors[i] = pbr_shading(
-                V=view_dirs[i],
-                L=light_dir,
-                N=normals[i],
-                albedo=albedo,
-                roughness=roughness,
-                metallic=metallic,
-                light_color=light_color
-            )
+        # colors = torch.zeros_like(view_dirs) # [C, N, 3]
+        # for i in range(C):
+        #     colors[i] = pbr_shading(
+        #         V=view_dirs[i],
+        #         L=light_dir,
+        #         N=normals[i],
+        #         albedo=albedo,
+        #         roughness=roughness,
+        #         metallic=metallic,
+        #         light_color=light_color
+        #     )
+        albedo_exp = albedo.unsqueeze(0).expand(C, N, -1)
+        roughness_exp = roughness.unsqueeze(0).expand(C, N, -1)
+        metallic_exp = metallic.unsqueeze(0).expand(C, N, -1)
+        light_color_exp = light_color.unsqueeze(0).expand(C, N, -1)
+        light_dir_exp = light_dir.unsqueeze(0).expand(C, N, -1)
 
+        # Perform shading for all cameras at once
         colors = pbr_shading(
-            V=view_dirs, L=light_dir.expand_as(means_packed), N=normals,
-            albedo=torch.sigmoid(albedo_packed), roughness=torch.sigmoid(roughness_packed),
-            metallic=torch.sigmoid(metallic_packed), light_color=torch.sigmoid(light_color_packed)
+            V=view_dirs,
+            L=light_dir_exp,
+            N=normals,
+            albedo=albedo_exp,
+            roughness=roughness_exp,
+            metallic=metallic_exp,
+            light_color=light_color_exp
         )
+
+        # colors = pbr_shading(
+        #     V=view_dirs, L=light_dir.expand_as(means_packed), N=normals,
+        #     albedo=torch.sigmoid(albedo_packed), roughness=torch.sigmoid(roughness_packed),
+        #     metallic=torch.sigmoid(metallic_packed), light_color=torch.sigmoid(light_color_packed)
+        # )
     else:
         view_dirs = F.normalize(means[..., None, :, :] - campos[..., None, :])
 
@@ -311,15 +327,32 @@ def rasterization_pbr(
         quats_exp = torch.broadcast_to(quats[..., None, :, :], batch_dims + (C, N, 4))
         normals = quat_apply(quats_exp, base_normal)
 
-        light_dir_exp = light_dir.expand(*batch_dims, C, N, 3)
+        albedo_exp = albedo.unsqueeze(0).expand(C, N, -1)
+        roughness_exp = roughness.unsqueeze(0).expand(C, N, -1)
+        metallic_exp = metallic.unsqueeze(0).expand(C, N, -1)
+        light_color_exp = light_color.unsqueeze(0).expand(C, N, -1)
+        light_dir_exp = light_dir.unsqueeze(0).expand(C, N, -1)
 
+        # Perform shading for all cameras at once
         colors = pbr_shading(
-            V=view_dirs, L=light_dir_exp, N=normals,
-            albedo=torch.sigmoid(torch.broadcast_to(albedo[..., None, :, :], batch_dims + (C, N, 3))),
-            roughness=torch.sigmoid(torch.broadcast_to(roughness[..., None, :, :], batch_dims + (C, N, 1))),
-            metallic=torch.sigmoid(torch.broadcast_to(metallic[..., None, :, :], batch_dims + (C, N, 1))),
-            light_color=torch.sigmoid(torch.broadcast_to(light_color[..., None, :, :], batch_dims + (C, N, 3)))
+            V=view_dirs,
+            L=light_dir_exp,
+            N=normals,
+            albedo=albedo_exp,
+            roughness=roughness_exp,
+            metallic=metallic_exp,
+            light_color=light_color_exp
         )
+
+        # light_dir_exp = light_dir.expand(*batch_dims, C, N, 3)
+        #
+        # colors = pbr_shading(
+        #     V=view_dirs, L=light_dir_exp, N=normals,
+        #     albedo=torch.sigmoid(torch.broadcast_to(albedo[..., None, :, :], batch_dims + (C, N, 3))),
+        #     roughness=torch.sigmoid(torch.broadcast_to(roughness[..., None, :, :], batch_dims + (C, N, 1))),
+        #     metallic=torch.sigmoid(torch.broadcast_to(metallic[..., None, :, :], batch_dims + (C, N, 1))),
+        #     light_color=torch.sigmoid(torch.broadcast_to(light_color[..., None, :, :], batch_dims + (C, N, 3)))
+        # )
 
     if distributed:
         if packed:
