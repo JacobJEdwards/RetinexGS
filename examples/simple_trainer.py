@@ -30,7 +30,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.utils import QuantizedIlluminationModule
+from utils import QuantizedIlluminationModule
 from utils import ContentAwareIlluminationOptModule, IlluminationOptModule
 from losses import IlluminationFrequencyLoss, PatchConsistencyLoss
 from losses import (
