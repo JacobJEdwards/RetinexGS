@@ -34,7 +34,8 @@ from utils import IlluminationField, DecomposedIlluminationField
 from gsplat import export_splats
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
-from gsplat.strategy import MCMCStrategy, DefaultStrategy
+from gsplat.strategy import MCMCStrategy
+from default import DefaultStrategy
 from utils import (
     knn,
     set_random_seed,
@@ -524,72 +525,47 @@ class Runner:
             torch.cuda.synchronize()
             tic = time.time()
 
-            colors_enh, colors_low, alphas_enh, alphas_low, info = self.rasterize_splats(
+            renders, _, info = self.rasterize_splats(
                 camtoworlds=camtoworlds,
                 Ks=Ks,
                 width=width,
                 height=height,
-                sh_degree=cfg.sh_degree,
-                near_plane=cfg.near_plane,
-                far_plane=cfg.far_plane,
                 masks=masks,
+                render_mode="RGB+ED",
             )
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
-            colors_low = torch.clamp(colors_low, 0.0, 1.0)
-            colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
+            colors = torch.clamp(renders[..., :3], 0.0, 1.0)
+
 
             if world_rank == 0:
-                canvas_list_low = [pixels, colors_low]
-                canvas_list_enh = [pixels, colors_enh]
+                canvas_list = [pixels, colors]
 
                 canvas_eval_low = (
-                    torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
+                    torch.cat(canvas_list, dim=2).squeeze(0).cpu().numpy()
                 )
                 canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
-
-                canvas_eval_enh = (
-                    torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
-                )
-                canvas_eval_enh = (canvas_eval_enh * 255).astype(np.uint8)
 
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_step{step}_low_{i:04d}.png",
                     canvas_eval_low,
                 )
 
-                colors_low_np = colors_low.squeeze(0).cpu().numpy()
+                colors_low_np = colors.squeeze(0).cpu().numpy()
 
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_low_{i:04d}.png",
                     (colors_low_np * 255).astype(np.uint8),
                 )
 
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
-                    canvas_eval_enh,
-                )
-                colors_enh_np = colors_enh.squeeze().cpu().numpy()
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_enh_{i:04d}.png",
-                    (colors_enh_np * 255).astype(np.uint8),
-                )
-
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_p = colors_low.permute(0, 3, 1, 2)
+                colors_p = colors.permute(0, 3, 1, 2)
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
                 metrics["lpips"].append(self.lpips(colors_p, pixels_p))
-
-                with torch.no_grad():
-                    colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-
-                    metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
-                    metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
-                    metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
 
         if world_rank == 0:
             avg_ellipse_time = (
@@ -720,7 +696,7 @@ class Runner:
                 render_mode="RGB+ED",
             )
 
-            renders_traj, _, _, _, _ = out
+            renders_traj, _, _ = out
 
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
