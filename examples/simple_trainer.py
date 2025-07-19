@@ -909,8 +909,8 @@ class Runner:
 
                 low_loss = (
                         ssim_loss * cfg.ssim_lambda
-                        + loss_reconstruct_low * (1.0 - cfg.ssim_lambda)
-                        + lpips_loss * 0.1
+                        # + loss_reconstruct_low * (1.0 - cfg.ssim_lambda)
+                        # + lpips_loss * 0.1
                 )
 
                 loss_reflectance = F.l1_loss(
