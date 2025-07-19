@@ -292,7 +292,8 @@ class Runner:
             self.retinex_embeds = DDP(self.retinex_embeds, device_ids=[local_rank])
 
         self.retinex_embed_optimizer = torch.optim.AdamW(
-            [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}]
+            [{"params": self.retinex_embeds.parameters(), "lr": 1e-3}],
+            weight_decay=1e-5
         )
 
         feature_dim = None
@@ -882,107 +883,39 @@ class Runner:
 
                 info["means2d"].retain_grad()
 
-                (
-                    input_image_for_net,
-                    illumination_map,
-                    reflectance_target,
-                    alpha,
-                    beta,
-                    local_exposure,
-                    _,
-                ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
-                global_exposure_mean = torch.sigmoid(self.global_mean_val_param)
+                with torch.no_grad():
+                    (
+                        gt_input_for_net,
+                        gt_illumination_map,
+                        gt_reflectance_target,
+                        _, _, _, _,
+                    ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
 
-                reflectance_target_permuted = reflectance_target.permute(
-                    0, 2, 3, 1
-                )  # [1, H, W, 3]
+                gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1).detach()
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
-                ssim_loss = 1.0 - self.ssim(
+
+                ssim_loss_low = 1.0 - self.ssim(
                     colors_low.permute(0, 3, 1, 2),
                     pixels.permute(0, 3, 1, 2),
                 )
-                # lpips_loss = self.lpips(
-                #     colors_low.permute(0, 3, 1, 2),
-                #     pixels.permute(0, 3, 1, 2),
-                # )
+                low_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                low_loss = (
-                        ssim_loss * cfg.ssim_lambda
-                        + loss_reconstruct_low * (1.0 - cfg.ssim_lambda)
-                        # + lpips_loss * 0.1
-                )
 
-                loss_reflectance = F.l1_loss(
-                    colors_enh, reflectance_target_permuted.detach()
-                )
-                loss_reflectance_ssim = 1.0 - self.ssim(
+                loss_reconstruct_enh = F.l1_loss(colors_enh, gt_reflectance_target_permuted)
+                ssim_loss_enh = 1.0 - self.ssim(
                     colors_enh.permute(0, 3, 1, 2),
-                    reflectance_target_permuted.permute(0, 3, 1, 2),
+                    gt_reflectance_target_permuted.permute(0, 3, 1, 2),
                 )
-                # loss_lpips_enh = self.lpips(
-                #     colors_enh.permute(0, 3, 1, 2),
-                #     reflectance_target_permuted.permute(0, 3, 1, 2),
-                # )
+                enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                loss_reconstruct_enh = (
-                        loss_reflectance * (1.0 - cfg.ssim_lambda)
-                        + loss_reflectance_ssim * cfg.ssim_lambda
-                    # + 0.1 * loss_lpips_enh
-                )
+                retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step)
 
-                loss_illum_color = (
-                    self.loss_color(illumination_map)
-                    if not cfg.use_hsv_color_space
-                    else torch.tensor(0.0, device=device)
-                )
-
-                loss_adaptive_curve = self.loss_adaptive_curve(
-                    reflectance_target, alpha, beta
-                )
-                loss_illum_exposure = self.loss_exposure(
-                    reflectance_target, global_exposure_mean
-                )
-
-                con_degree = (0.5 / torch.mean(pixels)).item()
-                loss_illum_contrast = self.loss_spatial(
-                    input_image_for_net,
-                    reflectance_target,
-                    contrast=con_degree,
-                    image_id=image_ids,
-                )
-                # loss_illum_laplacian = self.loss_details(reflectance_target)
-                loss_illum_laplacian = torch.mean(
-                    torch.abs(
-                        self.loss_details(reflectance_target)
-                        - self.loss_details(input_image_for_net)
-                    )
-                )
-                loss_illum_gradient = self.loss_gradient(
-                    input_image_for_net, reflectance_target
-                )
-                loss_illum_frequency = self.loss_frequency(
-                    input_image_for_net, reflectance_target
-                )
-                loss_illum_edge_aware_smooth = self.loss_edge_aware_smooth(
-                    illumination_map, input_image_for_net
-                )
-
-                loss_illumination = (
-                        cfg.lambda_reflect * loss_illum_contrast
-                        + cfg.lambda_illum_exposure * loss_illum_exposure
-                        + cfg.lambda_illum_color * loss_illum_color
-                        + cfg.lambda_illum_curve * loss_adaptive_curve
-                        + cfg.lambda_laplacian * loss_illum_laplacian
-                        + cfg.lambda_gradient * loss_illum_gradient
-                        + cfg.lambda_frequency * loss_illum_frequency
-                        + cfg.lambda_edge_aware_smooth * loss_illum_edge_aware_smooth
-                )
 
                 loss = (
-                        low_loss * cfg.lambda_low
-                        + loss_reconstruct_enh * (1.0 - cfg.lambda_low)
-                        # + loss_illumination * cfg.lambda_illumination
+                        cfg.lambda_low * low_loss
+                        + (1.0 - cfg.lambda_low) * enh_loss
+                        + cfg.lambda_illumination * retinex_loss
                 )
 
                 self.cfg.strategy.step_pre_backward(
