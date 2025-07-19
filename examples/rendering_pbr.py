@@ -229,7 +229,7 @@ def rasterization_pbr(
         campos_rs = torch.inverse(viewmats_rs)[..., :3, 3]
         campos = 0.5 * (campos + campos_rs)
 
-    light_dir = F.normalize(light_dir.to(device).float())
+    light_dir = F.normalize(light_dir.to(device).float(), dim=0)
 
     if packed:
         means_packed = means.view(B, N, 3)[batch_ids, gaussian_ids]
