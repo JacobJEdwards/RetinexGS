@@ -434,17 +434,16 @@ class Runner:
 
                 # exclusion loss for illumination field
                 with torch.no_grad():
-                    depth = renders_low[..., 3:4].detach()
+                    depth = renders_low[..., 3:4].squeeze(-1).detach()
                     H, W = depth.shape[1:3]
 
-                    grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device).squeeze(0)
-                    grid = grid.permute(2, 0, 1).unsqueeze(0)
+                    grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device)
 
                     points_3d_cam = kornia.geometry.depth.unproject_points(
-                        grid, depth, Ks.squeeze(0)
+                        grid, depth, Ks
                     )
 
-                    points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam.transpose(1, 2))
+                    points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam)
 
                 gain_map, gamma_map = self.illumination_field(points_3d_world.squeeze(0)) # [H*W, 3] each
 
