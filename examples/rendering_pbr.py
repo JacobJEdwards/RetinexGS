@@ -125,7 +125,7 @@ def rasterization_pbr(
         radius_clip: float = 0.0,
         eps2d: float = 0.3,
         sh_degree: int | None = None, # Added to match rasterization_dual
-        packed: bool = True,
+        packed: bool = False,
         tile_size: int = 16,
         light_dir: Tensor = torch.tensor([0.5, 0.5, -0.5]), # Added for PBR
         backgrounds: Tensor | None = None,
