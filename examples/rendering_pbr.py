@@ -214,11 +214,14 @@ def rasterization_pbr(
         assert batch_dims == (), "Distributed mode does not support batch dimensions"
         world_rank = torch.distributed.get_rank()
         world_size = torch.distributed.get_world_size()
+
         N_world = all_gather_int32(world_size, N, device=device)
+
         C_world = [C] * world_size
         viewmats, Ks = all_gather_tensor_list(world_size, [viewmats, Ks])
         if viewmats_rs is not None:
             (viewmats_rs,) = all_gather_tensor_list(world_size, [viewmats_rs])
+
         C = len(viewmats)
 
     # Projection
@@ -246,11 +249,10 @@ def rasterization_pbr(
     else:
         radii, means2d, depths, conics, compensations = proj_results
         opacities = torch.broadcast_to(opacities[..., None, :], batch_dims + (C, N))
-        image_ids, gaussian_ids, camera_ids, batch_ids = None, None, None, None
+        batch_ids, camera_ids, gaussian_ids, image_ids = None, None, None, None
 
     if compensations is not None:
         opacities *= compensations
-
 
     meta.update(
         {
@@ -309,50 +311,124 @@ def rasterization_pbr(
             light_color=torch.sigmoid(torch.broadcast_to(light_color[..., None, :, :], batch_dims + (C, N, 3)))
         )
 
-    # Distributed data shuffling
     if distributed:
         if packed:
-            world_rank = torch.distributed.get_rank()
-            cnts = torch.bincount(camera_ids, minlength=C).split(C_world, dim=0)
-            cnts = [c.sum() for c in cnts]
+            # count how many elements need to be sent to each rank
+            cnts = torch.bincount(camera_ids, minlength=C)  # all cameras
+            cnts = cnts.split(C_world, dim=0)
+            cnts = [cuts.sum() for cuts in cnts]
+
+            # all to all communication across all ranks. After this step, each rank
+            # would have all the necessary GSs to render its own images.
             collected_splits = all_to_all_int32(world_size, cnts, device=device)
-
-            (radii, ) = all_to_all_tensor_list(world_size, [radii], cnts, output_splits=collected_splits)
-            (means2d, depths, conics, opacities, colors) = all_to_all_tensor_list(
-                world_size, [means2d, depths, conics, opacities, colors], cnts, output_splits=collected_splits
+            (radii,) = all_to_all_tensor_list(
+                world_size, [radii], cnts, output_splits=collected_splits
             )
-            offsets = torch.cumsum(torch.tensor([0] + C_world[:-1], device=device, dtype=torch.long), dim=0)
-            camera_ids = camera_ids - offsets.repeat_interleave(torch.stack(cnts))
-            (camera_ids, ) = all_to_all_tensor_list(world_size, [camera_ids], cnts, output_splits=collected_splits)
+            (means2d, depths, conics, opacities, colors) = all_to_all_tensor_list(
+                world_size,
+                [means2d, depths, conics, opacities, colors],
+                cnts,
+                output_splits=collected_splits,
+            )
+
+            # before sending the data, we should turn the camera_ids from global to local.
+            # i.e. the camera_ids produced by the projection stage are over all cameras world-wide,
+            # so we need to turn them into camera_ids that are local to each rank.
+            offsets = torch.tensor(
+                [0] + C_world[:-1], device=camera_ids.device, dtype=camera_ids.dtype
+            )
+            offsets = torch.cumsum(offsets, dim=0)
+            offsets = offsets.repeat_interleave(torch.stack(cnts))
+            camera_ids = camera_ids - offsets
+
+            # and turn gaussian ids from local to global.
+            offsets = torch.tensor(
+                [0] + N_world[:-1],
+                device=gaussian_ids.device,
+                dtype=gaussian_ids.dtype,
+                )
+            offsets = torch.cumsum(offsets, dim=0)
+            offsets = offsets.repeat_interleave(torch.stack(cnts))
+            gaussian_ids = gaussian_ids + offsets
+
+            # all to all communication across all ranks.
+            (camera_ids, gaussian_ids) = all_to_all_tensor_list(
+                world_size,
+                [camera_ids, gaussian_ids],
+                cnts,
+                output_splits=collected_splits,
+            )
+
+            # Silently change C from global #Cameras to local #Cameras.
             C = C_world[world_rank]
+
         else:
-            world_rank = torch.distributed.get_rank()
+            # Silently change C from global #Cameras to local #Cameras.
             C = C_world[world_rank]
-            radii, means2d, depths, conics, opacities, colors = [t.flatten(0, num_batch_dims) for t in (radii, means2d, depths, conics, opacities, colors)]
-            (radii,) = all_to_all_tensor_list(world_size, [radii], [C_i * N for C_i in C_world], [C * N_i for N_i in N_world])
-            (means2d, depths, conics, opacities, colors) = all_to_all_tensor_list(
-                world_size, [means2d, depths, conics, opacities, colors],
-                [C_i * N for C_i in C_world], [C * N_i for N_i in N_world]
-            )
-            radii, means2d, depths, conics, opacities, colors = [reshape_view(C, t, N_world) for t in (radii, means2d, depths, conics, opacities, colors)]
 
-    # Handle different render modes
+            # all to all communication across all ranks. After this step, each rank
+            # would have all the necessary GSs to render its own images.
+            (radii,) = all_to_all_tensor_list(
+                world_size,
+                [radii.flatten(0, 1)],
+                splits=[C_i * N for C_i in C_world],
+                output_splits=[C * N_i for N_i in N_world],
+            )
+            radii = reshape_view(C, radii, N_world)
+
+            (means2d, depths, conics, opacities, colors) = all_to_all_tensor_list(
+                world_size,
+                [
+                    means2d.flatten(0, 1),
+                    depths.flatten(0, 1),
+                    conics.flatten(0, 1),
+                    opacities.flatten(0, 1),
+                    colors.flatten(0, 1),
+                ],
+                splits=[C_i * N for C_i in C_world],
+                output_splits=[C * N_i for N_i in N_world],
+            )
+            means2d = reshape_view(C, means2d, N_world)
+            depths = reshape_view(C, depths, N_world)
+            conics = reshape_view(C, conics, N_world)
+            opacities = reshape_view(C, opacities, N_world)
+            colors = reshape_view(C, colors, N_world)
+
+    # Rasterize to pixels
     if render_mode in ["RGB+D", "RGB+ED"]:
         colors = torch.cat((colors, depths[..., None]), dim=-1)
         if backgrounds is not None:
-            backgrounds = torch.cat([backgrounds, torch.zeros(batch_dims + (C, 1), device=device)], dim=-1)
+            backgrounds = torch.cat(
+                [
+                    backgrounds,
+                    torch.zeros(batch_dims + (C, 1), device=backgrounds.device),
+                ],
+                dim=-1,
+            )
     elif render_mode in ["D", "ED"]:
         colors = depths[..., None]
         if backgrounds is not None:
-            backgrounds = torch.zeros(batch_dims + (C, 1), device=device)
+            backgrounds = torch.zeros(batch_dims + (C, 1), device=backgrounds.device)
+    else:  # RGB
+        pass
 
-    # Binning and Rasterization
+    # Identify intersecting tiles
     tile_width = math.ceil(width / float(tile_size))
     tile_height = math.ceil(height / float(tile_size))
     tiles_per_gauss, isect_ids, flatten_ids = isect_tiles(
-        means2d, radii, depths, tile_size, tile_width, tile_height,
-        segmented=segmented, packed=packed, n_images=I, image_ids=image_ids, gaussian_ids=gaussian_ids
+        means2d,
+        radii,
+        depths,
+        tile_size,
+        tile_width,
+        tile_height,
+        segmented=segmented,
+        packed=packed,
+        n_images=I,
+        image_ids=image_ids,
+        gaussian_ids=gaussian_ids,
     )
+    # print("rank", world_rank, "Before isect_offset_encode")
     isect_offsets = isect_offset_encode(isect_ids, I, tile_width, tile_height)
     isect_offsets = isect_offsets.reshape(batch_dims + (C, tile_height, tile_width))
 
@@ -372,28 +448,59 @@ def rasterization_pbr(
         }
     )
 
-
-    # Perform rasterization
+    # print("rank", world_rank, "Before rasterize_to_pixels")
     if colors.shape[-1] > channel_chunk:
+        # slice into chunks
         n_chunks = (colors.shape[-1] + channel_chunk - 1) // channel_chunk
-        render_colors_list, render_alphas_list = [], []
+        render_colors, render_alphas = [], []
         for i in range(n_chunks):
             colors_chunk = colors[..., i * channel_chunk : (i + 1) * channel_chunk]
-            backgrounds_chunk = backgrounds[..., i * channel_chunk : (i + 1) * channel_chunk] if backgrounds is not None else None
-
+            backgrounds_chunk = (
+                backgrounds[..., i * channel_chunk : (i + 1) * channel_chunk]
+                if backgrounds is not None
+                else None
+            )
             if with_eval3d:
-                raise NotImplementedError(
-                    "Chunked rendering for `with_eval3d` is not implemented."
+                render_colors_, render_alphas_ = rasterize_to_pixels_eval3d(
+                    means,
+                    quats,
+                    scales,
+                    colors_chunk,
+                    opacities,
+                    viewmats,
+                    Ks,
+                    width,
+                    height,
+                    tile_size,
+                    isect_offsets,
+                    flatten_ids,
+                    backgrounds=backgrounds_chunk,
+                    camera_model=camera_model,
+                    radial_coeffs=radial_coeffs,
+                    tangential_coeffs=tangential_coeffs,
+                    thin_prism_coeffs=thin_prism_coeffs,
+                    rolling_shutter=rolling_shutter,
+                    viewmats_rs=viewmats_rs,
                 )
             else:
-                rc, ra = rasterize_to_pixels(
-                    means2d, conics, colors_chunk, opacities, width, height, tile_size,
-                    isect_offsets, flatten_ids, backgrounds=backgrounds_chunk, packed=packed, absgrad=absgrad,
+                render_colors_, render_alphas_ = rasterize_to_pixels(
+                    means2d,
+                    conics,
+                    colors_chunk,
+                    opacities,
+                    width,
+                    height,
+                    tile_size,
+                    isect_offsets,
+                    flatten_ids,
+                    backgrounds=backgrounds_chunk,
+                    packed=packed,
+                    absgrad=absgrad,
                 )
-            render_colors_list.append(rc)
-            render_alphas_list.append(ra)
-        render_colors = torch.cat(render_colors_list, dim=-1)
-        render_alphas = render_alphas_list[0]
+            render_colors.append(render_colors_)
+            render_alphas.append(render_alphas_)
+        render_colors = torch.cat(render_colors, dim=-1)
+        render_alphas = render_alphas[0]  # discard the rest
     else:
         if with_eval3d:
             render_colors, render_alphas = rasterize_to_pixels_eval3d(
@@ -419,14 +526,27 @@ def rasterization_pbr(
             )
         else:
             render_colors, render_alphas = rasterize_to_pixels(
-                means2d, conics, colors, opacities, width, height, tile_size,
-                isect_offsets, flatten_ids, backgrounds=backgrounds, packed=packed, absgrad=absgrad
+                means2d,
+                conics,
+                colors,
+                opacities,
+                width,
+                height,
+                tile_size,
+                isect_offsets,
+                flatten_ids,
+                backgrounds=backgrounds,
+                packed=packed,
+                absgrad=absgrad,
             )
-
-    # Post-processing for expected depth
     if render_mode in ["ED", "RGB+ED"]:
+        # normalize the accumulated depth to get the expected depth
         render_colors = torch.cat(
-            [render_colors[..., :-1], render_colors[..., -1:] / render_alphas.clamp(min=1e-10)], dim=-1
+            [
+                render_colors[..., :-1],
+                render_colors[..., -1:] / render_alphas.clamp(min=1e-10),
+                ],
+            dim=-1,
         )
 
     return render_colors, render_alphas, meta

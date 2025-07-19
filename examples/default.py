@@ -267,7 +267,7 @@ class DefaultStrategy(Strategy):
             optimizers: dict[str, Adam | SparseAdam | SelectiveAdam],
             state: dict[str, Any],
             step: int,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         count = state["count"]
         grads = state["grad2d"] / count.clamp_min(1)
         device = grads.device
