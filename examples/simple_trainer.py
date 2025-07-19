@@ -434,7 +434,7 @@ class Runner:
 
                 # exclusion loss for illumination field
                 with torch.no_grad():
-                    depth = renders_low[..., 3:4].squeeze(-1).detach()
+                    depth = renders_low[..., 3:4].detach()
                     H, W = depth.shape[1:3]
 
                     grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device)
