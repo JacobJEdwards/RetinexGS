@@ -909,13 +909,13 @@ class Runner:
                 )
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step)
+                # retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step)
 
 
                 loss = (
                         cfg.lambda_low * low_loss
                         + (1.0 - cfg.lambda_low) * enh_loss
-                        + cfg.lambda_illumination * retinex_loss
+                        # + cfg.lambda_illumination * retinex_loss
                 )
 
                 self.cfg.strategy.step_pre_backward(
