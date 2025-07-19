@@ -562,8 +562,6 @@ class Runner:
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
                 masks=masks,
-                image_ids=image_id,
-                input_images_for_illum=pixels.permute(0, 3, 1, 2),
             )
 
             torch.cuda.synchronize()
