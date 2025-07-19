@@ -334,3 +334,39 @@ class IlluminationOptModule(nn.Module):
         adjust_b = 0.1 * torch.tanh(adjust_b)
 
         return adjust_k.unsqueeze(1), adjust_b.unsqueeze(1)
+
+class ContentAwareIlluminationOptModule(nn.Module):
+    def __init__(self, num_images: int, embed_dim: int = 16, feature_dim: int = 64):
+        super().__init__()
+        self.embeds = nn.Embedding(num_images, embed_dim)
+        torch.nn.init.zeros_(self.embeds.weight)
+
+        self.content_encoder = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+        )
+
+        self.adjustment_head = nn.Sequential(
+            nn.Linear(32 + embed_dim, feature_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(feature_dim, 6),
+        )
+
+    def forward(self, image_tensor: Tensor, embed_ids: Tensor) -> tuple[Tensor, Tensor]:
+        content_features = self.content_encoder(image_tensor)
+
+        appearance_embedding = self.embeds(embed_ids)
+
+        combined_features = torch.cat([content_features, appearance_embedding], dim=1)
+        params = self.adjustment_head(combined_features)
+
+        gain, gamma = torch.chunk(params, 2, dim=1)
+
+        gain = 0.5 + torch.sigmoid(gain)
+        gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
+
+        return gain.view(-1, 3, 1, 1), gamma.view(-1, 3, 1, 1)

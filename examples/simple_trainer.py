@@ -30,6 +30,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.utils import ContentAwareIlluminationOptModule
 from losses import IlluminationFrequencyLoss
 from utils import IlluminationOptModule
 from losses import FrequencyLoss, EdgeAwareSmoothingLoss
@@ -194,7 +195,10 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.illum_module = IlluminationOptModule(len(self.trainset)).to(self.device)
+        # self.illum_module = IlluminationOptModule(len(self.trainset)).to(self.device)
+        self.illum_module = ContentAwareIlluminationOptModule(
+            num_images=len(self.trainset),
+        ).to(self.device)
         self.illum_module.compile()
         if world_size > 1:
             self.illum_module = DDP(self.illum_module, device_ids=[local_rank])
@@ -376,10 +380,14 @@ class Runner:
         )
 
         if self.cfg.use_illum_opt:
-            image_adjust_k, image_adjust_b = self.illum_module(image_ids)
-            colors_low = (
-                    colors * image_adjust_k + image_adjust_b
-            )  # least squares: x_enh=a*x+b
+            if isinstance(self.illum_module, ContentAwareIlluminationOptModule):
+                input_images_for_illum = kwargs.pop("input_images_for_illum", None)
+                image_gain, image_gamma = self.illum_module(input_images_for_illum, image_ids)
+
+                colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
+            else:
+                image_adjust_k, image_adjust_b = self.illum_module(image_ids)
+                colors_low = colors * image_adjust_k + image_adjust_b
 
         else:
             adjust_k = self.splats["adjust_k"]  # 1090, 1, 3
@@ -856,6 +864,7 @@ class Runner:
                     image_ids=image_ids,
                     render_mode="RGB",
                     masks=masks,
+                    input_images_for_illum=pixels.permute(0, 3, 1, 2),
                 )
 
                 if len(out) == 5:
@@ -1123,6 +1132,7 @@ class Runner:
                 far_plane=cfg.far_plane,
                 masks=masks,
                 image_ids=image_id,
+                input_images_for_illum=pixels.permute(0, 3, 1, 2),
             )
 
             if len(out) == 5:
