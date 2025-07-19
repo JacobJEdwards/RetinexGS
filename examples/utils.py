@@ -409,9 +409,6 @@ class VectorQuantizer(nn.Module):
         return quantized, loss
 
 class QuantizedIlluminationModule(nn.Module):
-    """
-    A wrapper module that combines Content-Aware Illumination with Vector Quantization.
-    """
     def __init__(self, num_images: int, embed_dim: int = 16, feature_dim: int = 64,
                  num_vq_embeddings: int = 512, vq_commitment_cost: float = 0.25):
         super().__init__()

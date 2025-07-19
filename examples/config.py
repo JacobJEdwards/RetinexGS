@@ -87,7 +87,7 @@ class Config:
     lambda_patch_consistency: float = 0.1
     lambda_bidirectional: float = 0.5
 
-    pretrain_retinex: bool = True
+    pretrain_retinex: bool = False
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
