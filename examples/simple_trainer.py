@@ -29,7 +29,7 @@ from datasets.traj import (
 )
 from config import Config
 from losses import ExclusionLoss
-from utils import IlluminationField, sh_to_rgb
+from utils import IlluminationField, sh_to_rgb, DecomposedIlluminationField
 from rendering_double import rasterization_dual
 from gsplat import export_splats
 from gsplat.distributed import cli
@@ -180,7 +180,11 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.illumination_field = IlluminationField().to(self.device)
+        if cfg.decomposed_field:
+            self.illumination_field = DecomposedIlluminationField().to(self.device)
+        else:
+            self.illumination_field = IlluminationField().to(self.device)
+
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
@@ -356,7 +360,7 @@ class Runner:
 
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
-            CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=1e-6)
+            ExponentialLR(self.illum_field_optimizer, gamma=0.01 ** (1.0 / max_steps)),
         ]
 
         trainloader = torch.utils.data.DataLoader(
@@ -424,13 +428,25 @@ class Runner:
                 rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
                 rand_points.requires_grad = True
 
-                gain, gamma = self.illumination_field(rand_points)
+                if cfg.decomposed_field:
+                    _, direct_params, ambient_params = self.illumination_field(rand_points, return_components=True)
 
-                d_gain = torch.autograd.grad(outputs=gain.sum(), inputs=rand_points, create_graph=True)[0]
-                d_gamma = torch.autograd.grad(outputs=gamma.sum(), inputs=rand_points, create_graph=True)[0]
+                    d_direct = torch.autograd.grad(outputs=direct_params.sum(), inputs=rand_points, create_graph=True)[0]
 
-                loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
-                loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    d_ambient = torch.autograd.grad(outputs=ambient_params.sum(), inputs=rand_points, create_graph=True)[0]
+
+                    loss_illum_smoothness = (10.0 * d_ambient.norm(2, dim=-1).mean()) + \
+                                            (1.0 * d_direct.norm(2, dim=-1).mean())
+
+                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                else:
+                    gain, gamma = self.illumination_field(rand_points)
+
+                    d_gain = torch.autograd.grad(outputs=gain.sum(), inputs=rand_points, create_graph=True)[0]
+                    d_gamma = torch.autograd.grad(outputs=gamma.sum(), inputs=rand_points, create_graph=True)[0]
+
+                    loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
+                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 # exclusion loss for illumination field
                 with torch.no_grad():
@@ -710,13 +726,10 @@ class Runner:
                 f"PSNR: {stats_eval.get('psnr', 0):.3f}",
                 f"SSIM: {stats_eval.get('ssim', 0):.4f}",
                 f"LPIPS: {stats_eval.get('lpips', 0):.3f}",
+                f"Time: {stats_eval.get('ellipse_time', 0):.3f}s/image",
+                f"GS: {stats_eval.get('num_GS', 0)}",
             ]
-            print_parts_eval.extend(
-                [
-                    f"Time: {stats_eval.get('ellipse_time', 0):.3f}s/image",
-                    f"GS: {stats_eval.get('num_GS', 0)}",
-                ]
-            )
+
             print(f"Eval {stage} Step {step}: " + " | ".join(print_parts_eval))
 
             raw_metrics = {}
