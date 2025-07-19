@@ -83,6 +83,10 @@ class Config:
     lambda_exclusion: float = 0.1
     lambda_clipping: float = 0.0
 
+    lambda_vq_commitment: float = 0.25
+    lambda_patch_consistency: float = 0.1
+    lambda_bidirectional: float = 0.5
+
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
 
@@ -102,6 +106,7 @@ class Config:
     learn_edge_aware_gamma: bool = False
 
     use_illum_opt: bool = True
+    illum_opt_type: Literal["base", "quantized", "content_aware"] = "quantized"
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]

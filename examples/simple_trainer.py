@@ -30,8 +30,9 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from utils import ContentAwareIlluminationOptModule
-from losses import IlluminationFrequencyLoss
+from examples.utils import QuantizedIlluminationModule
+from utils import ContentAwareIlluminationOptModule, IlluminationOptModule
+from losses import IlluminationFrequencyLoss, PatchConsistencyLoss
 from losses import (
     ColourConsistencyLoss,
     ExposureLoss,
@@ -193,22 +194,33 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        # self.illum_module = IlluminationOptModule(len(self.trainset)).to(self.device)
-        self.illum_module = ContentAwareIlluminationOptModule(
-            num_images=len(self.trainset),
-        ).to(self.device)
-        self.illum_module.compile()
-        if world_size > 1:
-            self.illum_module = DDP(self.illum_module, device_ids=[local_rank])
+        if cfg.use_illum_opt:
+            if cfg.illum_opt_type == "base":
+                self.illum_module = IlluminationOptModule(num_images=len(self.trainset))
+            elif cfg.illum_opt_type == "content_aware":
+                self.illum_module = ContentAwareIlluminationOptModule(
+                    num_images=len(self.trainset),
+                ).to(self.device)
+            elif cfg.illum_opt_type == "quantized":
+                self.illum_module = QuantizedIlluminationModule(
+                    num_images=len(self.trainset),
+                    vq_commitment_cost=cfg.lambda_vq_commitment,
+                )
 
-        initial_lr = 1e-3 * math.sqrt(cfg.batch_size)
-        self.illum_optimizers = [
-            torch.optim.AdamW(
-                self.illum_module.parameters(),
-                lr=initial_lr,
-                weight_decay=1e-4,
-            )
-        ]
+            self.illum_module.compile()
+            if world_size > 1:
+                self.illum_module = DDP(self.illum_module, device_ids=[local_rank])
+
+
+            initial_lr = 1e-3 * math.sqrt(cfg.batch_size)
+
+            self.illum_optimizers = [
+                torch.optim.AdamW(
+                    self.illum_module.parameters(),
+                    lr=initial_lr,
+                    weight_decay=1e-4,
+                )
+            ]
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_color.compile()
@@ -239,6 +251,8 @@ class Runner:
         self.loss_illum_frequency.compile()
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.loss_exclusion.compile()
+        self.loss_patch_consistency = PatchConsistencyLoss().to(self.device)
+        self.loss_patch_consistency.compile()
 
         self.brisque_loss = piq.BRISQUELoss().to(self.device)
 
@@ -373,19 +387,28 @@ class Runner:
         image_ids = kwargs.pop("image_ids", None)
         colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
+        commitment_loss = torch.tensor(0.0, device=self.device)
+
         rasterize_mode: Literal["antialiased", "classic"] = (
            "classic"
         )
 
         if self.cfg.use_illum_opt:
-            if isinstance(self.illum_module, ContentAwareIlluminationOptModule):
-                input_images_for_illum = kwargs.pop("input_images_for_illum", None)
+            input_images_for_illum = kwargs.pop("input_images_for_illum", None)
+            if self.cfg.illum_opt_type == "content_aware":
                 image_gain, image_gamma = self.illum_module(input_images_for_illum, image_ids)
-
                 colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
-            else:
+
+            elif self.cfg.illum_opt_type == "quantized":
+                input_images_for_illum = kwargs.pop("input_images_for_illum", None)
+                image_gain, image_gamma, commitment_loss = self.illum_module(input_images_for_illum, image_ids)
+                colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
+
+            elif self.cfg.illum_opt_type == "base":
                 image_adjust_k, image_adjust_b = self.illum_module(image_ids)
                 colors_low = colors * image_adjust_k + image_adjust_b
+            else:
+                raise ValueError(f"Unknown illum opt type: {self.cfg.illum_opt_type}")
 
         else:
             adjust_k = self.splats["adjust_k"]  # 1090, 1, 3
@@ -419,6 +442,8 @@ class Runner:
             rasterize_mode=rasterize_mode,
             **kwargs,
         )
+
+        info["commitment_loss"] = commitment_loss
 
         return (
             render_colors_enh,
@@ -753,10 +778,6 @@ class Runner:
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
 
-                # pixels = self.retinex_augmentations(pixels.permute(0, 3, 1, 2)).permute(
-                #     0, 2, 3, 1
-                # )
-
                 loss = self.retinex_train_step(
                     images_ids=images_ids, pixels=pixels, step=step
                 )
@@ -918,11 +939,17 @@ class Runner:
 
                 retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step)
 
+                reconstructed_from_components = colors_enh.permute(0, 3, 1, 2) * gt_illumination_map.detach()
+                loss_bidirectional = F.l1_loss(reconstructed_from_components, pixels.permute(0, 3, 1, 2))
+
+                commitment_loss = info.get('commitment_loss', torch.tensor(0.0, device=device))
 
                 loss = (
                         cfg.lambda_low * low_loss
                         + (1.0 - cfg.lambda_low) * enh_loss
                         + cfg.lambda_illumination * retinex_loss
+                        + cfg.lambda_bidirectional * loss_bidirectional
+                        + commitment_loss
                 )
 
                 self.cfg.strategy.step_pre_backward(
@@ -959,6 +986,9 @@ class Runner:
                 self.writer.add_scalar("train/ssim_enh", ssim_loss_enh.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
+                self.writer.add_scalar("train/loss_bidirectional", loss_bidirectional.item(), step)
+                self.writer.add_scalar("train/loss_patch_consistency", loss_patch.item(), step)
+                self.writer.add_scalar("train/loss_vq_commitment", commitment_loss.item(), step)
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(

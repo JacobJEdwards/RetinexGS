@@ -1,3 +1,4 @@
+import kornia
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -631,6 +632,56 @@ class ExclusionLoss(nn.Module):
         gradx = img[:, :, 1:, :] - img[:, :, :-1, :]
         grady = img[:, :, :, 1:] - img[:, :, :, :-1]
         return gradx, grady
+
+class PatchConsistencyLoss(nn.Module):
+    """
+    Enforces that the rendered reflectance is consistent across different views.
+    It works by warping the reflectance map from a source view to a target view
+    and computing a photometric loss.
+    """
+    def __init__(self):
+        super(PatchConsistencyLoss, self).__init__()
+
+    def forward(self, reflectance_maps: Tensor, depth_maps: Tensor,
+                camtoworlds: Tensor, Ks: Tensor) -> Tensor:
+
+        if reflectance_maps.shape[0] <= 1:
+            return torch.tensor(0.0, device=reflectance_maps.device)
+
+        target_reflectance = reflectance_maps[0:1] # (1, C, H, W)
+        source_reflectance = reflectance_maps[1:2] # (1, C, H, W)
+
+        target_depth = depth_maps[0:1] # (1, 1, H, W)
+
+        T_target_to_world = camtoworlds[0:1] # (1, 4, 4)
+        T_source_to_world = camtoworlds[1:2] # (1, 4, 4)
+        K_target = Ks[0:1] # (1, 3, 3)
+        K_source = Ks[1:2] # (1, 3, 3)
+
+        T_world_to_target = torch.inverse(T_target_to_world)
+        T_world_to_source = torch.inverse(T_source_to_world)
+
+        T_target_to_source = T_world_to_source @ T_target_to_world
+
+        try:
+            warped_source_reflectance = kornia.geometry.warp_frame_depth(
+                image_src=source_reflectance,
+                depth_dst=target_depth,
+                src_trans_dst=T_target_to_source,
+                camera_matrix=K_source,
+            )
+
+            valid_mask = (target_depth > 0).float()
+
+            photometric_loss = F.l1_loss(
+                target_reflectance * valid_mask,
+                warped_source_reflectance * valid_mask
+            )
+        except Exception as e:
+            print(f"Kornia warping failed with error: {e}. Skipping patch consistency loss for this batch.")
+            return torch.tensor(0.0, device=reflectance_maps.device)
+
+        return photometric_loss
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
