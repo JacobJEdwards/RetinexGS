@@ -195,7 +195,7 @@ class DefaultStrategy(Strategy):
 
         if step % self.reset_every == 0:
             reset_opa(
-                state,
+                state=state,
                 params=params,
                 optimizers=optimizers,
                 value=self.prune_opa * 2.0,
