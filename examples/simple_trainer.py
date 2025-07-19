@@ -986,7 +986,7 @@ class Runner:
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
                 self.writer.add_scalar("train/loss_bidirectional", loss_bidirectional.item(), step)
-                self.writer.add_scalar("train/loss_patch_consistency", loss_patch.item(), step)
+                # self.writer.add_scalar("train/loss_patch_consistency", loss_patch.item(), step)
                 self.writer.add_scalar("train/loss_vq_commitment", commitment_loss.item(), step)
                 if cfg.tb_save_image:
                     with torch.no_grad():
