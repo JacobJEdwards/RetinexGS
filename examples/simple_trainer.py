@@ -173,7 +173,7 @@ class Runner:
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
-        self.illum_field_optimizer = torch.optim.AdamW(self.illumination_field.parameters())
+        self.illum_field_optimizer = torch.optim.AdamW(self.illumination_field.parameters(), lr=1e-4)
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
 
@@ -308,7 +308,7 @@ class Runner:
 
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
-            ExponentialLR(self.illum_field_optimizer, gamma=0.01 ** (1.0 / max_steps)),
+            CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=1e-6),
         ]
 
         trainloader = torch.utils.data.DataLoader(
