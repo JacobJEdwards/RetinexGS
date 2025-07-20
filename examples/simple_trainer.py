@@ -28,10 +28,9 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from utils import PhysicsAwareIllumination, IrradianceField
+from pbr import PhysicsAwareIllumination, IrradianceField, DirectionalLight, PointLight, SpotLight
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
-from gsplat import export_splats
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
 from gsplat.strategy import MCMCStrategy
@@ -166,7 +165,14 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.illumination_field = PhysicsAwareIllumination(num_directional_lights=3).to(self.device)
+        scene_lights = [
+            DirectionalLight(initial_direction=torch.tensor([0.5, -1.0, 0.2]), initial_color=torch.tensor([1.0, 0.9, 0.8])),
+            PointLight(initial_position=torch.tensor([2.0, 1.5, 2.0]), initial_color=torch.tensor([0.8, 0.2, 0.2])),
+            SpotLight(initial_position=torch.tensor([-2.0, 3.0, -1.0]), initial_direction=torch.tensor([0.5, -1.0, 0.2]),
+                      initial_color=torch.tensor([0.2, 0.8, 0.2]), cone_angle_deg=25.0),
+        ]
+
+        self.illumination_field = PhysicsAwareIllumination(lights=scene_lights).to(self.device)
 
 
         if world_size > 1:
