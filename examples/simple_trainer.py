@@ -28,6 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.utils import IrradianceField
 from utils import PhysicsAwareIllumination
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
@@ -166,13 +167,20 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.illumination_field = PhysicsAwareIllumination(num_directional_lights=0).to(self.device)
+        self.illumination_field = PhysicsAwareIllumination(num_directional_lights=3).to(self.device)
 
 
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
-        self.illum_field_optimizer = torch.optim.AdamW(self.illumination_field.parameters(), lr=1e-4)
+        self.illum_field_optimizer = torch.optim.AdamW(self.illumination_field.parameters(), lr=cfg.illumination_field_lr)
+
+        self.irradiance_field = IrradianceField().to(self.device)
+
+        if world_size > 1:
+            self.irradiance_field = DDP(self.irradiance_field, device_ids=[local_rank])
+
+        self.irradiance_field_optimizer = torch.optim.AdamW(self.irradiance_field.parameters(), lr=cfg.irradiance_field_lr)
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
 
@@ -258,9 +266,8 @@ class Runner:
             Ks=Ks,
             width=width,
             height=height,
-            ambient_light=ambient_light,
-            directional_light=directional_light,
-            light_dir=light_dir,
+            illumination_field=self.illumination_field,
+            irradiance_field=self.irradiation_field,
             packed=self.cfg.packed,
             backgrounds=kwargs.get("backgrounds")
         )
@@ -415,6 +422,7 @@ class Runner:
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
             CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=1e-6),
+            CosineAnnealingLR(self.irradiance_field_optimizer, T_max=max_steps, eta_min=1e-6),
         ]
 
         trainloader = torch.utils.data.DataLoader(
@@ -466,21 +474,37 @@ class Runner:
                 info["means2d"].retain_grad()
 
                 # smoothness loss for illumination field
-                rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
-                rand_points.requires_grad = True
+                if cfg.lambda_illum_smoothness > 0:
+                    rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
+                    rand_points.requires_grad = True
 
-                rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
-                rand_points.requires_grad = True
+                    rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
+                    rand_points.requires_grad = True
 
-                shadow_field_module = self.illumination_field.shadow_field
+                    shadow_field_module = self.illumination_field.shadow_field
 
-                shadow_values = shadow_field_module(rand_points)
+                    shadow_values = shadow_field_module(rand_points)
 
-                d_shadow = torch.autograd.grad(outputs=shadow_values.sum(), inputs=rand_points, create_graph=True)[0]
+                    d_shadow = torch.autograd.grad(outputs=shadow_values.sum(), inputs=rand_points, create_graph=True)[0]
 
-                loss_illum_smoothness = d_shadow.norm(2, dim=-1).mean()
+                    loss_illum_smoothness = d_shadow.norm(2, dim=-1).mean()
 
-                loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                else:
+                    loss_illum_smoothness = torch.tensor(0.0, device=device)
+
+                if cfg.lambda_irradiance_smoothness > 0:
+                    rand_points = (torch.rand(2048, 3, device=device) * 2 - 1) * self.scene_scale
+                    rand_points.requires_grad = True
+                    rand_normals = F.normalize(torch.randn_like(rand_points), dim=-1)
+
+                    indirect_light = self.irradiance_field(rand_points, rand_normals)
+                    d_indirect = torch.autograd.grad(outputs=indirect_light.sum(), inputs=rand_points, create_graph=True)[0]
+
+                    loss_irradiance_smoothness = d_indirect.norm(2, dim=-1).mean()
+                    loss += cfg.lambda_irradiance_smoothness * loss_irradiance_smoothness
+                else:
+                    loss_irradiance_smoothness = torch.tensor(0.0, device=device)
 
 
                 self.cfg.strategy.step_pre_backward(
@@ -512,6 +536,12 @@ class Runner:
                 self.writer.add_scalar("train/loss", loss.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
+                self.writer.add_scalar(
+                    "train/illum_field_loss", loss_illum_smoothness.item(), step
+                )
+                self.writer.add_scalar(
+                    "train/irradiance_field_loss", loss_irradiance_smoothness.item(), step
+                )
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(

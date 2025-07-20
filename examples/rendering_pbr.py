@@ -4,7 +4,7 @@ from typing import Any, Literal
 import torch
 import torch.distributed
 import torch.nn.functional as F
-from torch import Tensor
+from torch import Tensor, nn
 
 from gsplat.cuda._wrapper import (
     RollingShutterType,
@@ -52,7 +52,8 @@ def pbr_shading(
         roughness: Tensor,  # [..., 1]
         metallic: Tensor,           # [..., 1]
         ambient_light: Tensor,      # [..., 3] ambient light color
-        directional_light: Tensor   # [..., 3] directional light color
+        directional_light: Tensor,   # [..., 3] directional light color
+        indirect_light: Tensor,
 ) -> Tensor:
     N_dot_V = torch.clamp(torch.sum(N * V, dim=-1, keepdim=True), min=EPS)
     N_dot_L = torch.clamp(torch.sum(N * L, dim=-1, keepdim=True), min=EPS)
@@ -81,7 +82,9 @@ def pbr_shading(
     ambient_term = albedo * ambient_light
     directional_term = (diffuse + specular) * directional_light * N_dot_L
 
-    radiance = ambient_term + directional_term
+    diffuse_indirect = (albedo / math.pi) * indirect_light
+
+    radiance = ambient_term + directional_term + diffuse_indirect
     return radiance
 
 def quat_apply(q: Tensor, v: Tensor) -> Tensor:
@@ -115,9 +118,8 @@ def rasterization_pbr(
         albedo: Tensor, # [..., N, 3]
         roughness: Tensor, # [..., N, 1]
         metallic: Tensor, # [..., N, 1]
-        ambient_light: Tensor, # [..., 3]
-        directional_light: Tensor,  # [..., N, 3]
-        light_dir: Tensor,  # [..., 3]
+        illumination_field: nn.Module,
+        irradiance_field: nn.Module,
         viewmats: Tensor,  # [..., C, 4, 4]
         Ks: Tensor,  # [..., C, 3, 3]
         width: int,
@@ -266,6 +268,7 @@ def rasterization_pbr(
         }
     )
 
+    ambient_light, directional_light, light_dir = illumination_field(means)
 
     # PBR Shading Calculation
     campos = torch.inverse(viewmats)[..., :3, 3]
@@ -275,7 +278,6 @@ def rasterization_pbr(
 
     light_dir = light_dir.to(device).float()
     if light_dir.dim() > 1:
-        # Normalize each vector in the batch
         light_dir = F.normalize(light_dir, dim=-1)
     else:
         light_dir = F.normalize(light_dir, dim=0)
@@ -295,16 +297,24 @@ def rasterization_pbr(
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
         normals = quat_apply(quats_packed, base_normal)
 
+        indirect_light = irradiance_field(means, normals)
+
+        indirect_light_packed = indirect_light[gaussian_ids]
+
         colors = pbr_shading(
             V=view_dirs, L=light_dir_packed, N=normals,
             albedo=albedo_packed, roughness=roughness_packed,
             metallic=metallic_packed, ambient_light=ambient_light_packed,
-            directional_light=directional_light_packed
+            directional_light=directional_light_packed,
+            indirect_light=indirect_light_packed,
+
         )
     else:
         view_dirs = F.normalize(means.unsqueeze(0) - campos.unsqueeze(1)) # [C, N, 3]
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
         normals = quat_apply(quats.unsqueeze(0).expand(C, -1, -1), base_normal) # [C, N, 3]
+
+        indirect_light = irradiance_field(means, normals)
 
         albedo_exp = albedo_act.unsqueeze(0).expand(C, N, -1)
         roughness_exp = roughness_act.unsqueeze(0).expand(C, N, -1)
@@ -312,12 +322,14 @@ def rasterization_pbr(
         ambient_light_exp = ambient_light.unsqueeze(0).expand(C, N, -1)
         directional_light_exp = directional_light.unsqueeze(0).expand(C, N, -1)
         light_dir_exp = light_dir.unsqueeze(0).expand(C, N, -1)
+        indirect_light_exp = indirect_light.unsqueeze(0).expand(C, N, -1)
 
         colors = pbr_shading(
             V=view_dirs, L=light_dir_exp, N=normals,
             albedo=albedo_exp, roughness=roughness_exp,
             metallic=metallic_exp, ambient_light=ambient_light_exp,
-            directional_light=directional_light_exp
+            directional_light=directional_light_exp,
+            indirect_light=indirect_light_exp,
         )
     if distributed:
         if packed:

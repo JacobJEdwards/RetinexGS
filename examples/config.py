@@ -57,6 +57,9 @@ class Config:
     albedo_lr: float = 2.5e-3
     rough_metal_lr: float = 2.5e-3 / 20
 
+    illumination_field_lr: float = 1e-4
+    irradiance_field_lr: float = 1e-4
+
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 
@@ -66,9 +69,7 @@ class Config:
     lpips_net: Literal["vgg", "alex"] = "alex"
 
     lambda_illum_smoothness: float = 0.001
-    lambda_exclusion: float = 0.01
-    lambda_shn_reg: float = 0.1
-    lambda_gray_world: float = 0.5
+    lambda_irradiance_smoothness: float = 0.01
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]

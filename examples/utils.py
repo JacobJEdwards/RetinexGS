@@ -466,3 +466,22 @@ class DecomposedIlluminationField(nn.Module):
             return (gain, gamma), direct_params, ambient_params
 
         return gain, gamma
+
+class IrradianceField(nn.Module):
+    def __init__(self, num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 4):
+        super().__init__()
+        self.pos_encoder = PositionalEncoder(num_freqs)
+        # encoded position (2*3*num_freqs) + normal (3)
+        in_dim = (3 * 2 * num_freqs) + 3
+
+        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
+        for _ in range(num_layers - 1):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
+        layers.append(nn.Linear(hidden_dim, 3))
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, points: Tensor, normals: Tensor) -> Tensor:
+        encoded_points = self.pos_encoder(points)
+        mlp_input = torch.cat([encoded_points, normals], dim=-1)
+        raw_irradiance = self.mlp(mlp_input)
+        return F.softplus(raw_irradiance)
