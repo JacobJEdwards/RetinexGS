@@ -153,7 +153,7 @@ def rasterization_pbr(
         packed: bool = False,
         tile_size: int = 16,
         backgrounds: Tensor | None = None,
-        render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"] = "RGB",
+        render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW", "ALBEDO"] = "RGB",
         sparse_grad: bool = False,
         absgrad: bool = False,
         rasterize_mode: Literal["classic", "antialiased"] = "classic",
@@ -198,7 +198,7 @@ def rasterization_pbr(
     assert opacities.shape == batch_dims + (N,), opacities.shape
     assert viewmats.shape == batch_dims + (C, 4, 4), viewmats.shape
     assert Ks.shape == batch_dims + (C, 3, 3), Ks.shape
-    assert render_mode in ["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"], render_mode
+    assert render_mode in ["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW", "ALBEDO"], render_mode
 
     assert albedo.shape == batch_dims + (N, 3), f"Albedo shape mismatch: {albedo.shape}"
     assert roughness.shape == batch_dims + (N, 1), f"Roughness shape mismatch: {roughness.shape}"
@@ -338,6 +338,7 @@ def rasterization_pbr(
             "ROUGHNESS": "roughness",
             "METALLIC": "metallic",
             "SHADOW": "shadow",
+            "ALBEDO": "albedo",
         }
         output_key = render_mode_map.get(render_mode, "final")
         colors = pbr_outputs[output_key]
