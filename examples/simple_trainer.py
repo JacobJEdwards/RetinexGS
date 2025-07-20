@@ -424,6 +424,7 @@ class Runner:
                     height=height,
                     sh_degree=sh_degree_to_use,
                     render_mode="RGB+ED",
+                    image_ids=data["image_ids"].to(device),
                 )
 
                 colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
@@ -671,6 +672,7 @@ class Runner:
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
                 masks=masks,
+                image_ids=data["image_ids"].to(device),
             )
 
             torch.cuda.synchronize()
