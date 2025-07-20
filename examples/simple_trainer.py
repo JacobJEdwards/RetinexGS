@@ -28,8 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.utils import IrradianceField
-from utils import PhysicsAwareIllumination
+from utils import PhysicsAwareIllumination, IrradianceField
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
 from gsplat import export_splats
@@ -607,6 +606,9 @@ class Runner:
 
             self.illum_field_optimizer.step()
             self.illum_field_optimizer.zero_grad()
+
+            self.irradiance_field_optimizer.step()
+            self.irradiance_field_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
