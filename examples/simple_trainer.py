@@ -282,7 +282,7 @@ class Runner:
            "classic"
         )
 
-        image_ids = kwargs.get("image_ids", None)
+        image_ids = kwargs.pop("image_ids", None)
         if self.cfg.appearance_embeddings and image_ids is not None:
             embeddings = self.appearance_embeds(image_ids) if image_ids is not None else None
         else:
