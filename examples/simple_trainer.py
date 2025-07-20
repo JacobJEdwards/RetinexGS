@@ -4,7 +4,7 @@ import math
 import os
 import time
 from collections import defaultdict
-from typing import Any
+from typing import Any, Callable
 
 import imageio
 import kornia
@@ -283,7 +283,7 @@ class Runner:
             step: int,
             video_name_suffix: str,
             num_frames: int = 180,
-            update_light_func: callable = None,
+            update_light_func: Callable = None,
             render_mode: str = "RGB",
     ):
         if self.world_rank != 0:
@@ -313,8 +313,7 @@ class Runner:
         illum_model = self.illumination_field.module if self.world_size > 1 else self.illumination_field
 
         original_light_states = [
-            {p_name: p.clone() for p_name, p in light.named_parameters()}
-            for light in illum_model.lights
+            light.state_dict() for light in illum_model.lights
         ]
 
         for i in tqdm.trange(num_frames, desc=f"Rendering {video_name_suffix} video"):
