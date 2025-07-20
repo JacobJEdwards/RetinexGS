@@ -299,13 +299,12 @@ def rasterization_pbr(
 
         view_dirs = F.normalize(means_packed - campos[camera_ids])
 
-        base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
-        normals = quat_apply(quats_packed, base_normal)
+        normals_packed = normals_world[gaussian_ids]
 
         indirect_light_packed = indirect_light[gaussian_ids]
 
         colors = pbr_shading(
-            V=view_dirs, L=light_dir_packed, N=normals,
+            V=view_dirs, L=light_dir_packed, N=normals_packed,
             albedo=albedo_packed, roughness=roughness_packed,
             metallic=metallic_packed, ambient_light=ambient_light_packed,
             directional_light=directional_light_packed,
