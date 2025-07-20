@@ -31,7 +31,6 @@ from config import Config
 from utils import PhysicsAwareIllumination
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
-from utils import IlluminationField, DecomposedIlluminationField
 from gsplat import export_splats
 from gsplat.distributed import cli
 from gsplat.optimizers import SelectiveAdam
@@ -167,7 +166,7 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.illumination_field = PhysicsAwareIllumination().to(self.device)
+        self.illumination_field = PhysicsAwareIllumination(num_directional_lights=0).to(self.device)
 
 
         if world_size > 1:
