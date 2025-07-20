@@ -28,7 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.losses import TotalVariationLoss
+from losses import TotalVariationLoss
 from losses import ExclusionLoss
 from utils import IlluminationField, sh_to_rgb, DecomposedIlluminationField
 from rendering_double import rasterization_dual
