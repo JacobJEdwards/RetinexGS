@@ -29,7 +29,8 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from pbr import PhysicsAwareIllumination, IrradianceField, DirectionalLight, PointLight, SpotLight, LearnedIlluminationField
+from pbr import PhysicsAwareIllumination, IrradianceField, DirectionalLight, PointLight, SpotLight, LearnedIlluminationField, \
+    Light
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
 from gsplat.distributed import cli
@@ -255,6 +256,8 @@ class Runner:
             Ks: Tensor,
             width: int,
             height: int,
+            illumination_field: PhysicsAwareIllumination | None = None,
+            irradiance_field: IrradianceField | None = None,
             render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"] = "RGB+ED",
             masks: Tensor | None = None,
             **kwargs,
@@ -277,8 +280,8 @@ class Runner:
             Ks=Ks,
             width=width,
             height=height,
-            illumination_field=self.illumination_field,
-            irradiance_field=self.irradiance_field,
+            illumination_field=illumination_field or self.illumination_field,
+            irradiance_field= irradiance_field or self.irradiance_field,
             packed=self.cfg.packed,
             backgrounds=kwargs.get("backgrounds"),
             render_mode=render_mode,
@@ -290,8 +293,9 @@ class Runner:
             step: int,
             video_name_suffix: str,
             num_frames: int = 180,
+            dynamic_lighting_setup: list[Light] | None = None,
             update_light_func: Callable = None,
-            render_mode: str = "RGB",
+            render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"] = "RGB+ED",
     ):
         if self.world_rank != 0:
             return
@@ -317,15 +321,17 @@ class Runner:
         video_path = os.path.join(video_dir, f"pbr_{video_name_suffix}_{step}.mp4")
         video_writer = imageio.get_writer(video_path, fps=30)
 
-        illum_model = self.illumination_field.module if self.world_size > 1 else self.illumination_field
+        if dynamic_lighting_setup:
+            illumination_field_demo = PhysicsAwareIllumination(
+                lights=dynamic_lighting_setup
+            ).to(self.device)
+        else:
+            illumination_field_demo = self.illumination_field
 
-        original_light_states = [
-            light.state_dict() for light in illum_model.lights
-        ]
 
         for i in tqdm.trange(num_frames, desc=f"Rendering {video_name_suffix} video"):
             if update_light_func:
-                update_light_func(illum_model, i, num_frames)
+                update_light_func(illumination_field_demo, i, num_frames)
 
             renders, _, _ = self.rasterize_splats(
                 camtoworlds=cam_c2w_all[i:i+1],
@@ -333,6 +339,8 @@ class Runner:
                 width=width_traj,
                 height=height_traj,
                 render_mode=render_mode,
+                illumination_field=illumination_field_demo,
+                irradiance_field=self.irradiance_field,
             )
             colors = torch.clamp(renders[..., 0:3], 0.0, 1.0)
             canvas = (colors.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
@@ -341,15 +349,13 @@ class Runner:
         video_writer.close()
         print(f"✅ PBR demo video saved to {video_path}")
 
-        for i, light in enumerate(illum_model.lights):
-            light.load_state_dict(original_light_states[i])
-
     def render_light_color_video(self, step: int):
+        demo_light = DirectionalLight(initial_color=torch.tensor([1.0, 1.0, 1.0], device=self.device))
+
         themes = {
             "golden_hour": torch.tensor([1.0, 0.7, 0.3], device=self.device),
             "moonlight": torch.tensor([0.4, 0.6, 1.0], device=self.device),
             "neon_city": torch.tensor([0.9, 0.2, 0.8], device=self.device),
-            "forest": torch.tensor([0.5, 1.0, 0.6], device=self.device),
         }
         theme_keys = list(themes.keys())
 
@@ -361,63 +367,52 @@ class Runner:
 
             color1 = themes[theme_keys[idx1]]
             color2 = themes[theme_keys[idx2]]
+            target_color_rgb = torch.lerp(color1, color2, interp)
 
-            color_hsv1 = kornia.color.rgb_to_hsv(color1.view(1,3,1,1))
-            color_hsv2 = kornia.color.rgb_to_hsv(color2.view(1,3,1,1))
-            interp_hsv = torch.lerp(color_hsv1, color_hsv2, interp)
-            target_color_rgb = kornia.color.hsv_to_rgb(interp_hsv).squeeze()
-
-            if illum_model.lights and hasattr(illum_model.lights[0], 'raw_color'):
-                raw_color_target = torch.log(torch.expm1(target_color_rgb * 1.5))
-                illum_model.lights[0].raw_color.data = raw_color_target
+            raw_color_target = torch.log(torch.expm1(target_color_rgb * 1.5))
+            illum_model.static_lights[0].raw_color.data = raw_color_target
 
         self._render_pbr_video(
-            step, video_name_suffix="color_themes", update_light_func=update_light_color
+            step, video_name_suffix="color_themes", update_light_func=update_light_color, dynamic_lighting_setup=[demo_light],
         )
 
     def render_light_direction_video(self, step: int):
         """ Moves a spotlight in a complex orbital path to showcase highlights. """
+        demo_spotlight = SpotLight(
+            initial_position=torch.tensor([3.0, 2.0, 0.0], device=self.device),
+            initial_direction=torch.tensor([-1.0, -0.5, 0.0], device=self.device),
+            initial_color=torch.tensor([1.0, 0.8, 0.6], device=self.device),
+            cone_angle_deg=35.0,
+        )
+
         def update_light_direction(illum_model, frame_idx, num_frames):
             angle = 2 * math.pi * frame_idx / num_frames
-            # Create an elliptical path in the XZ plane
-            new_pos = torch.tensor([math.cos(angle) * 2.5, 1.5, math.sin(angle) * 1.5], device=self.device)
+            new_pos = torch.tensor([math.cos(angle) * 3.0, 2.0, math.sin(angle) * 3.0], device=self.device)
 
-            # Update the position of the first PointLight or SpotLight found
-            for light in illum_model.lights:
-                if hasattr(light, 'position'):
-                    light.position.data = new_pos
-                    # Make spotlights always point towards the origin
-                    if hasattr(light, 'direction'):
-                        light.direction.data = F.normalize(-new_pos, dim=-1)
-                    break # Only update one light
+            spotlight = illum_model.static_lights[0]
+            spotlight.position.data = new_pos
+            spotlight.direction.data = F.normalize(-new_pos, dim=-1)
 
         self._render_pbr_video(
-            step, video_name_suffix="light_orbit", update_light_func=update_light_direction
+            step, video_name_suffix="light_orbit", update_light_func=update_light_direction, dynamic_lighting_setup=[demo_spotlight],
         )
 
     def render_light_intensity_video(self, step: int):
-        """ Simulates a dramatic sunrise and sunset effect. """
-        # Keep a copy of the original color to modify its intensity
-        original_color = self.illumination_field.lights[0].color.clone().detach()
+        light = DirectionalLight(
+            initial_direction=torch.tensor([0.5, -1.0, 0.2], device=self.device),
+            initial_color=torch.tensor([1.0, 0.9, 0.8], device=self.device),
+        )
 
         def update_light_intensity(illum_model, frame_idx, num_frames):
-            progress = frame_idx / num_frames
-            intensity = (math.sin(progress * math.pi) ** 2) * 2.0 # Pi for one full cycle
+            progress = (math.sin(2 * math.pi * frame_idx / num_frames) + 1) / 2
+            target_color_rgb = torch.tensor([1.0, 0.9, 0.8], device=self.device) * progress
 
-            sunrise_color = torch.tensor([1.0, 0.6, 0.2], device=self.device)
-            midday_color = original_color
+            raw_color_target = torch.log(torch.expm1(target_color_rgb * 1.5))
+            illum_model.static_lights[0].raw_color.data = raw_color_target
 
-            color_interp_factor = math.sin(progress * math.pi)
-            current_color = torch.lerp(midday_color, sunrise_color, 1 - color_interp_factor)
-
-            final_color = current_color * intensity
-
-            if illum_model.lights and hasattr(illum_model.lights[0], 'raw_color'):
-                raw_color_target = torch.log(torch.expm1(final_color))
-                illum_model.lights[0].raw_color.data = raw_color_target
 
         self._render_pbr_video(
-            step, video_name_suffix="sunrise_sunset", update_light_func=update_light_intensity
+            step, video_name_suffix="sunrise_sunset", update_light_func=update_light_intensity, dynamic_lighting_setup=[light],
         )
 
     def render_material_showcase_video(self, step: int):
