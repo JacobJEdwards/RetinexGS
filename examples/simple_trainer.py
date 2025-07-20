@@ -341,6 +341,21 @@ class Runner:
             step, video_name_suffix="color_cycle", update_light_func=update_light_color
         )
 
+    def render_light_direction_video(self, step: int):
+        def update_light_direction(illum_model, frame_idx, num_frames):
+            angle = 2 * math.pi * frame_idx / num_frames
+            new_direction = torch.tensor(
+                [math.cos(angle), math.sin(angle), 0.0], device=self.device
+            )
+            illum_model.directional_lights[0].direction.data = new_direction
+
+        self._render_pbr_video(
+            step,
+            video_name_suffix="direction_cycle",
+            update_light_func=update_light_direction,
+        )
+
+
     def render_light_intensity_video(self, step: int):
         illum_model = self.illumination_field.module if self.world_size > 1 else self.illumination_field
         original_raw_color = illum_model.directional_lights[0].raw_color.clone().detach()
@@ -590,8 +605,10 @@ class Runner:
 
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.eval(step)
-            if step in [i - 1 for i in cfg.eval_steps]:
                 self.render_traj(step)
+                self.render_light_color_video(step)
+                self.render_light_intensity_video(step)
+                self.render_light_direction_video(step)
 
     @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
@@ -824,6 +841,8 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         step = ckpts[0]["step"]
         runner.eval(step=step)
         runner.render_traj(step=step)
+        runner.render_light_color_video(step)
+        runner.render_light_intensity_video(step)
     else:
         runner.train()
 
