@@ -327,31 +327,6 @@ class PositionalEncoder(nn.Module):
         projs = x * self.freq_bands.to(x.device) # [..., 3, N_freqs]
         return torch.cat([torch.sin(projs), torch.cos(projs)], dim=-1).flatten(-2)
 
-
-class IlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4):
-        super().__init__()
-        self.encoder = PositionalEncoder(num_freqs)
-        in_dim = 3 * 2 * num_freqs
-
-        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
-        for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
-        layers.append(nn.Linear(hidden_dim, 6)) # 3 for gain, 3 for gamma
-        self.mlp = nn.Sequential(*layers)
-
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        # x: [N, 3]
-        encoded_x = self.encoder(x)
-        params = self.mlp(encoded_x) # [N, 6]
-
-        gain, gamma = torch.chunk(params, 2, dim=-1)
-
-        gain = torch.sigmoid(gain)
-        gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
-
-        return gain, gamma
-
 class AmbientLight(nn.Module):
     def __init__(self, initial_color=None):
         super().__init__()
@@ -387,7 +362,6 @@ class ShadowField(nn.Module):
         super().__init__()
         self.encoder = PositionalEncoder(num_freqs)
         in_dim = 3 * 2 * num_freqs
-
         layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
@@ -413,9 +387,7 @@ class PhysicsAwareIllumination(nn.Module):
 
     def forward(self, points: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         ambient_color = self.ambient_light.color.expand(points.shape[0], -1)
-
         total_directional_color = torch.zeros_like(ambient_color)
-
         light_direction = torch.tensor([0.0, 1.0, 0.0], device=points.device).expand(points.shape[0], -1)
 
         if self.num_directional_lights > 0:
@@ -431,41 +403,6 @@ class PhysicsAwareIllumination(nn.Module):
                 total_directional_color = total_directional_color + shadow * color
 
         return ambient_color, total_directional_color, light_direction
-
-
-class DecomposedIlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4, ambient_layers: int = 2):
-        super().__init__()
-        self.encoder = PositionalEncoder(num_freqs)
-        in_dim = 3 * 2 * num_freqs
-
-        direct_layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
-        for _ in range(num_layers - 1):
-            direct_layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
-        direct_layers.append(nn.Linear(hidden_dim, 6))
-        self.direct_mlp = nn.Sequential(*direct_layers)
-
-        ambient_layers_list = [nn.Linear(in_dim, hidden_dim // 2), nn.ReLU(inplace=True)]
-        for _ in range(ambient_layers - 1):
-            ambient_layers_list.extend([nn.Linear(hidden_dim // 2, hidden_dim // 2), nn.ReLU(inplace=True)])
-        ambient_layers_list.append(nn.Linear(hidden_dim // 2, 6))
-        self.ambient_mlp = nn.Sequential(*ambient_layers_list)
-
-    def forward(self, x: Tensor, return_components=False) -> tuple[Tensor, Tensor] | tuple:
-        encoded_x = self.encoder(x)
-        direct_params = self.direct_mlp(encoded_x)
-        ambient_params = self.ambient_mlp(encoded_x)
-
-        params = direct_params + ambient_params
-
-        gain, gamma = torch.chunk(params, 2, dim=-1)
-        gain = torch.sigmoid(gain)
-        gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
-
-        if return_components:
-            return (gain, gamma), direct_params, ambient_params
-
-        return gain, gamma
 
 class IrradianceField(nn.Module):
     def __init__(self, num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 4):

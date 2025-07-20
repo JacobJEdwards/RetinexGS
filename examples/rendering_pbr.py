@@ -297,7 +297,7 @@ def rasterization_pbr(
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
         normals = quat_apply(quats_packed, base_normal)
 
-        indirect_light = irradiance_field(means, normals)
+        indirect_light = irradiance_field(means_packed, normals)
 
         indirect_light_packed = indirect_light[gaussian_ids]
 
