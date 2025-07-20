@@ -54,7 +54,7 @@ for CONFIG in "${CONFIG_OPTIONS[@]}"; do
             echo "Running scene: $SCENE with config $CONFIG (result dir: result$CONFIG_INDEX)"
 
 
-            CUDA_VISIBLE_DEVICES=0 python simple_trainer.py default --disable_viewer --data_factor $DATA_FACTOR \
+            CUDA_VISIBLE_DEVICES=0 python simple_trainer.py strategy:default-strategy --disable_viewer --data_factor $DATA_FACTOR \
                 --render_traj_path $RENDER_TRAJ_PATH \
                 --data_dir "$SCENE_DIR/$SCENE/" \
                 --result_dir "$CONFIG_RESULT_DIR/$SCENE/" \
