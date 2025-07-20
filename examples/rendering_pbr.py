@@ -349,6 +349,7 @@ def rasterization_pbr(
         }
         output_key = render_mode_map.get(render_mode, "final")
         colors = pbr_outputs[output_key]
+
     else:
         view_dirs = F.normalize(means.unsqueeze(0) - campos.unsqueeze(1)) # [C, N, 3]
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
