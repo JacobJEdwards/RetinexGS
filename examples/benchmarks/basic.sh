@@ -6,16 +6,16 @@ RENDER_TRAJ_PATH="ellipse"
 RESULT_DIR_BASE="../../results/benchmark"
 
 CONFIG_OPTIONS=(
-    "--lambda_shn_reg 0 --lambda_gray_world 0"
-    "--lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_exclusion 0"
-    "--lambda_shn_reg 0 --lambda_gray_world 0 --appearance_embeddings"
-    "--lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field"
-    "--lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field --appearance_embeddings"
-    "--lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0"
-    "--lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
-    "--lambda_shn_reg 0 --lambda_tv_loss 0"
-    "--lambda_gray_world 0"
-    "--lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_exclusion 0"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --appearance_embeddings"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field --appearance_embeddings"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
+    "strategy:default-strategy --lambda_shn_reg 0 --lambda_tv_loss 0"
+    "strategy:default-strategy --lambda_gray_world 0"
+    "strategy:default-strategy --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
 )
 
 #for SCENE in $SCENE_LIST;
