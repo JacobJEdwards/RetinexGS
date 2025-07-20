@@ -446,7 +446,7 @@ class Runner:
                 render_mode=current_mode,
             )
             colors = torch.clamp(renders[..., 0:3], 0.0, 1.0)
-            canvas = (colors.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
+            canvas = (colors.squeeze(0).detach().cpu().numpy() * 255).astype(np.uint8)
 
             img = Image.fromarray(canvas)
             draw = ImageDraw.Draw(img)
