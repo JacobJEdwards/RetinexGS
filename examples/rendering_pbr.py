@@ -46,46 +46,50 @@ def G_Smith(N_dot_V: Tensor, N_dot_L: Tensor, roughness: Tensor) -> Tensor:
 
 def pbr_shading(
         V: Tensor,          # [..., 3] view dir
-        L: Tensor,          # [..., 3] light dir
         N: Tensor,          # [..., 3] normal dir
         albedo: Tensor,     # [..., 3]
         roughness: Tensor,  # [..., 1]
         metallic: Tensor,           # [..., 1]
         ambient_light: Tensor,      # [..., 3] ambient light color
-        directional_light: Tensor,   # [..., 3] directional light color
+        light_contributions: list[tuple[Tensor, Tensor, Tensor]],   # [..., 3] directional light color
         indirect_light: Tensor,
 ) -> Tensor:
     N_dot_V = torch.clamp(torch.sum(N * V, dim=-1, keepdim=True), min=EPS)
-    N_dot_L = torch.clamp(torch.sum(N * L, dim=-1, keepdim=True), min=EPS)
-
-    H = torch.nn.functional.normalize(V + L, dim=-1)
-    N_dot_H = torch.clamp(torch.sum(N * H, dim=-1, keepdim=True), min=EPS)
-    V_dot_H = torch.clamp(torch.sum(V * H, dim=-1, keepdim=True), min=EPS)
-
-    # Specular Term
-    NDF = D_GGX(N_dot_H, roughness)
-    G = G_Smith(N_dot_V, N_dot_L, roughness)
     F0 = torch.full_like(albedo, 0.04)
     F0 = torch.lerp(F0, albedo, metallic)
-    F = F_Schlick(V_dot_H, F0)
 
-    numerator = NDF * G * F
-    denominator = 4.0 * N_dot_V * N_dot_L + EPS
-    specular = numerator / denominator
+    total_radiance = torch.zeros_like(albedo)
 
-    # Diffuse Term (Lambertian)
-    kS = F
-    kD = 1.0 - kS
-    kD *= 1.0 - metallic
-    diffuse = (kD * albedo / math.pi)
+    for color, L, attenuation in light_contributions:
+        N_dot_L = torch.clamp(torch.sum(N * L, dim=-1, keepdim=True), min=EPS)
+        H = torch.nn.functional.normalize(V + L, dim=-1)
+        N_dot_H = torch.clamp(torch.sum(N * H, dim=-1, keepdim=True), min=EPS)
+        V_dot_H = torch.clamp(torch.sum(V * H, dim=-1, keepdim=True), min=EPS)
+
+        # Specular Term (GGX)
+        NDF = D_GGX(N_dot_H, roughness)
+        G = G_Smith(N_dot_V, N_dot_L, roughness)
+        F = F_Schlick(V_dot_H, F0)
+
+        numerator = NDF * G * F
+        denominator = 4.0 * N_dot_V * N_dot_L + EPS
+        specular = numerator / denominator
+
+        # Diffuse Term (Lambertian)
+        kS = F
+        kD = 1.0 - kS
+        kD *= 1.0 - metallic # Metals have no diffuse reflection
+        diffuse = (kD * albedo / math.pi)
+
+        # Radiance from this light source
+        radiance = (diffuse + specular) * color * N_dot_L * attenuation
+        total_radiance += radiance
 
     ambient_term = albedo * ambient_light
-    directional_term = (diffuse + specular) * directional_light * N_dot_L
-
     diffuse_indirect = (albedo / math.pi) * indirect_light
 
-    radiance = ambient_term + directional_term + diffuse_indirect
-    return radiance
+    return ambient_term + total_radiance + diffuse_indirect
+
 
 def quat_apply(q: Tensor, v: Tensor) -> Tensor:
     """
@@ -268,19 +272,13 @@ def rasterization_pbr(
         }
     )
 
-    ambient_light, directional_light, light_dir = illumination_field(means)
+    ambient_light, light_contributions = illumination_field(means)
 
     # PBR Shading Calculation
     campos = torch.inverse(viewmats)[..., :3, 3]
     if viewmats_rs is not None:
         campos_rs = torch.inverse(viewmats_rs)[..., :3, 3]
         campos = 0.5 * (campos + campos_rs)
-
-    light_dir = light_dir.to(device).float()
-    if light_dir.dim() > 1:
-        light_dir = F.normalize(light_dir, dim=-1)
-    else:
-        light_dir = F.normalize(light_dir, dim=0)
 
     base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
     normals_world = quat_apply(quats, base_normal)
@@ -289,27 +287,29 @@ def rasterization_pbr(
 
     if packed:
         means_packed = means[gaussian_ids]
-        quats_packed = quats[gaussian_ids]
         albedo_packed = albedo_act[gaussian_ids]
         roughness_packed = roughness_act[gaussian_ids]
         metallic_packed = metallic_act[gaussian_ids]
         ambient_light_packed = ambient_light[gaussian_ids]
-        directional_light_packed = directional_light[gaussian_ids]
-        light_dir_packed = light_dir[gaussian_ids]
 
         view_dirs = F.normalize(means_packed - campos[camera_ids])
-
         normals_packed = normals_world[gaussian_ids]
+
+        packed_light_contributions = []
+        for color, direction, attenuation in light_contributions:
+            packed_color = color[gaussian_ids]
+            packed_direction = direction[gaussian_ids]
+            packed_attenuation = attenuation[gaussian_ids]
+            packed_light_contributions.append((packed_color, packed_direction, packed_attenuation))
 
         indirect_light_packed = indirect_light[gaussian_ids]
 
         colors = pbr_shading(
-            V=view_dirs, L=light_dir_packed, N=normals_packed,
+            V=view_dirs, N=normals_packed,
             albedo=albedo_packed, roughness=roughness_packed,
             metallic=metallic_packed, ambient_light=ambient_light_packed,
-            directional_light=directional_light_packed,
-            indirect_light=indirect_light_packed,
-
+            light_contributions=packed_light_contributions,
+            indirect_light=indirect_light,
         )
     else:
         view_dirs = F.normalize(means.unsqueeze(0) - campos.unsqueeze(1)) # [C, N, 3]
@@ -322,16 +322,22 @@ def rasterization_pbr(
         roughness_exp = roughness_act.unsqueeze(0).expand(C, N, -1)
         metallic_exp = metallic_act.unsqueeze(0).expand(C, N, -1)
         ambient_light_exp = ambient_light.unsqueeze(0).expand(C, N, -1)
-        directional_light_exp = directional_light.unsqueeze(0).expand(C, N, -1)
-        light_dir_exp = light_dir.unsqueeze(0).expand(C, N, -1)
         indirect_light_exp = indirect_light.unsqueeze(0).expand(C, N, -1)
 
+        light_dir_exp = []
+        for color, direction, attenuation in light_contributions:
+            color_exp = color.unsqueeze(0).expand(C, N, -1)
+            direction_exp = direction.unsqueeze(0).expand(C, N, -1)
+            attenuation_exp = attenuation.unsqueeze(0).expand(C, N, -1)
+            light_dir_exp.append((color_exp, direction_exp, attenuation_exp))
+
+
         colors = pbr_shading(
-            V=view_dirs, L=light_dir_exp, N=normals,
+            V=view_dirs, N=normals,
             albedo=albedo_exp, roughness=roughness_exp,
             metallic=metallic_exp, ambient_light=ambient_light_exp,
-            directional_light=directional_light_exp,
             indirect_light=indirect_light_exp,
+            light_contributions=light_dir_exp,
         )
     if distributed:
         if packed:
