@@ -59,6 +59,8 @@ class Config:
 
     illumination_field_lr: float = 1e-4
     irradiance_field_lr: float = 1e-4
+    normal_field_lr: float = 1e-4
+    reflection_field_lr: float = 1e-4
 
     use_learnt_lighting: bool = True
 
@@ -75,6 +77,7 @@ class Config:
 
     lambda_illum_smoothness: float = 0.001
     lambda_irradiance_smoothness: float = 0.01
+    lambda_normal_reg: float = 0.01
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]

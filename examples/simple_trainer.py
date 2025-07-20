@@ -29,8 +29,17 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from pbr import PhysicsAwareIllumination, IrradianceField, DirectionalLight, PointLight, SpotLight, LearnedIlluminationField, \
-    Light
+from pbr import (
+    PhysicsAwareIllumination,
+    IrradianceField,
+    DirectionalLight,
+    PointLight,
+    SpotLight,
+    LearnedIlluminationField,
+    Light,
+    NormalField,
+    ReflectionField,
+)
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
 from gsplat.distributed import cli
@@ -182,17 +191,20 @@ class Runner:
             ]
             self.illumination_field = PhysicsAwareIllumination(lights=scene_lights).to(self.device)
 
-        if world_size > 1:
-            self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
-
-        self.illum_field_optimizer = torch.optim.AdamW(self.illumination_field.parameters(), lr=cfg.illumination_field_lr)
-
         self.irradiance_field = IrradianceField().to(self.device)
+        self.normal_field = NormalField().to(self.device)
+        self.reflection_field = ReflectionField().to(self.device)
 
         if world_size > 1:
             self.irradiance_field = DDP(self.irradiance_field, device_ids=[local_rank])
+            self.normal_field = DDP(self.normal_field, device_ids=[local_rank])
+            self.reflection_field = DDP(self.reflection_field, device_ids=[local_rank])
+            self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
+        self.illum_field_optimizer = torch.optim.AdamW(self.illumination_field.parameters(), lr=cfg.illumination_field_lr)
         self.irradiance_field_optimizer = torch.optim.AdamW(self.irradiance_field.parameters(), lr=cfg.irradiance_field_lr)
+        self.normal_field_optimizer = torch.optim.AdamW(self.normal_field.parameters(), lr=cfg.normal_field_lr)
+        self.reflection_field_optimizer = torch.optim.AdamW(self.reflection_field.parameters(), lr=cfg.reflection_field_lr)
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
 
@@ -258,6 +270,8 @@ class Runner:
             height: int,
             illumination_field: PhysicsAwareIllumination | None = None,
             irradiance_field: IrradianceField | None = None,
+            normal_field: NormalField | None = None,
+            reflection_field: ReflectionField | None = None,
             render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"] = "RGB+ED",
             masks: Tensor | None = None,
             **kwargs,
@@ -282,6 +296,8 @@ class Runner:
             height=height,
             illumination_field=illumination_field or self.illumination_field,
             irradiance_field= irradiance_field or self.irradiance_field,
+            normal_field=normal_field or self.normal_field,
+            reflection_field=reflection_field or self.reflection_field,
             packed=self.cfg.packed,
             backgrounds=kwargs.get("backgrounds"),
             render_mode=render_mode,
@@ -509,6 +525,8 @@ class Runner:
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
             CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=1e-6),
             CosineAnnealingLR(self.irradiance_field_optimizer, T_max=max_steps, eta_min=1e-6),
+            CosineAnnealingLR(self.normal_field_optimizer, T_max=max_steps, eta_min=1e-6),
+            CosineAnnealingLR(self.reflection_field_optimizer, T_max=max_steps, eta_min=1e-6),
         ]
 
         trainloader = torch.utils.data.DataLoader(
@@ -558,6 +576,13 @@ class Runner:
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct + cfg.ssim_lambda * ssim_loss
 
                 info["means2d"].retain_grad()
+
+                if cfg.lambda_normal_reg > 0:
+                    loss_normal_reg = (1.0 - F.cosine_similarity(
+                        info["learned_normals"], info["quat_normals"], dim=-1)).mean()
+                    loss += cfg.lambda_normal_reg * loss_normal_reg
+                else:
+                    loss_normal_reg = torch.tensor(0.0, device=device)
 
                 # smoothness loss for illumination field
                 if cfg.lambda_illum_smoothness > 0:
@@ -659,6 +684,9 @@ class Runner:
                     json.dump(stats_save, f)
                 data_save = {"step": step, "splats": self.splats.state_dict(),
                              "illumination_field": self.illumination_field.state_dict(),
+                                "irradiance_field": self.irradiance_field.state_dict(),
+                                "normal_field": self.normal_field.state_dict(),
+                                "reflection_field": self.reflection_field.state_dict(),
                              "stats": stats_save}
 
                 torch.save(
@@ -696,6 +724,12 @@ class Runner:
 
             self.irradiance_field_optimizer.step()
             self.irradiance_field_optimizer.zero_grad()
+
+            self.normal_field_optimizer.step()
+            self.normal_field_optimizer.zero_grad()
+
+            self.reflection_field_optimizer.step()
+            self.reflection_field_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
