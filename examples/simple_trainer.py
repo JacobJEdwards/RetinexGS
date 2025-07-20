@@ -29,8 +29,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.pbr import LearnedIlluminationField
-from pbr import PhysicsAwareIllumination, IrradianceField, DirectionalLight, PointLight, SpotLight
+from pbr import PhysicsAwareIllumination, IrradianceField, DirectionalLight, PointLight, SpotLight, LearnedIlluminationField
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
 from gsplat.distributed import cli
