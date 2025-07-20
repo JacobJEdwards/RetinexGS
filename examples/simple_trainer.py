@@ -1032,8 +1032,10 @@ class Runner:
                 data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net": (
                     self.retinex_net.module.state_dict()
                     if world_size > 1
-                    else self.retinex_net.state_dict()
-                )}
+                    else self.retinex_net.state_dict()),
+                    "retinex_embeds": self.retinex_embeds.module.state_dict(),
+                             "illum_module": self.illum_module.state_dict() if self.cfg.use_illum_opt else None,
+                }
                 torch.save(
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
                 )
@@ -1365,6 +1367,19 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         ]
         for k in runner.splats.keys():
             runner.splats[k].data = torch.cat([ckpt["splats"][k] for ckpt in ckpts])
+
+        runner.retinex_net.load_state_dict(
+            {k: torch.cat([ckpt["retinex_net"][k] for ckpt in ckpts], dim=0) for k in runner.retinex_net.state_dict().keys()}
+        )
+
+        runner.retinex_embeds.load_state_dict(
+            {k: torch.cat([ckpt["retinex_embeds"][k] for ckpt in ckpts], dim=0) for k in runner.retinex_embeds.state_dict().keys()}
+        )
+
+        if runner.cfg.use_illum_opt:
+            runner.illum_module.load_state_dict(
+                {k: torch.cat([ckpt["illum_module"][k] for ckpt in ckpts], dim=0) for k in runner.illum_module.state_dict().keys()}
+            )
 
         step = ckpts[0]["step"]
         runner.eval(step=step)
