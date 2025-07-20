@@ -266,7 +266,7 @@ class Runner:
             width=width,
             height=height,
             illumination_field=self.illumination_field,
-            irradiance_field=self.irradiation_field,
+            irradiance_field=self.irradiance_field,
             packed=self.cfg.packed,
             backgrounds=kwargs.get("backgrounds")
         )
