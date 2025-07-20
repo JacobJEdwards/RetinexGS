@@ -6,16 +6,16 @@ RENDER_TRAJ_PATH="ellipse"
 RESULT_DIR_BASE="../../results/benchmark"
 
 CONFIG_OPTIONS=(
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0"
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_exclusion 0"
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --appearance_embeddings"
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field"
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field --appearance_embeddings"
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0"
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
-    "strategy:default-strategy --lambda_shn_reg 0 --lambda_tv_loss 0"
-    "strategy:default-strategy --lambda_gray_world 0"
-    "strategy:default-strategy --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
+    "--lambda_shn_reg 0 --lambda_gray_world 0"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_exclusion 0"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --appearance_embeddings"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field"
+    " --lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field --appearance_embeddings"
+    " --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0"
+    " --lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
+    " --lambda_shn_reg 0 --lambda_tv_loss 0"
+    " --lambda_gray_world 0"
+    " --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
 )
 
 #for SCENE in $SCENE_LIST;
@@ -53,7 +53,7 @@ for CONFIG in "${CONFIG_OPTIONS[@]}"; do
 
             echo "Running scene: $SCENE with config $CONFIG (result dir: result$CONFIG_INDEX)"
 
-            CUDA_VISIBLE_DEVICES=0 python simple_trainer.py strategy:default-strategy --disable_viewer --data_factor $DATA_FACTOR \
+            CUDA_VISIBLE_DEVICES=0 python simple_trainer.py default --disable_viewer --data_factor $DATA_FACTOR \
                 --render_traj_path $RENDER_TRAJ_PATH \
                 --data_dir "$SCENE_DIR/$SCENE/" \
                 --result_dir "$CONFIG_RESULT_DIR/$SCENE/" \
