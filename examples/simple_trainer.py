@@ -4,7 +4,7 @@ import math
 import os
 import time
 from collections import defaultdict
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import imageio
 import kornia
@@ -250,6 +250,7 @@ class Runner:
             Ks: Tensor,
             width: int,
             height: int,
+            render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"] = "RGB+ED",
             masks: Tensor | None = None,
             **kwargs,
     ) -> (
@@ -274,7 +275,8 @@ class Runner:
             illumination_field=self.illumination_field,
             irradiance_field=self.irradiance_field,
             packed=self.cfg.packed,
-            backgrounds=kwargs.get("backgrounds")
+            backgrounds=kwargs.get("backgrounds"),
+            render_mode=render_mode,
         )
 
     @torch.no_grad()

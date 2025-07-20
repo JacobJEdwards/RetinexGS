@@ -153,7 +153,7 @@ def rasterization_pbr(
         packed: bool = False,
         tile_size: int = 16,
         backgrounds: Tensor | None = None,
-        render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
+        render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"] = "RGB",
         sparse_grad: bool = False,
         absgrad: bool = False,
         rasterize_mode: Literal["classic", "antialiased"] = "classic",
