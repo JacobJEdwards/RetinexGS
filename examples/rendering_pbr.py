@@ -309,7 +309,7 @@ def rasterization_pbr(
             albedo=albedo_packed, roughness=roughness_packed,
             metallic=metallic_packed, ambient_light=ambient_light_packed,
             light_contributions=packed_light_contributions,
-            indirect_light=indirect_light,
+            indirect_light=indirect_light_packed,
         )
     else:
         view_dirs = F.normalize(means.unsqueeze(0) - campos.unsqueeze(1)) # [C, N, 3]
