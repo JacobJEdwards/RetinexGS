@@ -13,7 +13,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("../../bicycle")
+    data_dir: Path = Path("../../bonsai")
     data_factor: int = 1
     result_dir: Path = Path("../../result")
     test_every: int = 8
@@ -30,10 +30,10 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 10_000
-    eval_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
-    save_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
+    eval_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    save_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
     save_ply: bool = False
-    ply_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
+    ply_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
     disable_video: bool = True
 
     init_type: str = "sfm"
