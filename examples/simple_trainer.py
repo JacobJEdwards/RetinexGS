@@ -331,7 +331,7 @@ class Runner:
         def update_light_color(illum_model, frame_idx, num_frames):
             hue = frame_idx / num_frames
             color_hsv = torch.tensor([hue, 0.8, 1.0], device=self.device) # Keep saturation and value constant
-            color_rgb = kornia.color.hsv_to_rgb(color_hsv.unsqueeze(0).unsqueeze(0)).squeeze()
+            color_rgb = kornia.color.hsv_to_rgb(color_hsv.view(1, 3, 1, 1)).squeeze()
 
             target_color = color_rgb * 1.5
             raw_color_target = torch.log(torch.exp(target_color) - 1.0 + 1e-6)
