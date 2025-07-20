@@ -45,17 +45,15 @@ def G_Smith(N_dot_V: Tensor, N_dot_L: Tensor, roughness: Tensor) -> Tensor:
     return ggx_v * ggx_l
 
 def pbr_shading(
-        V: Tensor,          # [..., 3]
-        L: Tensor,          # [..., 3]
-        N: Tensor,          # [..., 3]
+        V: Tensor,          # [..., 3] view dir
+        L: Tensor,          # [..., 3] light dir
+        N: Tensor,          # [..., 3] normal dir
         albedo: Tensor,     # [..., 3]
         roughness: Tensor,  # [..., 1]
-        metallic: Tensor,   # [..., 1]
-        light_color: Tensor # [..., 3]
+        metallic: Tensor,           # [..., 1]
+        ambient_light: Tensor,      # [..., 3] ambient light color
+        directional_light: Tensor   # [..., 3] directional light color
 ) -> Tensor:
-    """
-    Calculates the final color of a surface point using a PBR model.
-    """
     N_dot_V = torch.clamp(torch.sum(N * V, dim=-1, keepdim=True), min=EPS)
     N_dot_L = torch.clamp(torch.sum(N * L, dim=-1, keepdim=True), min=EPS)
 
@@ -80,8 +78,10 @@ def pbr_shading(
     kD *= 1.0 - metallic
     diffuse = (kD * albedo / math.pi)
 
-    # Final combined color
-    radiance = (diffuse + specular) * light_color * N_dot_L
+    ambient_term = albedo * ambient_light
+    directional_term = (diffuse + specular) * directional_light * N_dot_L
+
+    radiance = ambient_term + directional_term
     return radiance
 
 def quat_apply(q: Tensor, v: Tensor) -> Tensor:
@@ -115,7 +115,9 @@ def rasterization_pbr(
         albedo: Tensor, # [..., N, 3]
         roughness: Tensor, # [..., N, 1]
         metallic: Tensor, # [..., N, 1]
-        light_color: Tensor, # [..., 3]
+        ambient_light: Tensor, # [..., 3]
+        directional_light: Tensor,  # [..., N, 3]
+        light_dir: Tensor,  # [..., 3]
         viewmats: Tensor,  # [..., C, 4, 4]
         Ks: Tensor,  # [..., C, 3, 3]
         width: int,
@@ -126,7 +128,6 @@ def rasterization_pbr(
         eps2d: float = 0.3,
         packed: bool = False,
         tile_size: int = 16,
-        light_dir: Tensor = torch.tensor([0.5, 0.5, -0.5]), # Added for PBR
         backgrounds: Tensor | None = None,
         render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
         sparse_grad: bool = False,
@@ -147,10 +148,6 @@ def rasterization_pbr(
         rolling_shutter: RollingShutterType = RollingShutterType.GLOBAL,
         viewmats_rs: Tensor | None = None,
 ) -> tuple[Tensor, Tensor, dict[str, Any]]:
-    """
-    Fully-featured PBR rasterization function.
-    Combines PBR shading with the advanced rasterization pipeline.
-    """
     meta = {}
     batch_dims = means.shape[:-2]
     B = math.prod(batch_dims)
@@ -276,7 +273,12 @@ def rasterization_pbr(
         campos_rs = torch.inverse(viewmats_rs)[..., :3, 3]
         campos = 0.5 * (campos + campos_rs)
 
-    light_dir = F.normalize(light_dir.to(device).float(), dim=0)
+    light_dir = light_dir.to(device).float()
+    if light_dir.dim() > 1:
+        # Normalize each vector in the batch
+        light_dir = F.normalize(light_dir, dim=-1)
+    else:
+        light_dir = F.normalize(light_dir, dim=0)
 
     if packed:
         means_packed = means[gaussian_ids]
@@ -284,7 +286,8 @@ def rasterization_pbr(
         albedo_packed = albedo_act[gaussian_ids]
         roughness_packed = roughness_act[gaussian_ids]
         metallic_packed = metallic_act[gaussian_ids]
-        light_color_packed = light_color[gaussian_ids]
+        ambient_light_packed = ambient_light[gaussian_ids]
+        directional_light_packed = directional_light[gaussian_ids]
         light_dir_packed = light_dir[gaussian_ids]
 
         view_dirs = F.normalize(means_packed - campos[camera_ids])
@@ -295,35 +298,27 @@ def rasterization_pbr(
         colors = pbr_shading(
             V=view_dirs, L=light_dir_packed, N=normals,
             albedo=albedo_packed, roughness=roughness_packed,
-            metallic=metallic_packed, light_color=light_color_packed
+            metallic=metallic_packed, ambient_light=ambient_light_packed,
+            directional_light=directional_light_packed
         )
     else:
         view_dirs = F.normalize(means.unsqueeze(0) - campos.unsqueeze(1)) # [C, N, 3]
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
         normals = quat_apply(quats.unsqueeze(0).expand(C, -1, -1), base_normal) # [C, N, 3]
 
-        # Vectorize shading by expanding view-independent tensors
         albedo_exp = albedo_act.unsqueeze(0).expand(C, N, -1)
         roughness_exp = roughness_act.unsqueeze(0).expand(C, N, -1)
         metallic_exp = metallic_act.unsqueeze(0).expand(C, N, -1)
-        light_color_exp = light_color.unsqueeze(0).expand(C, N, -1)
+        ambient_light_exp = ambient_light.unsqueeze(0).expand(C, N, -1)
+        directional_light_exp = directional_light.unsqueeze(0).expand(C, N, -1)
         light_dir_exp = light_dir.unsqueeze(0).expand(C, N, -1)
 
         colors = pbr_shading(
             V=view_dirs, L=light_dir_exp, N=normals,
             albedo=albedo_exp, roughness=roughness_exp,
-            metallic=metallic_exp, light_color=light_color_exp
+            metallic=metallic_exp, ambient_light=ambient_light_exp,
+            directional_light=directional_light_exp
         )
-        # light_dir_exp = light_dir.expand(*batch_dims, C, N, 3)
-        #
-        # colors = pbr_shading(
-        #     V=view_dirs, L=light_dir_exp, N=normals,
-        #     albedo=torch.sigmoid(torch.broadcast_to(albedo[..., None, :, :], batch_dims + (C, N, 3))),
-        #     roughness=torch.sigmoid(torch.broadcast_to(roughness[..., None, :, :], batch_dims + (C, N, 1))),
-        #     metallic=torch.sigmoid(torch.broadcast_to(metallic[..., None, :, :], batch_dims + (C, N, 1))),
-        #     light_color=torch.sigmoid(torch.broadcast_to(light_color[..., None, :, :], batch_dims + (C, N, 3)))
-        # )
-
     if distributed:
         if packed:
             # count how many elements need to be sent to each rank

@@ -89,6 +89,7 @@ class Parser:
         w2c_mats = []
         camera_ids = []
         Ks_dict = dict()
+        camtoworlds_dict = dict()
         params_dict = dict()
         imsize_dict = dict()  # width, height
         mask_dict = dict()

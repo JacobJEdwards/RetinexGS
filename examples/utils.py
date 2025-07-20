@@ -399,6 +399,40 @@ class ShadowField(nn.Module):
         shadow_params = self.mlp(encoded_points)
         return torch.sigmoid(shadow_params)
 
+
+class PhysicsAwareIllumination(nn.Module):
+    def __init__(self, num_directional_lights: int = 1):
+        super().__init__()
+        self.num_directional_lights = num_directional_lights
+        self.ambient_light = AmbientLight()
+        self.directional_lights = nn.ModuleList(
+            [DirectionalLight() for _ in range(num_directional_lights)]
+        )
+        if self.num_directional_lights > 0:
+            self.shadow_field = ShadowField(num_lights=num_directional_lights)
+
+    def forward(self, points: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        ambient_color = self.ambient_light.color.expand(points.shape[0], -1)
+
+        total_directional_color = torch.zeros_like(ambient_color)
+
+        light_direction = torch.tensor([0.0, 1.0, 0.0], device=points.device).expand(points.shape[0], -1)
+
+        if self.num_directional_lights > 0:
+            shadow_factors = self.shadow_field(points)  # [N, num_lights]
+
+            # this is a simplification a multi-light shader would loop over all directions
+            _, first_light_dir = self.directional_lights[0](points)
+            light_direction = first_light_dir
+
+            for i in range(self.num_directional_lights):
+                color, _ = self.directional_lights[i](points)
+                shadow = shadow_factors[:, i:i+1]
+                total_directional_color = total_directional_color + shadow * color
+
+        return ambient_color, total_directional_color, light_direction
+
+
 class DecomposedIlluminationField(nn.Module):
     def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4, ambient_layers: int = 2):
         super().__init__()
@@ -432,37 +466,3 @@ class DecomposedIlluminationField(nn.Module):
             return (gain, gamma), direct_params, ambient_params
 
         return gain, gamma
-
-class PhysicsAwareIllumination(nn.Module):
-    def __init__(self, num_directional_lights: int = 1):
-        super().__init__()
-        self.num_directional_lights = num_directional_lights
-        self.ambient_light = AmbientLight()
-        self.directional_lights = nn.ModuleList(
-            [DirectionalLight() for _ in range(num_directional_lights)]
-        )
-        if self.num_directional_lights > 0:
-            self.shadow_field = ShadowField(num_lights=num_directional_lights)
-
-    def forward(self, points: Tensor) -> tuple[Tensor, Tensor]:
-        total_light_color = self.ambient_light.color.expand(points.shape[0], -1)
-
-        light_dirs = torch.tensor([0.0, 1.0, 0.0], device=points.device).expand_as(points)
-
-        if self.num_directional_lights > 0:
-            shadow_factors = self.shadow_field(points)  # [N, num_lights]
-
-            # For simplicity in the PBR shader, we'll sum light colors but use the
-            # direction of the first (and likely strongest) light.
-            # A more advanced renderer could loop over all lights.
-
-            first_light_color, first_light_dir = self.directional_lights[0](points)
-            total_light_color = total_light_color + shadow_factors[:, 0:1] * first_light_color
-            light_dirs = first_light_dir
-
-            for i in range(1, self.num_directional_lights):
-                color, _ = self.directional_lights[i](points)
-                shadow = shadow_factors[:, i:i+1]
-                total_light_color = total_light_color + shadow * color
-
-        return total_light_color, light_dirs

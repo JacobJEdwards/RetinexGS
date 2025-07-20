@@ -250,7 +250,7 @@ class Runner:
         roughness = self.splats["roughness"]
         metallic = self.splats["metallic"]
 
-        light_color, light_dir = self.illumination_field(means)
+        ambient_light, directional_light, light_dir = self.illumination_field(means)
 
         return rasterization_pbr(
             means=means, quats=quats, scales=scales, opacities=opacities,
@@ -259,10 +259,102 @@ class Runner:
             Ks=Ks,
             width=width,
             height=height,
-            light_color=light_color,
-            packed=self.cfg.packed,
+            ambient_light=ambient_light,
+            directional_light=directional_light,
             light_dir=light_dir,
+            packed=self.cfg.packed,
             backgrounds=kwargs.get("backgrounds")
+        )
+
+    @torch.no_grad()
+    def _render_pbr_video(
+            self,
+            step: int,
+            video_name_suffix: str,
+            num_frames: int = 180,
+            update_light_func: callable = None,
+    ):
+        if self.world_rank != 0:
+            return
+
+        print(f"Running PBR demo video rendering for step {step}: {video_name_suffix}")
+        cfg = self.cfg
+        device = self.device
+
+        if len(self.parser.camtoworlds) == 0:
+            print("No validation cameras found. Skipping PBR demo rendering.")
+            return
+
+        cam_c2w = torch.from_numpy(self.parser.camtoworlds[0]).float().to(device).unsqueeze(0)
+
+        cam_keys = list(self.parser.Ks_dict.keys())
+        if not cam_keys:
+            print("No camera intrinsics found. Skipping PBR demo rendering.")
+            return
+        cam_key = cam_keys[0]
+
+        cam_K = torch.from_numpy(self.parser.Ks_dict[cam_key]).float().to(device).unsqueeze(0)
+        width_traj, height_traj = self.parser.imsize_dict[cam_key]
+
+        video_dir = f"{cfg.result_dir}/videos"
+        os.makedirs(video_dir, exist_ok=True)
+        video_path = f"{video_dir}/pbr_{video_name_suffix}_{step}.mp4"
+        video_writer = imageio.get_writer(video_path, fps=30)
+
+        illum_model = self.illumination_field.module if self.world_size > 1 else self.illumination_field
+
+        original_light_color = illum_model.directional_lights[0].raw_color.clone()
+        original_light_direction = illum_model.directional_lights[0].direction.clone()
+
+        for i in tqdm.trange(num_frames, desc=f"Rendering {video_name_suffix} video"):
+            if update_light_func:
+                update_light_func(illum_model, i, num_frames)
+
+            renders, _, _ = self.rasterize_splats(
+                camtoworlds=cam_c2w,
+                Ks=cam_K,
+                width=width_traj,
+                height=height_traj,
+                render_mode="RGB",
+            )
+            colors = torch.clamp(renders[..., 0:3], 0.0, 1.0)
+            canvas = (colors.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
+            video_writer.append_data(canvas)
+
+        video_writer.close()
+        print(f"PBR demo video saved to {video_path}")
+
+        illum_model.directional_lights[0].raw_color.data = original_light_color
+        illum_model.directional_lights[0].direction.data = original_light_direction
+
+    def render_light_color_video(self, step: int):
+        def update_light_color(illum_model, frame_idx, num_frames):
+            hue = frame_idx / num_frames
+            color_hsv = torch.tensor([hue, 0.8, 1.0], device=self.device) # Keep saturation and value constant
+            color_rgb = kornia.color.hsv_to_rgb(color_hsv.unsqueeze(0).unsqueeze(0)).squeeze()
+
+            target_color = color_rgb * 1.5
+            raw_color_target = torch.log(torch.exp(target_color) - 1.0 + 1e-6)
+            illum_model.directional_lights[0].raw_color.data = raw_color_target
+
+        self._render_pbr_video(
+            step, video_name_suffix="color_cycle", update_light_func=update_light_color
+        )
+
+    def render_light_intensity_video(self, step: int):
+        illum_model = self.illumination_field.module if self.world_size > 1 else self.illumination_field
+        original_raw_color = illum_model.directional_lights[0].raw_color.clone().detach()
+
+        def update_light_intensity(illum_model, frame_idx, num_frames):
+            intensity_factor = (math.sin(2 * math.pi * frame_idx / num_frames) + 1.1) * 1.5
+
+            new_raw_color = original_raw_color + torch.log(torch.tensor(intensity_factor, device=self.device))
+            illum_model.directional_lights[0].raw_color.data = new_raw_color
+
+        self._render_pbr_video(
+            step,
+            video_name_suffix="intensity_pulse",
+            update_light_func=update_light_intensity,
         )
 
 
