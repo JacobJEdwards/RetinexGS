@@ -606,6 +606,10 @@ class Runner:
             self.illum_field_optimizer.step()
             self.illum_field_optimizer.zero_grad()
 
+            if cfg.appearance_embeddings:
+                self.appearance_embeds_optimizer.step()
+                self.appearance_embeds_optimizer.zero_grad()
+
             for scheduler in schedulers:
                 scheduler.step()
 
@@ -886,6 +890,11 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         ]
         for k in runner.splats.keys():
             runner.splats[k].data = torch.cat([ckpt["splats"][k] for ckpt in ckpts])
+
+        runner.illumination_field.load_state_dict(
+            {k: torch.cat([ckpt["illumination_field"][k] for ckpt in ckpts]) for k in runner.illumination_field.state_dict().keys()}
+        )
+        runner.illumination_field.eval()
 
         step = ckpts[0]["step"]
         runner.eval(step=step)
