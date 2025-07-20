@@ -987,6 +987,8 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         runner.render_traj(step=step)
         runner.render_light_color_video(step)
         runner.render_light_intensity_video(step)
+        runner.render_light_direction_video(step)
+        runner.render_material_showcase_video(step)
     else:
         runner.train()
 
