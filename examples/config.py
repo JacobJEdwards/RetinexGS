@@ -27,10 +27,10 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 10_000
-    eval_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
-    save_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
-    save_ply: bool = True
-    ply_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
+    eval_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    save_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    save_ply: bool = False
+    ply_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
     disable_video: bool = True
 
     init_type: str = "sfm"
