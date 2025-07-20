@@ -252,11 +252,10 @@ class Runner:
         quats = self.splats["quats"]
         scales = torch.exp(self.splats["scales"])
         opacities = torch.sigmoid(self.splats["opacities"])
+
         albedo = self.splats["albedo"]
         roughness = self.splats["roughness"]
         metallic = self.splats["metallic"]
-
-        ambient_light, directional_light, light_dir = self.illumination_field(means)
 
         return rasterization_pbr(
             means=means, quats=quats, scales=scales, opacities=opacities,
