@@ -521,7 +521,7 @@ class Runner:
                             step,
                         )
                         self.writer.add_images(
-                            "train/render_enh",
+                            "train/render",
                             colors.permute(0, 3, 1, 2),
                             step,
                         )
