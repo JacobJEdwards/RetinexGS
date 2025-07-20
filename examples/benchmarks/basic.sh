@@ -15,6 +15,10 @@ CONFIG_OPTIONS=(
 
 for SCENE in $SCENE_LIST;
 do
+    if [ "$SCENE" = "bicycle" ] || [ "$SCENE" = "garden" ]; then
+      continue
+    fi
+
     if [ "$SCENE" = "bonsai" ] || [ "$SCENE" = "counter" ] || [ "$SCENE" = "kitchen" ] || [ "$SCENE" = "room" ]; then
         DATA_FACTOR=2
     else
