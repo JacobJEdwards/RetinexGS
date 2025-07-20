@@ -927,7 +927,7 @@ if __name__ == "__main__":
             ),
         ),
     }
-    config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.extras.overridable_config_cli(configs)
     config = tyro.cli(
         Config,
     )
