@@ -424,7 +424,7 @@ class Runner:
                     height=height,
                     sh_degree=sh_degree_to_use,
                     render_mode="RGB+ED",
-                    image_ids=data["image_ids"].to(device),
+                    image_ids=data["image_id"].to(device),
                 )
 
                 colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
@@ -481,7 +481,7 @@ class Runner:
 
                     points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam)
 
-                embeddings = self.appearance_embeds(data["image_ids"].to(device)) if "image_ids" in data else None
+                embeddings = self.appearance_embeds(data["image_id"].to(device)) if "image_id" in data else None
                 gain_map, gamma_map = self.illumination_field(points_3d_world.squeeze(0), embeddings) # [H*W, 3] each
 
                 illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
@@ -672,7 +672,7 @@ class Runner:
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
                 masks=masks,
-                image_ids=data["image_ids"].to(device),
+                image_ids=data["image_id"].to(device),
             )
 
             torch.cuda.synchronize()
