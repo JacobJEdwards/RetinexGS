@@ -29,6 +29,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.pbr import LearnedIlluminationField
 from pbr import PhysicsAwareIllumination, IrradianceField, DirectionalLight, PointLight, SpotLight
 from rendering_pbr import rasterization_pbr
 from losses import ExclusionLoss
@@ -166,15 +167,20 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        scene_lights = [
-            DirectionalLight(initial_direction=torch.tensor([0.5, -1.0, 0.2]), initial_color=torch.tensor([1.0, 0.9, 0.8])),
-            PointLight(initial_position=torch.tensor([2.0, 1.5, 2.0]), initial_color=torch.tensor([0.8, 0.2, 0.2])),
-            SpotLight(initial_position=torch.tensor([-2.0, 3.0, -1.0]), initial_direction=torch.tensor([0.5, -1.0, 0.2]),
-                      initial_color=torch.tensor([0.2, 0.8, 0.2]), cone_angle_deg=25.0),
-        ]
-
-        self.illumination_field = PhysicsAwareIllumination(lights=scene_lights).to(self.device)
-
+        if cfg.use_learnt_lighting:
+            learnt_lighting_model = LearnedIlluminationField(
+                num_directional_lights=cfg.num_directional_lights,
+                num_point_lights=cfg.num_point_lights,
+            )
+            self.illumination_field = PhysicsAwareIllumination(lights=learnt_lighting_model).to(self.device)
+        else:
+            scene_lights = [
+                DirectionalLight(initial_direction=torch.tensor([0.5, -1.0, 0.2]), initial_color=torch.tensor([1.0, 0.9, 0.8])),
+                PointLight(initial_position=torch.tensor([2.0, 1.5, 2.0]), initial_color=torch.tensor([0.8, 0.2, 0.2])),
+                SpotLight(initial_position=torch.tensor([-2.0, 3.0, -1.0]), initial_direction=torch.tensor([0.5, -1.0, 0.2]),
+                          initial_color=torch.tensor([0.2, 0.8, 0.2]), cone_angle_deg=25.0),
+            ]
+            self.illumination_field = PhysicsAwareIllumination(lights=scene_lights).to(self.device)
 
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])

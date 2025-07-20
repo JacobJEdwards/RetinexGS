@@ -60,6 +60,11 @@ class Config:
     illumination_field_lr: float = 1e-4
     irradiance_field_lr: float = 1e-4
 
+    use_learnt_lighting: bool = True
+
+    num_directional_lights: int = 1
+    num_point_lights: int = 2
+
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 

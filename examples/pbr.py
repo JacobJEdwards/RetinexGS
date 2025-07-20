@@ -152,14 +152,67 @@ class ShadowField(nn.Module):
         shadow_params = self.mlp(encoded_points)
         return torch.sigmoid(shadow_params)
 
+class LearnedIlluminationField(nn.Module):
+    def __init__(self, num_directional_lights=1, num_point_lights=2):
+        super().__init__()
+        self.num_directional_lights = num_directional_lights
+        self.num_point_lights = num_point_lights
+
+        dir_light_params = self.num_directional_lights * 6
+        point_light_params = self.num_point_lights * 6
+
+        total_params = dir_light_params + point_light_params
+
+        self.mlp = nn.Sequential(
+            nn.Linear(1, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, total_params)
+        )
+
+        self.latent_code = nn.Parameter(torch.randn(1, 1))
+
+    def forward(self) -> list[Light]:
+        params = self.mlp(self.latent_code).squeeze(0)
+
+        lights = []
+        current_idx = 0
+
+        for _ in range(self.num_directional_lights):
+            direction = params[current_idx : current_idx+3]
+            color = params[current_idx+3 : current_idx+6]
+            current_idx += 6
+
+            lights.append(
+                DirectionalLight(initial_direction=torch.tanh(direction), initial_color=F.softplus(color))
+            )
+
+        for _ in range(self.num_point_lights):
+            position = params[current_idx : current_idx+3]
+            color = params[current_idx+3 : current_idx+6]
+            current_idx += 6
+
+            lights.append(
+                PointLight(initial_position=torch.tanh(position) * 3.0, initial_color=F.softplus(color))
+            )
+
+        return lights
 
 class PhysicsAwareIllumination(nn.Module):
-    def __init__(self, lights: list[Light]):
+    def __init__(self, lights: list[Light] | LearnedIlluminationField):
         super().__init__()
         self.ambient_light = AmbientLight()
-        self.lights = nn.ModuleList(lights)
 
-        self.num_dynamic_lights = len(self.lights)
+        if isinstance(lights, LearnedIlluminationField):
+            self.learned_illumination = lights
+            self.mode = 'learned'
+            self.num_dynamic_lights = lights.num_directional_lights + lights.num_point_lights
+        else:
+            self.static_lights = nn.ModuleList(lights)
+            self.mode = 'static'
+            self.num_dynamic_lights = len(lights)
+
         if self.num_dynamic_lights > 0:
             self.shadow_field = ShadowField(num_lights=self.num_dynamic_lights)
         else:
@@ -170,18 +223,21 @@ class PhysicsAwareIllumination(nn.Module):
         N = points.shape[0]
         ambient_color = self.ambient_light.color.expand(N, -1)
 
-        light_contributions = []
+        if self.mode == 'learned':
+            dynamic_lights = self.learned_illumination()
+        else:
+            dynamic_lights = self.static_lights
 
-        if self.shadow_field is not None:
+        if self.shadow_field is not None and len(dynamic_lights) > 0:
             shadow_factors = self.shadow_field(points)
         else:
-            shadow_factors = torch.ones(N, len(self.lights), device=points.device)
+            shadow_factors = torch.ones(N, len(dynamic_lights), device=points.device)
 
-        for i, light in enumerate(self.lights):
+        light_contributions = []
+        for i, light in enumerate(dynamic_lights):
+            light.to(points.device)
             color, direction, attenuation = light.get_contribution(points)
-
             shadow = shadow_factors[:, i:i+1]
-
             light_contributions.append((color, direction, attenuation * shadow))
 
         return ambient_color, light_contributions
