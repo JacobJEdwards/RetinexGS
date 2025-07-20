@@ -53,12 +53,19 @@ def pbr_shading(
         ambient_light: Tensor,      # [..., 3] ambient light color
         light_contributions: list[tuple[Tensor, Tensor, Tensor]],   # [..., 3] directional light color
         indirect_light: Tensor,
-) -> Tensor:
+) -> dict[str, Tensor]:
     N_dot_V = torch.clamp(torch.sum(N * V, dim=-1, keepdim=True), min=EPS)
     F0 = torch.full_like(albedo, 0.04)
     F0 = torch.lerp(F0, albedo, metallic)
 
     total_radiance = torch.zeros_like(albedo)
+    total_diffuse = torch.zeros_like(albedo)
+    total_specular = torch.zeros_like(albedo)
+
+    if light_contributions:
+        shadow_map = light_contributions[0][2].clamp(0, 1).expand_as(albedo)
+    else:
+        shadow_map = torch.ones_like(albedo)
 
     for color, L, attenuation in light_contributions:
         N_dot_L = torch.clamp(torch.sum(N * L, dim=-1, keepdim=True), min=EPS)
@@ -73,22 +80,33 @@ def pbr_shading(
 
         numerator = NDF * G * F
         denominator = 4.0 * N_dot_V * N_dot_L + EPS
-        specular = numerator / denominator
+        specular_comp = (numerator / denominator) * color * N_dot_L * attenuation
+        total_specular += specular_comp
 
         # Diffuse Term (Lambertian)
         kS = F
         kD = 1.0 - kS
-        kD *= 1.0 - metallic # Metals have no diffuse reflection
-        diffuse = (kD * albedo / math.pi)
-
-        # Radiance from this light source
-        radiance = (diffuse + specular) * color * N_dot_L * attenuation
-        total_radiance += radiance
+        kD *= 1.0 - metallic
+        diffuse_comp = (kD * albedo / math.pi) * color * N_dot_L * attenuation
+        total_diffuse += diffuse_comp
 
     ambient_term = albedo * ambient_light
     diffuse_indirect = (albedo / math.pi) * indirect_light
+    total_diffuse += ambient_term + diffuse_indirect
 
-    return ambient_term + total_radiance + diffuse_indirect
+    # Final color
+    final_radiance = total_diffuse + total_specular
+
+    return {
+        "final": final_radiance,
+        "diffuse": total_diffuse,
+        "specular": total_specular,
+        "albedo": albedo,
+        "normals": (N * 0.5 + 0.5),
+        "roughness": roughness.expand_as(albedo),
+        "metallic": metallic.expand_as(albedo),
+        "shadow": shadow_map
+    }
 
 
 def quat_apply(q: Tensor, v: Tensor) -> Tensor:
@@ -180,7 +198,7 @@ def rasterization_pbr(
     assert opacities.shape == batch_dims + (N,), opacities.shape
     assert viewmats.shape == batch_dims + (C, 4, 4), viewmats.shape
     assert Ks.shape == batch_dims + (C, 3, 3), Ks.shape
-    assert render_mode in ["RGB", "D", "ED", "RGB+D", "RGB+ED"], render_mode
+    assert render_mode in ["RGB", "D", "ED", "RGB+D", "RGB+ED", "DIFFUSE", "SPECULAR", "NORMAL", "ROUGHNESS", "METALLIC", "SHADOW"], render_mode
 
     assert albedo.shape == batch_dims + (N, 3), f"Albedo shape mismatch: {albedo.shape}"
     assert roughness.shape == batch_dims + (N, 1), f"Roughness shape mismatch: {roughness.shape}"
@@ -304,13 +322,25 @@ def rasterization_pbr(
 
         indirect_light_packed = indirect_light[gaussian_ids]
 
-        colors = pbr_shading(
+        pbr_outputs = pbr_shading(
             V=view_dirs, N=normals_packed,
             albedo=albedo_packed, roughness=roughness_packed,
             metallic=metallic_packed, ambient_light=ambient_light_packed,
             light_contributions=packed_light_contributions,
             indirect_light=indirect_light_packed,
         )
+
+        render_mode_map = {
+            "RGB": "final",
+            "DIFFUSE": "diffuse",
+            "SPECULAR": "specular",
+            "NORMAL": "normals",
+            "ROUGHNESS": "roughness",
+            "METALLIC": "metallic",
+            "SHADOW": "shadow",
+        }
+        output_key = render_mode_map.get(render_mode, "final")
+        colors = pbr_outputs[output_key]
     else:
         view_dirs = F.normalize(means.unsqueeze(0) - campos.unsqueeze(1)) # [C, N, 3]
         base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)

@@ -1,4 +1,5 @@
 import json
+from PIL import Image, ImageDraw, ImageFont
 import math
 import os
 import time
@@ -283,6 +284,7 @@ class Runner:
             video_name_suffix: str,
             num_frames: int = 180,
             update_light_func: callable = None,
+            render_mode: str = "RGB",
     ):
         if self.world_rank != 0:
             return
@@ -295,92 +297,171 @@ class Runner:
             print("No validation cameras found. Skipping PBR demo rendering.")
             return
 
-        cam_c2w = torch.from_numpy(self.parser.camtoworlds[0]).float().to(device).unsqueeze(0)
+        camtoworlds_all_np = generate_ellipse_path_z(self.parser.camtoworlds, height=0.1, n_frames=num_frames)
+        camtoworlds_all_np = np.concatenate([camtoworlds_all_np, np.repeat(np.array([[[0.0, 0.0, 0.0, 1.0]]]), len(camtoworlds_all_np), axis=0)], axis=1)
+        cam_c2w_all = torch.from_numpy(camtoworlds_all_np).float().to(device)
 
-        cam_keys = list(self.parser.Ks_dict.keys())
-        if not cam_keys:
-            print("No camera intrinsics found. Skipping PBR demo rendering.")
-            return
-        cam_key = cam_keys[0]
-
+        cam_key = list(self.parser.Ks_dict.keys())[0]
         cam_K = torch.from_numpy(self.parser.Ks_dict[cam_key]).float().to(device).unsqueeze(0)
         width_traj, height_traj = self.parser.imsize_dict[cam_key]
 
-        video_dir = f"{cfg.result_dir}/videos"
+        video_dir = os.path.join(cfg.result_dir, "videos")
         os.makedirs(video_dir, exist_ok=True)
-        video_path = f"{video_dir}/pbr_{video_name_suffix}_{step}.mp4"
+        video_path = os.path.join(video_dir, f"pbr_{video_name_suffix}_{step}.mp4")
         video_writer = imageio.get_writer(video_path, fps=30)
 
         illum_model = self.illumination_field.module if self.world_size > 1 else self.illumination_field
 
-        original_light_color = illum_model.directional_lights[0].raw_color.clone()
-        original_light_direction = illum_model.directional_lights[0].direction.clone()
+        original_light_states = [
+            {p_name: p.clone() for p_name, p in light.named_parameters()}
+            for light in illum_model.lights
+        ]
 
         for i in tqdm.trange(num_frames, desc=f"Rendering {video_name_suffix} video"):
             if update_light_func:
                 update_light_func(illum_model, i, num_frames)
 
             renders, _, _ = self.rasterize_splats(
-                camtoworlds=cam_c2w,
+                camtoworlds=cam_c2w_all[i:i+1],
                 Ks=cam_K,
                 width=width_traj,
                 height=height_traj,
-                render_mode="RGB",
+                render_mode=render_mode,
             )
             colors = torch.clamp(renders[..., 0:3], 0.0, 1.0)
             canvas = (colors.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
             video_writer.append_data(canvas)
 
         video_writer.close()
-        print(f"PBR demo video saved to {video_path}")
+        print(f"✅ PBR demo video saved to {video_path}")
 
-        illum_model.directional_lights[0].raw_color.data = original_light_color
-        illum_model.directional_lights[0].direction.data = original_light_direction
+        for i, light in enumerate(illum_model.lights):
+            light.load_state_dict(original_light_states[i])
 
     def render_light_color_video(self, step: int):
-        def update_light_color(illum_model, frame_idx, num_frames):
-            hue = frame_idx / num_frames
-            color_hsv = torch.tensor([hue, 0.8, 1.0], device=self.device) # Keep saturation and value constant
-            color_rgb = kornia.color.hsv_to_rgb(color_hsv.view(1, 3, 1, 1)).squeeze()
+        themes = {
+            "golden_hour": torch.tensor([1.0, 0.7, 0.3], device=self.device),
+            "moonlight": torch.tensor([0.4, 0.6, 1.0], device=self.device),
+            "neon_city": torch.tensor([0.9, 0.2, 0.8], device=self.device),
+            "forest": torch.tensor([0.5, 1.0, 0.6], device=self.device),
+        }
+        theme_keys = list(themes.keys())
 
-            target_color = color_rgb * 1.5
-            raw_color_target = torch.log(torch.exp(target_color) - 1.0 + 1e-6)
-            illum_model.directional_lights[0].raw_color.data = raw_color_target
+        def update_light_color(illum_model, frame_idx, num_frames):
+            progress = frame_idx / num_frames * (len(theme_keys) - 1)
+            idx1 = int(progress)
+            idx2 = min(idx1 + 1, len(theme_keys) - 1)
+            interp = progress - idx1
+
+            color1 = themes[theme_keys[idx1]]
+            color2 = themes[theme_keys[idx2]]
+
+            color_hsv1 = kornia.color.rgb_to_hsv(color1.view(1,3,1,1))
+            color_hsv2 = kornia.color.rgb_to_hsv(color2.view(1,3,1,1))
+            interp_hsv = torch.lerp(color_hsv1, color_hsv2, interp)
+            target_color_rgb = kornia.color.hsv_to_rgb(interp_hsv).squeeze()
+
+            if illum_model.lights and hasattr(illum_model.lights[0], 'raw_color'):
+                raw_color_target = torch.log(torch.expm1(target_color_rgb * 1.5))
+                illum_model.lights[0].raw_color.data = raw_color_target
 
         self._render_pbr_video(
-            step, video_name_suffix="color_cycle", update_light_func=update_light_color
+            step, video_name_suffix="color_themes", update_light_func=update_light_color
         )
 
     def render_light_direction_video(self, step: int):
+        """ Moves a spotlight in a complex orbital path to showcase highlights. """
         def update_light_direction(illum_model, frame_idx, num_frames):
             angle = 2 * math.pi * frame_idx / num_frames
-            new_direction = torch.tensor(
-                [math.cos(angle), math.sin(angle), 0.0], device=self.device
-            )
-            illum_model.directional_lights[0].direction.data = new_direction
+            # Create an elliptical path in the XZ plane
+            new_pos = torch.tensor([math.cos(angle) * 2.5, 1.5, math.sin(angle) * 1.5], device=self.device)
+
+            # Update the position of the first PointLight or SpotLight found
+            for light in illum_model.lights:
+                if hasattr(light, 'position'):
+                    light.position.data = new_pos
+                    # Make spotlights always point towards the origin
+                    if hasattr(light, 'direction'):
+                        light.direction.data = F.normalize(-new_pos, dim=-1)
+                    break # Only update one light
 
         self._render_pbr_video(
-            step,
-            video_name_suffix="direction_cycle",
-            update_light_func=update_light_direction,
+            step, video_name_suffix="light_orbit", update_light_func=update_light_direction
         )
-
 
     def render_light_intensity_video(self, step: int):
-        illum_model = self.illumination_field.module if self.world_size > 1 else self.illumination_field
-        original_raw_color = illum_model.directional_lights[0].raw_color.clone().detach()
+        """ Simulates a dramatic sunrise and sunset effect. """
+        # Keep a copy of the original color to modify its intensity
+        original_color = self.illumination_field.lights[0].color.clone().detach()
 
         def update_light_intensity(illum_model, frame_idx, num_frames):
-            intensity_factor = (math.sin(2 * math.pi * frame_idx / num_frames) + 1.1) * 1.5
+            progress = frame_idx / num_frames
+            intensity = (math.sin(progress * math.pi) ** 2) * 2.0 # Pi for one full cycle
 
-            new_raw_color = original_raw_color + torch.log(torch.tensor(intensity_factor, device=self.device))
-            illum_model.directional_lights[0].raw_color.data = new_raw_color
+            sunrise_color = torch.tensor([1.0, 0.6, 0.2], device=self.device)
+            midday_color = original_color
+
+            color_interp_factor = math.sin(progress * math.pi)
+            current_color = torch.lerp(midday_color, sunrise_color, 1 - color_interp_factor)
+
+            final_color = current_color * intensity
+
+            if illum_model.lights and hasattr(illum_model.lights[0], 'raw_color'):
+                raw_color_target = torch.log(torch.expm1(final_color))
+                illum_model.lights[0].raw_color.data = raw_color_target
 
         self._render_pbr_video(
-            step,
-            video_name_suffix="intensity_pulse",
-            update_light_func=update_light_intensity,
+            step, video_name_suffix="sunrise_sunset", update_light_func=update_light_intensity
         )
+
+    def render_material_showcase_video(self, step: int):
+        modes = ["RGB", "NORMAL", "ALBEDO", "ROUGHNESS", "METALLIC", "SHADOW"]
+        num_frames_per_mode = 60 # 2 seconds per mode at 30fps
+        num_frames = len(modes) * num_frames_per_mode
+
+        def get_render_mode(frame_idx):
+            mode_idx = min(frame_idx // num_frames_per_mode, len(modes) - 1)
+            return modes[mode_idx]
+
+
+        print(f"🎥 Running Material Showcase video...")
+        cfg = self.cfg
+        device = self.device
+
+        camtoworlds_all_np = generate_ellipse_path_z(self.parser.camtoworlds, n_frames=num_frames)
+        camtoworlds_all_np = np.concatenate([camtoworlds_all_np, np.repeat(np.array([[[0.0, 0.0, 0.0, 1.0]]]), len(camtoworlds_all_np), axis=0)], axis=1)
+        cam_c2w_all = torch.from_numpy(camtoworlds_all_np).float().to(device)
+
+        cam_key = list(self.parser.Ks_dict.keys())[0]
+        cam_K = torch.from_numpy(self.parser.Ks_dict[cam_key]).float().to(device).unsqueeze(0)
+        width_traj, height_traj = self.parser.imsize_dict[cam_key]
+
+        video_dir = os.path.join(cfg.result_dir, "videos")
+        video_path = os.path.join(video_dir, f"pbr_material_showcase_{step}.mp4")
+        video_writer = imageio.get_writer(video_path, fps=30)
+
+        for i in tqdm.trange(num_frames, desc="Rendering material showcase"):
+            current_mode = get_render_mode(i)
+            renders, _, _ = self.rasterize_splats(
+                camtoworlds=cam_c2w_all[i:i+1], Ks=cam_K, width=width_traj, height=height_traj,
+                render_mode=current_mode,
+            )
+            colors = torch.clamp(renders[..., 0:3], 0.0, 1.0)
+            canvas = (colors.squeeze(0).cpu().numpy() * 255).astype(np.uint8)
+
+            img = Image.fromarray(canvas)
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("arial.ttf", 24)
+            except IOError:
+                font = ImageFont.load_default()
+            draw.text((10, 10), f"Mode: {current_mode}", fill=(255, 255, 255), font=font)
+            canvas = np.array(img)
+
+            video_writer.append_data(canvas)
+
+        video_writer.close()
+        print(f"✅ Material showcase video saved to {video_path}")
 
 
     @torch.no_grad()
@@ -645,6 +726,7 @@ class Runner:
                 self.render_light_color_video(step)
                 self.render_light_intensity_video(step)
                 self.render_light_direction_video(step)
+                self.render_material_showcase_video(step)
 
     @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
@@ -669,6 +751,31 @@ class Runner:
 
             torch.cuda.synchronize()
             tic = time.time()
+
+            for render_type in ["DIFFUSE","SPECULAR",
+                "NORMAL",
+                "ROUGHNESS",
+                "METALLIC",
+                "SHADOW",]:
+                render, _, _ = self.rasterize_splats(
+                    camtoworlds=camtoworlds,
+                    Ks=Ks,
+                    width=width,
+                    height=height,
+                    masks=masks,
+                    render_mode=render_type,
+                )
+
+                torch.cuda.synchronize()
+                colors = torch.clamp(render[..., :3], 0.0, 1.0)
+                if world_rank == 0:
+                    canvas_eval = colors.squeeze(0).cpu().numpy()
+                    canvas_eval = (canvas_eval * 255).astype(np.uint8)
+
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_step{step}_{render_type.lower()}_{i:04d}.png",
+                        canvas_eval,
+                    )
 
             renders, _, info = self.rasterize_splats(
                 camtoworlds=camtoworlds,
