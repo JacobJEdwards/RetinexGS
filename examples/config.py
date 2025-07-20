@@ -106,7 +106,7 @@ class Config:
     learn_edge_aware_gamma: bool = False
 
     use_illum_opt: bool = True
-    illum_opt_type: Literal["base", "quantized", "content_aware"] = "quantized"
+    illum_opt_type: Literal["base", "quantized", "content_aware"] = "content_aware"
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
