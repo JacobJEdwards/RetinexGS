@@ -29,7 +29,7 @@ class Config:
     max_steps: int = 10_000
     eval_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
     save_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
-    save_ply: bool = True
+    save_ply: bool = False
     ply_steps: list[int] = field(default_factory=lambda: [3_000, 7_000, 10_000])
     disable_video: bool = True
 
