@@ -6,9 +6,16 @@ RENDER_TRAJ_PATH="ellipse"
 RESULT_DIR_BASE="../../results/benchmark"
 
 CONFIG_OPTIONS=(
-    "--option1 value1"                  # example config 1
-    "--option2 value2 --flag"          # example config 2
-    "--option3"                         # example config 3 (flag only)
+    "--lambda_shn_reg 0 --lambda_gray_world 0"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_exclusion 0"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --appearance_embeddings"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --decomposed_field --appearance_embeddings"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0"
+    "--lambda_shn_reg 0 --lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
+    "--lambda_shn_reg 0 --lambda_tv_loss 0"
+    "--lambda_gray_world 0"
+    "--lambda_gray_world 0 --lambda_tv_loss 0 --lambda_illum_smoothness 0.001"
 )
 
 for SCENE in $SCENE_LIST;
