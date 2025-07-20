@@ -342,10 +342,6 @@ class TotalVariationLoss(nn.Module):
         super(TotalVariationLoss, self).__init__()
         self.weight = weight
 
-    @staticmethod
-    def _tensor_size(t: Tensor) -> int:
-        return t.size()[1] * t.size()[2] * t.size()[3]
-
     def forward(self, x: Tensor) -> Tensor:
         diff_h = x[:, :, 1:, :] - x[:, :, :-1, :]
         diff_w = x[:, :, :, 1:] - x[:, :, :, :-1]

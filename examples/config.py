@@ -63,11 +63,14 @@ class Config:
     lpips_net: Literal["vgg", "alex"] = "alex"
 
     decomposed_field: bool = True
+    appearance_embeddings: bool = True
+    appearance_embedding_dim: int = 32
 
     lambda_illum_smoothness: float = 0.001
     lambda_exclusion: float = 0.01
     lambda_shn_reg: float = 0.1
     lambda_gray_world: float = 0.5
+    lambda_tv_loss = 0.01
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]

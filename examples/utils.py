@@ -329,10 +329,12 @@ class PositionalEncoder(nn.Module):
 
 
 class IlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4):
+    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4, use_appearance_embeds: bool = False, appearance_embedding_dim: int = 32):
         super().__init__()
         self.encoder = PositionalEncoder(num_freqs)
         in_dim = 3 * 2 * num_freqs
+        if use_appearance_embeds:
+            in_dim += appearance_embedding_dim
 
         layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
         for _ in range(num_layers - 1):
@@ -340,10 +342,16 @@ class IlluminationField(nn.Module):
         layers.append(nn.Linear(hidden_dim, 6)) # 3 for gain, 3 for gamma
         self.mlp = nn.Sequential(*layers)
 
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor, embeds: Tensor | None = None) -> tuple[Tensor, Tensor]:
         # x: [N, 3]
         encoded_x = self.encoder(x)
-        params = self.mlp(encoded_x) # [N, 6]
+        if embeds is not None:
+            broadcasted_embed = embeds.expand(encoded_x.shape[0], -1)
+            mlp_input = torch.cat([encoded_x, broadcasted_embed], dim=-1)
+        else:
+            mlp_input = encoded_x
+
+        params = self.mlp(mlp_input) # [N, 6]
 
         gain, gamma = torch.chunk(params, 2, dim=-1)
 
@@ -353,10 +361,13 @@ class IlluminationField(nn.Module):
         return gain, gamma
 
 class DecomposedIlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4, ambient_layers: int = 2):
+    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4, ambient_layers: int = 2, use_appearance_embeds: bool = False, appearance_embedding_dim: int = 32):
         super().__init__()
         self.encoder = PositionalEncoder(num_freqs)
         in_dim = 3 * 2 * num_freqs
+
+        if use_appearance_embeds:
+            in_dim += appearance_embedding_dim
 
         direct_layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
         for _ in range(num_layers - 1):
@@ -370,8 +381,13 @@ class DecomposedIlluminationField(nn.Module):
         ambient_layers_list.append(nn.Linear(hidden_dim // 2, 6))
         self.ambient_mlp = nn.Sequential(*ambient_layers_list)
 
-    def forward(self, x: Tensor, return_components=False) -> tuple[Tensor, Tensor] | tuple:
+    def forward(self, x: Tensor, return_components: bool=False, embeddings: Tensor | None = None) -> tuple[Tensor,
+    Tensor] | tuple:
         encoded_x = self.encoder(x)
+        if embeddings is not None:
+            broadcasted_embed = embeddings.expand(encoded_x.shape[0], -1)
+            encoded_x = torch.cat([encoded_x, broadcasted_embed], dim=-1)
+
         direct_params = self.direct_mlp(encoded_x)
         ambient_params = self.ambient_mlp(encoded_x)
 

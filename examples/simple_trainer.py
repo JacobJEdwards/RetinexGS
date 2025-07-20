@@ -28,6 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.losses import TotalVariationLoss
 from losses import ExclusionLoss
 from utils import IlluminationField, sh_to_rgb, DecomposedIlluminationField
 from rendering_double import rasterization_dual
@@ -183,7 +184,8 @@ class Runner:
         if cfg.decomposed_field:
             self.illumination_field = DecomposedIlluminationField().to(self.device)
         else:
-            self.illumination_field = IlluminationField().to(self.device)
+            self.illumination_field = IlluminationField(use_appearance_embeds=cfg.appearance_embeddings).to(self.device)
+
 
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
@@ -192,7 +194,16 @@ class Runner:
             self.illumination_field.parameters(), lr=1e-4
         )
 
+        if cfg.appearance_embeddings:
+            num_train_images = len(self.trainset)
+            self.appearance_embeds = torch.nn.Embedding(num_train_images,cfg.appearance_embedding_dim).to(self.device)
+            self.appearance_embeds_optimizer = torch.optim.AdamW(
+                self.appearance_embeds.parameters(), lr=1e-4
+            )
+
+
         self.loss_exclusion = ExclusionLoss().to(self.device)
+        self.loss_tv = TotalVariationLoss().to(self.device)
 
         feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -271,7 +282,10 @@ class Runner:
            "classic"
         )
 
-        gain, gamma = self.illumination_field(means)
+        image_ids = kwargs.get("image_ids", None)
+        embeddings = self.appearance_embeds(image_ids) if image_ids is not None else None
+
+        gain, gamma = self.illumination_field(means, embeddings)
 
         base_reflectance_sh = colors_enh[:, 0, :] # (N, 3)
         base_reflectance_rgb = sh_to_rgb(base_reflectance_sh)
@@ -323,7 +337,8 @@ class Runner:
             self,
             depth_map: Tensor,
             camtoworld: Tensor,
-            K: Tensor
+            K: Tensor,
+            image_ids: Tensor | None = None,
     ) -> Tensor:
         H, W = depth_map.shape[1:3]
 
@@ -339,7 +354,8 @@ class Runner:
 
         points_3d_world = kornia.geometry.transform_points(camtoworld, points_3d_cam)
 
-        gain, gamma = self.illumination_field(points_3d_world.squeeze(0))
+        embeddings = self.appearance_embeds(image_ids) if image_ids is not None else None
+        gain, gamma = self.illumination_field(points_3d_world.squeeze(0), embeddings)
 
         illum_map_vis = gain.reshape(H, W, 3)
 
@@ -361,6 +377,7 @@ class Runner:
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
             ExponentialLR(self.illum_field_optimizer, gamma=0.01 ** (1.0 / max_steps)),
+
         ]
 
         trainloader = torch.utils.data.DataLoader(
@@ -425,27 +442,29 @@ class Runner:
                 loss = low_loss
 
                 # smoothness loss for illumination field
-                rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
-                rand_points.requires_grad = True
+                if cfg.lambda_illum_smoothness > 0:
+                    rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
+                    rand_points.requires_grad = True
 
-                if cfg.decomposed_field:
-                    _, direct_params, ambient_params = self.illumination_field(rand_points, return_components=True)
+                    if cfg.decomposed_field:
+                        _, direct_params, ambient_params = self.illumination_field(rand_points, return_components=True)
 
-                    d_direct = torch.autograd.grad(outputs=direct_params.sum(), inputs=rand_points, create_graph=True)[0]
+                        d_direct = torch.autograd.grad(outputs=direct_params.sum(), inputs=rand_points, create_graph=True)[0]
 
-                    d_ambient = torch.autograd.grad(outputs=ambient_params.sum(), inputs=rand_points, create_graph=True)[0]
+                        d_ambient = torch.autograd.grad(outputs=ambient_params.sum(), inputs=rand_points, create_graph=True)[0]
 
-                    loss_illum_smoothness = (10.0 * d_ambient.norm(2, dim=-1).mean()) + \
-                                            (1.0 * d_direct.norm(2, dim=-1).mean())
+                        loss_illum_smoothness = (10.0 * d_ambient.norm(2, dim=-1).mean()) + \
+                                                (1.0 * d_direct.norm(2, dim=-1).mean())
 
-                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
-                else:
-                    gain, gamma = self.illumination_field(rand_points)
+                        loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    else:
+                        gain, gamma = self.illumination_field(rand_points)
 
-                    d_gain = torch.autograd.grad(outputs=gain.sum(), inputs=rand_points, create_graph=True)[0]
-                    d_gamma = torch.autograd.grad(outputs=gamma.sum(), inputs=rand_points, create_graph=True)[0]
+                        d_gain = torch.autograd.grad(outputs=gain.sum(), inputs=rand_points, create_graph=True)[0]
+                        d_gamma = torch.autograd.grad(outputs=gamma.sum(), inputs=rand_points, create_graph=True)[0]
 
-                    loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
+                        loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
+
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 # exclusion loss for illumination field
@@ -461,22 +480,29 @@ class Runner:
 
                     points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam)
 
-                gain_map, gamma_map = self.illumination_field(points_3d_world.squeeze(0)) # [H*W, 3] each
+                embeddings = self.appearance_embeds(data["image_ids"].to(device)) if "image_ids" in data else None
+                gain_map, gamma_map = self.illumination_field(points_3d_world.squeeze(0), embeddings) # [H*W, 3] each
 
                 illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
-
                 reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
 
-                loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
-                loss += cfg.lambda_exclusion * loss_exclusion
+                if cfg.lambda_exclusion > 0.0:
+                    loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
+                    loss += cfg.lambda_exclusion * loss_exclusion
 
-                loss_shn_reg = self.splats["shN"].pow(2).mean()
-                loss += cfg.lambda_shn_reg * loss_shn_reg
+                if cfg.lambda_tv_loss > 0.0:
+                    loss_illum_tv = self.loss_tv(illum_map)
+                    loss += cfg.lambda_tv_loss * loss_illum_tv
 
-                reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
+                if cfg.lambda_shn_reg > 0.0:
+                    loss_shn_reg = self.splats["shN"].pow(2).mean()
+                    loss += cfg.lambda_shn_reg * loss_shn_reg
 
-                loss_gray_world = (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
-                loss += cfg.lambda_gray_world * loss_gray_world
+
+                if cfg.lambda_gray_world > 0.0:
+                    reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
+                    loss_gray_world = (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
+                    loss += cfg.lambda_gray_world * loss_gray_world
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
