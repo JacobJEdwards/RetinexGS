@@ -53,6 +53,7 @@ def pbr_shading(
         ambient_light: Tensor,      # [..., 3] ambient light color
         light_contributions: list[tuple[Tensor, Tensor, Tensor]],   # [..., 3] directional light color
         indirect_light: Tensor,
+        indirect_specular: Tensor,
 ) -> dict[str, Tensor]:
     N_dot_V = torch.clamp(torch.sum(N * V, dim=-1, keepdim=True), min=EPS)
     F0 = torch.full_like(albedo, 0.04)
@@ -91,10 +92,16 @@ def pbr_shading(
         total_diffuse += diffuse_comp
 
     ambient_term = albedo * ambient_light
-    diffuse_indirect = (albedo / math.pi) * indirect_light
-    total_diffuse += ambient_term + diffuse_indirect
 
-    # Final color
+    F_indirect = F_Schlick(N_dot_V, F0)
+
+    diffuse_indirect = (1.0 - F_indirect) * (1.0 - metallic) * (albedo / math.pi) * indirect_light
+
+    specular_indirect = F_indirect * indirect_specular
+
+    total_diffuse += ambient_term + diffuse_indirect
+    total_specular += specular_indirect
+
     final_radiance = total_diffuse + total_specular
 
     return {
@@ -142,6 +149,8 @@ def rasterization_pbr(
         metallic: Tensor, # [..., N, 1]
         illumination_field: nn.Module,
         irradiance_field: nn.Module,
+        normal_field: nn.Module,
+        reflection_field: nn.Module,
         viewmats: Tensor,  # [..., C, 4, 4]
         Ks: Tensor,  # [..., C, 3, 3]
         width: int,
@@ -277,31 +286,27 @@ def rasterization_pbr(
     if compensations is not None:
         opacities *= compensations
 
-    meta.update(
-        {
-            "batch_ids": batch_ids,
-            "camera_ids": camera_ids,
-            "gaussian_ids": gaussian_ids,
-            "radii": radii,
-            "means2d": means2d,
-            "depths": depths,
-            "conics": conics,
-            "opacities": opacities,
-        }
-    )
-
-    ambient_light, light_contributions = illumination_field(means)
-
     # PBR Shading Calculation
     campos = torch.inverse(viewmats)[..., :3, 3]
     if viewmats_rs is not None:
         campos_rs = torch.inverse(viewmats_rs)[..., :3, 3]
         campos = 0.5 * (campos + campos_rs)
 
-    base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
-    normals_world = quat_apply(quats, base_normal)
 
-    indirect_light = irradiance_field(means, normals_world)
+    learned_normals = normal_field(means)
+
+    base_normal = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=torch.float32)
+    quat_normals = quat_apply(quats, base_normal)
+
+    meta.update(
+        {
+            "batch_ids": batch_ids, "camera_ids": camera_ids, "gaussian_ids": gaussian_ids,
+            "radii": radii, "means2d": means2d, "depths": depths, "conics": conics, "opacities": opacities,
+            "learned_normals": learned_normals.detach(), "quat_normals": quat_normals.detach(), # For regularization
+        }
+    )
+
+    ambient_light, light_contributions = illumination_field(means)
 
     if packed:
         means_packed = means[gaussian_ids]
@@ -310,8 +315,11 @@ def rasterization_pbr(
         metallic_packed = metallic_act[gaussian_ids]
         ambient_light_packed = ambient_light[gaussian_ids]
 
+        normals_packed = learned_normals[gaussian_ids]
         view_dirs = F.normalize(means_packed - campos[camera_ids])
-        normals_packed = normals_world[gaussian_ids]
+
+        indirect_light_packed = irradiance_field(means_packed, normals_packed)
+        indirect_specular_packed = reflection_field(means_packed, view_dirs, roughness_packed)
 
         packed_light_contributions = []
         for color, direction, attenuation in light_contributions:
@@ -320,14 +328,13 @@ def rasterization_pbr(
             packed_attenuation = attenuation[gaussian_ids]
             packed_light_contributions.append((packed_color, packed_direction, packed_attenuation))
 
-        indirect_light_packed = indirect_light[gaussian_ids]
-
         pbr_outputs = pbr_shading(
             V=view_dirs, N=normals_packed,
             albedo=albedo_packed, roughness=roughness_packed,
             metallic=metallic_packed, ambient_light=ambient_light_packed,
             light_contributions=packed_light_contributions,
             indirect_light=indirect_light_packed,
+            indirect_specular=indirect_specular_packed,
         )
 
         render_mode_map = {

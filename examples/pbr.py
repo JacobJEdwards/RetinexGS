@@ -262,3 +262,40 @@ class IrradianceField(nn.Module):
         mlp_input = torch.cat([encoded_points, normals], dim=-1)
         raw_irradiance = self.mlp(mlp_input)
         return F.softplus(raw_irradiance)
+
+class NormalField(nn.Module):
+    def __init__(self, num_freqs: int = 8, hidden_dim: int = 128, num_layers: int = 4):
+        super().__init__()
+        self.pos_encoder = PositionalEncoder(num_freqs)
+        in_dim = 3 * 2 * num_freqs
+
+        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
+        for _ in range(num_layers - 1):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
+        layers.append(nn.Linear(hidden_dim, 3))
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, points: Tensor) -> Tensor:
+        encoded_points = self.pos_encoder(points)
+        raw_normals = self.mlp(encoded_points)
+        return F.normalize(raw_normals, dim=-1)
+
+class ReflectionField(nn.Module):
+    """ An MLP for pre-filtered environment mapping (indirect specular). """
+    def __init__(self, num_freqs_pos: int = 6, hidden_dim: int = 128, num_layers: int = 4):
+        super().__init__()
+        self.pos_encoder = PositionalEncoder(num_freqs_pos)
+        # Encoded position + view direction (3) + roughness (1)
+        in_dim = (3 * 2 * num_freqs_pos) + 3 + 1
+
+        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
+        for _ in range(num_layers - 1):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
+        layers.append(nn.Linear(hidden_dim, 3))
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, points: Tensor, view_dirs: Tensor, roughness: Tensor) -> Tensor:
+        encoded_points = self.pos_encoder(points)
+        mlp_input = torch.cat([encoded_points, view_dirs, roughness], dim=-1)
+        raw_reflection = self.mlp(mlp_input)
+        return F.softplus(raw_reflection)
