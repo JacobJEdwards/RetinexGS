@@ -52,7 +52,7 @@ for CONFIG in "${CONFIG_OPTIONS[@]}"; do
             --render_traj_path $RENDER_TRAJ_PATH \
             --data_dir "$SCENE_DIR/$SCENE/" \
             --result_dir "$CONFIG_RESULT_DIR/$SCENE/" \
-            "$CONFIG"
+            $CONFIG
     done
 
     ((CONFIG_INDEX++))
