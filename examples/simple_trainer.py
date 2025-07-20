@@ -1033,7 +1033,7 @@ class Runner:
                     self.retinex_net.module.state_dict()
                     if world_size > 1
                     else self.retinex_net.state_dict()),
-                    "retinex_embeds": self.retinex_embeds.module.state_dict(),
+                    "retinex_embeds": self.retinex_embeds.state_dict(),
                              "illum_module": self.illum_module.state_dict() if self.cfg.use_illum_opt else None,
                 }
                 torch.save(
