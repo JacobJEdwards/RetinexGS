@@ -66,11 +66,11 @@ class Config:
     appearance_embeddings: bool = False
     appearance_embedding_dim: int = 32
 
-    lambda_illum_smoothness: float = 0.
-    lambda_exclusion: float = 0.02
-    lambda_shn_reg: float = 0.05
-    lambda_gray_world: float = 0.00
-    lambda_tv_loss = 0.5
+    lambda_illum_smoothness: float = 0.001
+    lambda_exclusion: float = 0
+    lambda_shn_reg: float = 0.
+    lambda_gray_world: float = 0
+    lambda_tv_loss = 0
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
