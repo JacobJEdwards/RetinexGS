@@ -460,7 +460,7 @@ class Runner:
 
                         d_ambient = torch.autograd.grad(outputs=ambient_params.sum(), inputs=rand_points, create_graph=True)[0]
 
-                        loss_illum_smoothness = (10.0 * d_ambient.norm(2, dim=-1).mean()) + \
+                        loss_illum_smoothness = (50.0 * d_ambient.norm(2, dim=-1).mean()) + \
                                                 (1.0 * d_direct.norm(2, dim=-1).mean())
 
                         loss += cfg.lambda_illum_smoothness * loss_illum_smoothness

@@ -329,7 +329,8 @@ class PositionalEncoder(nn.Module):
 
 
 class IlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4, use_appearance_embeds: bool = False, appearance_embedding_dim: int = 32):
+    def __init__(self, num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 2, use_appearance_embeds: bool =
+    False, appearance_embedding_dim: int = 32):
         super().__init__()
         self.encoder = PositionalEncoder(num_freqs)
         in_dim = 3 * 2 * num_freqs
@@ -361,7 +362,8 @@ class IlluminationField(nn.Module):
         return gain, gamma
 
 class DecomposedIlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 6, hidden_dim: int = 128, num_layers: int = 4, ambient_layers: int = 2, use_appearance_embeds: bool = False, appearance_embedding_dim: int = 32):
+    def __init__(self, num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 2, ambient_layers: int = 2,
+                 use_appearance_embeds: bool = False, appearance_embedding_dim: int = 32):
         super().__init__()
         self.encoder = PositionalEncoder(num_freqs)
         in_dim = 3 * 2 * num_freqs
