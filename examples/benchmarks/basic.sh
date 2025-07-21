@@ -1,9 +1,7 @@
 SCENE_DIR="../../360_v2"
-RESULT_DIR="../../results/benchmark/variance"
+RESULT_DIR="../../results/benchmark/attempt2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 RENDER_TRAJ_PATH="ellipse"
-
-RESULT_DIR_BASE="../../results/benchmark/variance"
 
 for SCENE in $SCENE_LIST;
 do
