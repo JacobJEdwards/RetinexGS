@@ -673,7 +673,7 @@ class Runner:
             torch.cuda.synchronize()
             tic = time.time()
 
-            colors_enh, colors_low, alphas_enh, alphas_low, info = self.rasterize_splats(
+            renders_enh, renders_low, alphas_enh, alphas_low, info = self.rasterize_splats(
                 camtoworlds=camtoworlds,
                 Ks=Ks,
                 width=width,
@@ -683,13 +683,17 @@ class Runner:
                 far_plane=cfg.far_plane,
                 masks=masks,
                 image_ids=data["image_id"].to(device),
+                render_mode="RGB+ED",
             )
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
-            colors_low = torch.clamp(colors_low, 0.0, 1.0)
-            colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
+            colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
+            colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
+
+            depths_enh = renders_enh[..., 3:]
+            depths_low = renders_low[..., 3:]
 
             if world_rank == 0:
                 canvas_list_low = [pixels, colors_low]
@@ -729,6 +733,30 @@ class Runner:
 
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low.permute(0, 3, 1, 2)
+
+                illumination_map = self.visualize_illumination_field(
+                    depths_low.squeeze(0),
+                    camtoworlds.squeeze(0),
+                    Ks.squeeze(0),
+                    image_ids=data["image_id"].to(device) if "image_id" in data else None,
+                )
+
+                illumination_map = illumination_map.permute(2, 0, 1).unsqueeze(0)
+                # save illumination map
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
+                    (illumination_map.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
+                )
+
+                relfectance_map = colors_enh * illumination_map
+                relfectance_map = relfectance_map.permute(0, 3, 1, 2)
+
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
+                    (relfectance_map.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
+                )
+
+
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
