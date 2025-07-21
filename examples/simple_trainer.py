@@ -1150,6 +1150,13 @@ class Runner:
             colors_low = torch.clamp(colors_low, 0.0, 1.0)
             colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
 
+            retinex_output = self.get_retinex_output(
+                images_ids=image_id, pixels=pixels
+            )
+
+            illumination_map = retinex_output[1]
+            reflectance_map = retinex_output[2]
+
             if world_rank == 0:
                 canvas_list_low = [pixels, colors_low]
                 canvas_list_enh = [pixels, colors_enh]
@@ -1186,6 +1193,18 @@ class Runner:
                     (colors_enh_np * 255).astype(np.uint8),
                 )
 
+                illumination_map_np = illumination_map.squeeze(0).cpu().numpy()
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
+                    (illumination_map_np * 255).astype(np.uint8),
+                )
+
+                reflectance_map_np = reflectance_map.squeeze(0).cpu().numpy()
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
+                    (reflectance_map_np * 255).astype(np.uint8),
+                )
+
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low.permute(0, 3, 1, 2)
 
@@ -1199,6 +1218,9 @@ class Runner:
                     metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
                     metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
                     metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
+
+
+
 
         if world_rank == 0:
             avg_ellipse_time = (
