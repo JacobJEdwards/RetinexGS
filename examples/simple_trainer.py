@@ -1193,13 +1193,13 @@ class Runner:
                     (colors_enh_np * 255).astype(np.uint8),
                 )
 
-                illumination_map_np = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                illumination_map_np = illumination_map.squeeze(0).cpu().numpy()
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
                     (illumination_map_np * 255).astype(np.uint8),
                 )
 
-                reflectance_map_np = reflectance_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                reflectance_map_np = reflectance_map.squeeze(0).cpu().numpy()
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
                     (reflectance_map_np * 255).astype(np.uint8),
