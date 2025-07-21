@@ -62,7 +62,7 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    decomposed_field: bool = False
+    decomposed_field: bool = True
     appearance_embeddings: bool = False
     appearance_embedding_dim: int = 32
 
