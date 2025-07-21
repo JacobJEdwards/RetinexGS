@@ -1,7 +1,6 @@
 SCENE_DIR="../../360_v2"
-RESULT_DIR="../../results/benchmark"
+RESULT_DIR="../../results/benchmark/results2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
-RESULT_DIR_BASE="../../results/benchmark"
 RENDER_TRAJ_PATH="ellipse"
 
 CONFIG_OPTIONS=(
