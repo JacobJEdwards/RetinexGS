@@ -343,30 +343,31 @@ class Runner:
             K: Tensor,
             image_ids: Tensor | None = None,
     ) -> Tensor:
-        H, W = depth_map.shape[1:3]
+        B, H, W, _ = depth_map.shape
 
-        grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(self.device)
-        grid = grid.permute(2, 0, 1).unsqueeze(0)  # [1, 2, H, W]
+        grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(self.device) # [1, H, W, 2]
+        grid = grid.expand(B, -1, -1, -1) # [B, H, W, 2]
 
-        points_3d_cam = kornia.geometry.depth.unproject_points(
-            grid.permute(0, 2, 3, 1), depth_map.permute(0, 2, 3, 1), K
-        )
+        points_3d_cam = kornia.geometry.depth.unproject_points(grid, depth_map, K)
 
-        B, _, _, C = points_3d_cam.shape
-        points_3d_cam = points_3d_cam.reshape(B, -1, C)
+        # Reshape for transformation
+        points_3d_cam_flat = points_3d_cam.reshape(B, -1, 3)
 
-        points_3d_world = kornia.geometry.transform_points(camtoworld, points_3d_cam)
+        # Transform points from camera to world space
+        points_3d_world = kornia.geometry.transform_points(camtoworld, points_3d_cam_flat) # [B, H*W, 3]
 
         if self.cfg.appearance_embeddings:
             embeddings = self.appearance_embeds(image_ids) if image_ids is not None else None
         else:
             embeddings = None
-        gain, gamma = self.illumination_field(points_3d_world.squeeze(0), embeddings)
 
-        illum_map_vis = gain.reshape(H, W, 3)
+        # The illumination field expects a flat list of points (N, 3)
+        gain, gamma = self.illumination_field(points_3d_world.view(-1, 3), embeddings)
+
+        # Reshape gain to an image. Assuming B=1 during eval, we squeeze the batch dim out.
+        illum_map_vis = gain.reshape(B, H, W, 3).squeeze(0) # -> [H, W, 3]
 
         return illum_map_vis
-
 
     def train(self):
         cfg = self.cfg
@@ -734,29 +735,26 @@ class Runner:
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low.permute(0, 3, 1, 2)
 
-                illumination_map = self.visualize_illumination_field(
-                    depths_low.squeeze(0),
-                    camtoworlds.squeeze(0),
-                    Ks.squeeze(0),
+                illumination_map_hwc = self.visualize_illumination_field(
+                    depths_low,
+                    camtoworlds,
+                    Ks,
                     image_ids=data["image_id"].to(device) if "image_id" in data else None,
                 )
 
-                illumination_map = illumination_map.permute(2, 0, 1).unsqueeze(0)
-                # save illumination map
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
-                    (illumination_map.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
+                    (torch.clamp(illumination_map_hwc, 0.0, 1.0).cpu().numpy() * 255).astype(np.uint8),
                 )
 
-                relfectance_map = colors_enh * illumination_map
-                relfectance_map = relfectance_map.permute(0, 3, 1, 2)
+                reflectance_map_bhwc = colors_enh / (illumination_map_hwc.unsqueeze(0) + 1e-8)
+                reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0) # Clamp for visualization
 
+                # 4. Save the reflectance map, ensuring it's in HWC format
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
-                    (relfectance_map.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
+                    (reflectance_map_bhwc.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
                 )
-
-
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
