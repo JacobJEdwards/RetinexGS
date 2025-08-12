@@ -748,9 +748,8 @@ class Runner:
                 )
 
                 reflectance_map_bhwc = pixels / (illumination_map_hwc.unsqueeze(0) + 1e-8)
-                reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0) # Clamp for visualization
+                reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0)
 
-                # 4. Save the reflectance map, ensuring it's in HWC format
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
                     (reflectance_map_bhwc.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
