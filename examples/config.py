@@ -101,6 +101,8 @@ class Config:
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = False
 
+    postfix: str = "_variance"
+
     use_illum_opt: bool = True
     illum_opt_type: Literal["base", "quantized", "content_aware"] = "content_aware"
 

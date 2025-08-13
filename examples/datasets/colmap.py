@@ -62,6 +62,7 @@ class Parser:
             # factor: int = 1,
             normalize: bool = False,
             test_every: int = 8,
+            postfix: str = "_multiexposure",
     ):
         self.data_dir = data_dir
         self.factor = 8
@@ -184,8 +185,9 @@ class Parser:
         #     image_dir_suffix = f"_{factor}"
         # else:
         #     image_dir_suffix = ""
-        colmap_image_dir = os.path.join(data_dir, "images_8_multiexposure")
-        image_dir = os.path.join(data_dir, "images_8_multiexposure")
+        self.postfix = postfix
+        colmap_image_dir = os.path.join(data_dir, f"images_8{postfix}")
+        image_dir = os.path.join(data_dir, f"images_8{postfix}")
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
                 raise ValueError(f"Image folder {d} does not exist.")
@@ -363,6 +365,7 @@ class Dataset:
             load_depths: bool = False,
     ):
         self.parser = parser
+        self.postfix = parser.postfix
         self.split = split
         self.patch_size = patch_size
         self.load_depths = load_depths
@@ -379,7 +382,7 @@ class Dataset:
         index = self.indices[item]
 
         if self.split == 'val':
-            image = imageio.imread(self.parser.image_paths[index].replace('_multiexposure',''))[..., :3]
+            image = imageio.imread(self.parser.image_paths[index].replace(self.postfix,''))[..., :3]
         else:
             image = imageio.imread(self.parser.image_paths[index])[..., :3]
 
