@@ -463,29 +463,25 @@ class Runner:
                 loss = low_loss
 
                 # smoothness loss for illumination field
-                # if cfg.lambda_illum_smoothness > 0:
-                #     rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
-                #     rand_points.requires_grad = True
-                #
-                #     if cfg.decomposed_field:
-                #         _, direct_params, ambient_params = self.illumination_field(rand_points, return_components=True)
-                #
-                #         d_direct = torch.autograd.grad(outputs=direct_params.sum(), inputs=rand_points, create_graph=True)[0]
-                #
-                #         d_ambient = torch.autograd.grad(outputs=ambient_params.sum(), inputs=rand_points, create_graph=True)[0]
-                #
-                #         loss_illum_smoothness = (50.0 * d_ambient.norm(2, dim=-1).mean()) + \
-                #                                 (1.0 * d_direct.norm(2, dim=-1).mean())
-                #
-                #         loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
-                #     else:
-                #         gain, gamma = self.illumination_field(rand_points)
-                #
-                #         d_gain = torch.autograd.grad(outputs=gain.sum(), inputs=rand_points, create_graph=True)[0]
-                #         d_gamma = torch.autograd.grad(outputs=gamma.sum(), inputs=rand_points, create_graph=True)[0]
-                #
-                #         loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
-                #     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                if cfg.lambda_illum_smoothness > 0:
+                    with torch.no_grad():
+                        rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
+                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3 # Small random vector
+                        perturbed_points = rand_points + perturbation
+
+                    if cfg.decomposed_field:
+                        (gain, gamma), _, _ = self.illumination_field(rand_points, return_components=True)
+                        (gain_perturbed, gamma_perturbed), _, _ = self.illumination_field(perturbed_points, return_components=True)
+                    else:
+                        gain, gamma = self.illumination_field(rand_points)
+                        gain_perturbed, gamma_perturbed = self.illumination_field(perturbed_points)
+
+                    grad_approx_gain = gain - gain_perturbed
+                    grad_approx_gamma = gamma - gamma_perturbed
+
+                    loss_illum_smoothness = grad_approx_gain.norm(dim=-1).mean() + grad_approx_gamma.norm(dim=-1).mean()
+
+                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 # exclusion loss for illumination field
                 with torch.no_grad():
