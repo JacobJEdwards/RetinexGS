@@ -54,7 +54,7 @@ from utils import (
     rgb_to_sh,
     set_random_seed,
 )
-from retinex import RetinexNet, MultiScaleRetinexNet
+from retinex import MultiScaleRetinexNet
 
 
 def create_splats_with_optimizers(
