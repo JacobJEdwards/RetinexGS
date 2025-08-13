@@ -305,14 +305,16 @@ class MultiScaleRetinexNet(nn.Module):
             RetinexBlock(64, 64),
             # SSMBlock(64),
             # ECALayer(64)
-            SEBlock(64)
+            # SEBlock(64)
         )
 
         self.dec2 = UpBlock(64, 32)
         self.dec2_conv = RetinexBlock(64, 32)
+        self.dec2_attn = ECALayer(32)
 
         self.dec1 = UpBlock(32, 16)
         self.dec1_conv = RetinexBlock(32, 16)
+        self.dec1_attn = ECALayer(16)
 
         self.out_conv = DepthwiseSeparableConv(16, out_channels, kernel_size=3, padding=1)
 
@@ -369,6 +371,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         d2 = torch.cat([d2_up, e1], dim=1)
         d2 = self.dec2_conv(d2)
+        d2 = self.dec2_attn(d2)
 
         d1_up = self.dec1(d2)
         if d1_up.shape[2:] != e0_modulated.shape[2:]:
@@ -376,7 +379,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         d1 = torch.cat([d1_up, e0_modulated], dim=1)
         d1 = self.dec1_conv(d1)
-
+        d1 = self.dec1_attn(d1)
 
         final_illumination = self.out_conv(d1)
 
