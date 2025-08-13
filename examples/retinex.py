@@ -305,7 +305,7 @@ class MultiScaleRetinexNet(nn.Module):
             RetinexBlock(64, 64),
             # SSMBlock(64),
             # ECALayer(64)
-            CBAM(64, reduction=16, kernel_size=7),
+            # CBAM(64, reduction=16, kernel_size=7),
         )
 
         self.dec2 = UpBlock(64, 32)
