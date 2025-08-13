@@ -534,6 +534,17 @@ class Runner:
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
 
+
+        if org_loss_reflectance_spa_map.dim() == 3:
+            org_loss_reflectance_spa_map = org_loss_reflectance_spa_map.unsqueeze(1)
+
+        resized_spa_map = F.interpolate(
+            org_loss_reflectance_spa_map,
+            size=confidence_map.shape[2:],
+            mode='bilinear',
+            align_corners=False
+        )
+
         loss_reflectance_spa = torch.mean(confidence_map * org_loss_reflectance_spa_map)
 
         loss_laplacian_val = torch.mean(
