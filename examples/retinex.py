@@ -278,12 +278,6 @@ class MultiScaleRetinexNet(nn.Module):
             nn.Sigmoid()
         )
 
-        self.variance_head = nn.Sequential(
-            DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(8, 1, kernel_size=1)
-        )
-
         self.apply(self._init_weights)
 
     @staticmethod
@@ -350,6 +344,5 @@ class MultiScaleRetinexNet(nn.Module):
             dynamic_weights = None
 
         confidence_map = self.confidence_head(d1_nested)
-        log_variance_map = self.variance_head(d1_nested)
 
-        return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights, confidence_map, log_variance_map
+        return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights, confidence_map, None
