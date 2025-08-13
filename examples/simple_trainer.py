@@ -495,7 +495,7 @@ class Runner:
                 else:
                     embeddings = None
 
-                gain_map, gamma_map = self.illumination_field(points_3d_world.squeeze(0), embeddings) # [H*W, 3] each
+                gain_map, gamma_map = self.illumination_field(points_3d_world.view(-1, 3), embeddings) # [H*W, 3] each
 
                 illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
                 reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
