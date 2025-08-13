@@ -268,11 +268,8 @@ class Runner:
                 in_channels=retinex_in_channels,
                 out_channels=retinex_out_channels,
                 predictive_adaptive_curve=cfg.predictive_adaptive_curve,
-                use_dilated_convs=cfg.use_dilated_convs,
-                use_se_blocks=cfg.use_se_blocks,
                 enable_dynamic_weights=cfg.enable_dynamic_weights,
-                use_stride_conv=cfg.use_stride_conv,
-                use_pixel_shuffle=cfg.use_pixel_shuffle,
+                learn_local_exposure=cfg.learn_local_exposure,
                 num_weight_scales=13,
             ).to(self.device)
         else:

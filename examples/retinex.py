@@ -289,6 +289,9 @@ class MultiScaleRetinexNet(nn.Module):
             in_channels: int = 3,
             out_channels: int = 3,
             embed_dim: int = 32,
+            enable_dynamic_weights: bool = False,
+            predictive_adaptive_curve: bool = False,
+            learn_local_exposure: bool = True,
             num_weight_scales: int = 11,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
@@ -312,25 +315,31 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.out_conv = DepthwiseSeparableConv(16, out_channels, kernel_size=3, padding=1)
 
-        self.adaptive_curve_head = nn.Sequential(
-            DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(8, 2, kernel_size=1)
-        )
+        self.enable_dynamic_weights = enable_dynamic_weights
+        self.predictive_adaptive_curve = predictive_adaptive_curve
+        self.learn_local_exposure = learn_local_exposure
 
-        self.predicted_local_mean_head = nn.Sequential(
-            DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(8, 1, kernel_size=1),
-            nn.Sigmoid()
-        )
-        nn.init.zeros_(self.adaptive_curve_head[-1].weight)
-        nn.init.zeros_(self.adaptive_curve_head[-1].bias)
+        if self.predictive_adaptive_curve:
+            self.adaptive_curve_head = nn.Sequential(
+                DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
+                nn.SiLU(),
+                nn.Conv2d(8, 2, kernel_size=1)
+            )
+            nn.init.zeros_(self.adaptive_curve_head[-1].weight)
+            nn.init.zeros_(self.adaptive_curve_head[-1].bias)
 
-        self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
+        if self.learn_local_exposure:
+            self.predicted_local_mean_head = nn.Sequential(
+                DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
+                nn.SiLU(),
+                nn.Conv2d(8, 1, kernel_size=1),
+                nn.Sigmoid()
+            )
+
+        if self.enable_dynamic_weights:
+            self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
+
         self.apply(self._init_weights)
-        nn.init.zeros_(self.adaptive_curve_head[-1].weight)
-        nn.init.zeros_(self.adaptive_curve_head[-1].bias)
 
     @staticmethod
     def _init_weights(m: nn.Module) -> None:
@@ -342,7 +351,8 @@ class MultiScaleRetinexNet(nn.Module):
             init.constant_(m.weight, 1)
             init.constant_(m.bias, 0)
 
-    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None,
+    Tensor | None]:
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
 
@@ -361,16 +371,25 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.out_conv(d1)
 
-        adaptive_params = self.adaptive_curve_head(d1)
-        alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
+        if self.predictive_adaptive_curve:
+            adaptive_params = self.adaptive_curve_head(d1)
+            alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
+            base_alpha, base_beta, scale = 0.4, 0.7, 0.1
+            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
+            beta_map = base_beta + scale * torch.tanh(beta_map_raw)
+        else:
+            alpha_map = None
+            beta_map = None
 
-        base_alpha, base_beta, scale = 0.4, 0.7, 0.1
-        alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
-        beta_map = base_beta + scale * torch.tanh(beta_map_raw)
+        if self.learn_local_exposure:
+            predicted_local_mean_map = self.predicted_local_mean_head(d1)
+            predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_map, output_size=8)
+        else:
+            predicted_local_mean_val = None
 
-        predicted_local_mean_map = self.predicted_local_mean_head(d1)
-        predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_map, output_size=8)
-
-        dynamic_weights = torch.exp(-self.log_vars)
+        if self.enable_dynamic_weights:
+            dynamic_weights = torch.exp(-self.log_vars)
+        else:
+            dynamic_weights = None
 
         return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights
