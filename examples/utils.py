@@ -20,10 +20,10 @@ class CrossAttention(nn.Module):
 
         self.conv = nn.Sequential(
             nn.Conv2d(img_channels, 64, kernel_size=3, padding=1),  # (1, 64, H, W)
-            nn.ReLU(),
+            nn.SiLU(),
             nn.MaxPool2d(2, 2),  # (1, 64, H/2, W/2)
             nn.Conv2d(64, 128, kernel_size=3, padding=1),  # (1, 128, H/2, W/2)
-            nn.ReLU(),
+            nn.SiLU(),
             nn.AdaptiveAvgPool2d((4, 4)),  # (1, 128, 4, 4)
         )
 
@@ -127,11 +127,11 @@ class AppearanceOptModule(torch.nn.Module):
         self.embeds = torch.nn.Embedding(n, embed_dim)
         layers = [
             torch.nn.Linear(embed_dim + feature_dim + (sh_degree + 1) ** 2, mlp_width),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.SiLU(inplace=True),
         ]
         for _ in range(mlp_depth - 1):
             layers.append(torch.nn.Linear(mlp_width, mlp_width))
-            layers.append(torch.nn.ReLU(inplace=True))
+            layers.append(torch.nn.SiLU(inplace=True))
         layers.append(torch.nn.Linear(mlp_width, 3))
         self.color_head = torch.nn.Sequential(*layers)
 
@@ -425,15 +425,15 @@ class DecomposedIlluminationField(nn.Module):
         if use_appearance_embeds:
             in_dim += appearance_embedding_dim
 
-        direct_layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
+        direct_layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
         for _ in range(num_layers - 1):
-            direct_layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
+            direct_layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
         direct_layers.append(nn.Linear(hidden_dim, 6))
         self.direct_mlp = nn.Sequential(*direct_layers)
 
-        ambient_layers_list = [nn.Linear(in_dim, hidden_dim // 2), nn.ReLU(inplace=True)]
+        ambient_layers_list = [nn.Linear(in_dim, hidden_dim // 2), nn.SiLU(inplace=True)]
         for _ in range(ambient_layers - 1):
-            ambient_layers_list.extend([nn.Linear(hidden_dim // 2, hidden_dim // 2), nn.ReLU(inplace=True)])
+            ambient_layers_list.extend([nn.Linear(hidden_dim // 2, hidden_dim // 2), nn.SiLU(inplace=True)])
         ambient_layers_list.append(nn.Linear(hidden_dim // 2, 6))
         self.ambient_mlp = nn.Sequential(*ambient_layers_list)
 
