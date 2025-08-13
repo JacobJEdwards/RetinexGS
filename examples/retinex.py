@@ -247,7 +247,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.out_conv = DepthwiseSeparableConv(16, out_channels, kernel_size=3, padding=1)
 
-        self.nested_dec = RetinexBlock(16, 16)
+        self.nested_dec = RetinexBlock(32, 16)
 
         self.enable_dynamic_weights = enable_dynamic_weights
         self.predictive_adaptive_curve = predictive_adaptive_curve
