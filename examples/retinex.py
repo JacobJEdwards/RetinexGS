@@ -362,6 +362,9 @@ class MultiScaleRetinexNet(nn.Module):
         b = self.bottleneck(e2)
 
         d2_up = self.dec2(b)
+        if d2_up.shape[2:] != e1.shape[2:]:
+            d2_up = F.interpolate(d2_up, size=e1.shape[2:], mode='bilinear', align_corners=False)
+
         d2 = torch.cat([d2_up, e1], dim=1)
         d2 = self.dec2_conv(d2)
 
