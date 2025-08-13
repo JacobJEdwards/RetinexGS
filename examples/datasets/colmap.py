@@ -62,6 +62,7 @@ class Parser:
             # factor: int = 1,
             normalize: bool = False,
             test_every: int = 8,
+            postfix: str = "_variance",
     ):
         self.data_dir = data_dir
         self.factor = 8
@@ -184,8 +185,9 @@ class Parser:
         #     image_dir_suffix = f"_{factor}"
         # else:
         #     image_dir_suffix = ""
-        colmap_image_dir = os.path.join(data_dir, "images_8_variance")
-        image_dir = os.path.join(data_dir, "images_8_variance")
+        self.postfix = postfix
+        colmap_image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
+        image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
                 raise ValueError(f"Image folder {d} does not exist.")
@@ -366,6 +368,7 @@ class Dataset:
         self.split = split
         self.patch_size = patch_size
         self.load_depths = load_depths
+        self.postfix = self.parser.postfix
         indices = np.arange(len(self.parser.image_names))
         if split == "train":
             self.indices = indices[indices % self.parser.test_every != 0]
@@ -379,7 +382,7 @@ class Dataset:
         index = self.indices[item]
 
         if self.split == 'val':
-            image = imageio.imread(self.parser.image_paths[index].replace('_variance',''))[..., :3]
+            image = imageio.imread(self.parser.image_paths[index].replace(self.postfix,''))[..., :3]
         else:
             image = imageio.imread(self.parser.image_paths[index])[..., :3]
 
