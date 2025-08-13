@@ -199,7 +199,7 @@ class DenoisingHead(nn.Module):
         self.bottle = RetinexBlock(32, 32)
 
         self.dec2 = UpBlock(32, 16)
-        self.dec1 = UpBlock(32, in_channels)
+        self.dec1 = UpBlock(32, in_channels / 2)
 
     def forward(self, x):
         e1 = self.enc1(x)
@@ -213,6 +213,7 @@ class DenoisingHead(nn.Module):
         if d1.shape[2:] != x.shape[2:]:
             d1 = F.interpolate(d1, size=x.shape[2:], mode='bilinear', align_corners=False)
         d1 = torch.cat([d1, x], dim=1)
+
         return d1
 
 class MultiScaleRetinexNet(nn.Module):
