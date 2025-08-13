@@ -240,7 +240,7 @@ class MultiScaleRetinexNet(nn.Module):
         self.dec2_attn = ECALayer(32)
 
         self.dec1 = UpBlock(16, 16)
-        self.dec1_conv = RetinexBlock(32, 16)
+        self.dec1_conv = RetinexBlock(16, 16)
         self.dec1_attn = ECALayer(16)
 
         self.out_conv = DepthwiseSeparableConv(16, out_channels, kernel_size=3, padding=1)
