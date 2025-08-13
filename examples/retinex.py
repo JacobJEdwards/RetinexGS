@@ -281,20 +281,15 @@ class MultiScaleRetinexNet(nn.Module):
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None,
     Tensor | None, Tensor | None, Tensor | None]:
         b, _ = embedding.shape
-        embed_full = embedding.view(b, self.embed_dim, 1, 1).expand(b, self.embed_dim, x.shape[2], x.shape[3])
 
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
 
         e1 = self.enc1(e0_modulated)
-
-        pooled_embed_half = F.adaptive_avg_pool2d(embed_half, (1, 1)).view(b, self.embed_dim)
-        e1 = SpatiallyFiLMLayer(32, self.embed_dim)(e1, pooled_embed_half)
+        e1 = SpatiallyFiLMLayer(32, self.embed_dim)(e1, embedding)
 
         e2 = self.enc2(e1)
-
-        pooled_embed_quarter = F.adaptive_avg_pool2d(embed_quarter, (1, 1)).view(b, self.embed_dim)
-        e2 = SpatiallyFiLMLayer(64, self.embed_dim)(e2, pooled_embed_quarter)
+        e2 = SpatiallyFiLMLayer(64, self.embed_dim)(e2, embedding)
 
         # e1 = self.enc1(e0_modulated)
         # e2 = self.enc2(e1)
