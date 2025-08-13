@@ -264,19 +264,14 @@ class Runner:
             torch.tensor([0.5], dtype=torch.float32).to(self.device)
         )
 
-        if cfg.multi_scale_retinex:
-            self.retinex_net = MultiScaleRetinexNet(
-                in_channels=retinex_in_channels,
-                out_channels=retinex_out_channels,
-                predictive_adaptive_curve=cfg.predictive_adaptive_curve,
-                enable_dynamic_weights=cfg.enable_dynamic_weights,
-                learn_local_exposure=cfg.learn_local_exposure,
-                num_weight_scales=13,
-            ).to(self.device)
-        else:
-            self.retinex_net = RetinexNet(
-                in_channels=retinex_in_channels, out_channels=retinex_out_channels
-            ).to(self.device)
+        self.retinex_net = MultiScaleRetinexNet(
+            in_channels=retinex_in_channels,
+            out_channels=retinex_out_channels,
+            predictive_adaptive_curve=cfg.predictive_adaptive_curve,
+            enable_dynamic_weights=cfg.enable_dynamic_weights,
+            learn_local_exposure=cfg.learn_local_exposure,
+            num_weight_scales=13,
+        ).to(self.device)
 
         # dpp
         self.retinex_net.compile()
