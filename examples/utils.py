@@ -374,6 +374,7 @@ class IlluminationField(nn.Module):
         if self.use_hash_grid:
             # might need to adjust to scene scale
             normalized_x = x / (2.0 * self.scene_scale) + 0.5
+            normalized_x = torch.clamp(normalized_x, 0.0, 1.0)
             encoded_x = self.encoder(normalized_x)
         else:
             encoded_x = self.encoder(x)
@@ -440,6 +441,7 @@ class DecomposedIlluminationField(nn.Module):
     Tensor] | tuple:
         if self.use_hash_grid:
             normalized_x = x / (2.0 * self.scene_scale) + 0.5
+            normalized_x = torch.clamp(normalized_x, 0.0, 1.0)
             encoded_x = self.encoder(normalized_x)
         else:
             encoded_x = self.encoder(x)
