@@ -89,7 +89,7 @@ class SimpleSSM(nn.Module):
         self.fc_skip = nn.Linear(d_model, d_model)
         self.fc_x = nn.Linear(d_model, d_state)
         self.fc_dt = nn.Linear(d_model, d_state)
-        self.fc_out = nn.Linear(d_state, d_model)
+        self.fc_out = nn.Linear(d_model, d_model)
         self.A = nn.Parameter(torch.randn(d_state, d_state))
         self.B = nn.Parameter(torch.randn(d_state, 1))
         self.C = nn.Parameter(torch.randn(d_model, d_state))
