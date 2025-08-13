@@ -99,7 +99,7 @@ class Config:
     learn_adaptive_curve_lambdas: bool = True
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = True
+    learn_edge_aware_gamma: bool = False
 
     use_illum_opt: bool = True
     illum_opt_type: Literal["base", "quantized", "content_aware"] = "content_aware"
