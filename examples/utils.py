@@ -437,7 +437,7 @@ class DecomposedIlluminationField(nn.Module):
         ambient_layers_list.append(nn.Linear(hidden_dim // 2, 6))
         self.ambient_mlp = nn.Sequential(*ambient_layers_list)
 
-    def forward(self, x: Tensor, return_components: bool=False, embeddings: Tensor | None = None) -> tuple[Tensor,
+    def forward(self, x: Tensor, embeddings: Tensor | None = None, return_components: bool = False) -> tuple[Tensor,
     Tensor] | tuple:
         if self.use_hash_grid:
             normalized_x = x / (2.0 * self.scene_scale) + 0.5
