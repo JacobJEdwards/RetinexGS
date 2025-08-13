@@ -199,30 +199,21 @@ class DenoisingHead(nn.Module):
         self.bottle = RetinexBlock(32, 32)
 
         self.dec2 = UpBlock(32, 16)
-        self.dec2_conv = RetinexBlock(32, 16)
-
-        self.dec1 = UpBlock(16, in_channels)
-        self.final_conv = RetinexBlock(in_channels * 2, in_channels)
+        self.dec1 = UpBlock(32, in_channels)
 
     def forward(self, x):
         e1 = self.enc1(x)
         e2 = self.enc2(e1)
         b = self.bottle(e2)
-
-        d2_up = self.dec2(b)
-        if d2_up.shape[2:] != e1.shape[2:]:
-            d2_up = F.interpolate(d2_up, size=e1.shape[2:], mode='bilinear', align_corners=False)
-        d2_cat = torch.cat([d2_up, e1], dim=1)
-        d2 = self.dec2_conv(d2_cat)
-
-        d1_up = self.dec1(d2)
-        if d1_up.shape[2:] != x.shape[2:]:
-            d1_up = F.interpolate(d1_up, size=x.shape[2:], mode='bilinear', align_corners=False)
-        d1_cat = torch.cat([d1_up, x], dim=1)
-
-        output = self.final_conv(d1_cat)
-
-        return output
+        d2 = self.dec2(b)
+        if d2.shape[2:] != e1.shape[2:]:
+            d2 = F.interpolate(d2, size=e1.shape[2:], mode='bilinear', align_corners=False)
+        d2 = torch.cat([d2, e1], dim=1)
+        d1 = self.dec1(d2)
+        if d1.shape[2:] != x.shape[2:]:
+            d1 = F.interpolate(d1, size=x.shape[2:], mode='bilinear', align_corners=False)
+        d1 = torch.cat([d1, x], dim=1)
+        return d1
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
