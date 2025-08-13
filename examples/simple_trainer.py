@@ -270,7 +270,7 @@ class Runner:
             predictive_adaptive_curve=cfg.predictive_adaptive_curve,
             enable_dynamic_weights=cfg.enable_dynamic_weights,
             learn_local_exposure=cfg.learn_local_exposure,
-            num_weight_scales=13,
+            num_weight_scales=12,
         ).to(self.device)
 
         # dpp
@@ -559,12 +559,6 @@ class Runner:
             (loss_clipping_high + loss_clipping_low)
         )
 
-        gaussian_blur_kernel_size = (15, 15)
-        gaussian_blur_sigma = (5.0, 5.0)
-
-        blurred_input = gaussian_blur2d(input_image_for_net, gaussian_blur_kernel_size, gaussian_blur_sigma)
-        loss_illumination_guidance = F.l1_loss(illumination_map, blurred_input)
-
         individual_losses = torch.stack(
             [
                 loss_reflectance_spa,  # 0
@@ -579,8 +573,6 @@ class Runner:
                 loss_illumination_frequency_penalty,  # 10
                 loss_exclusion_val,  # 11
                 loss_clipping,
-                loss_illumination_guidance
-
             ]
         )
 
@@ -598,7 +590,6 @@ class Runner:
                 cfg.lambda_illum_frequency,
                 cfg.lambda_exclusion,
                 cfg.lambda_clipping,
-                1.0
             ],
             device=device,
         )
@@ -638,7 +629,6 @@ class Runner:
                 "illumination_frequency_penalty",
                 "exclusion_val",
                 "clipping",
-                "gaussian_blur_illumination_guidance"
             ]
 
             for i, name in enumerate(loss_names):
