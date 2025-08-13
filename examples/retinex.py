@@ -282,20 +282,22 @@ class MultiScaleRetinexNet(nn.Module):
     Tensor | None, Tensor | None, Tensor | None]:
         b, _ = embedding.shape
         embed_full = embedding.view(b, self.embed_dim, 1, 1).expand(b, self.embed_dim, x.shape[2], x.shape[3])
-        embed_half = F.avg_pool2d(embed_full, 2)
-        embed_quarter = F.avg_pool2d(embed_half, 2)
 
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
 
-        # e1 = self.enc1(e0_modulated)
-        # e2 = self.enc2(e1)
-
         e1 = self.enc1(e0_modulated)
-        e1 = SpatiallyFiLMLayer(32, self.embed_dim)(e1, embed_half.view(b, self.embed_dim))
+
+        pooled_embed_half = F.adaptive_avg_pool2d(embed_half, (1, 1)).view(b, self.embed_dim)
+        e1 = SpatiallyFiLMLayer(32, self.embed_dim)(e1, pooled_embed_half)
 
         e2 = self.enc2(e1)
-        e2 = SpatiallyFiLMLayer(64, self.embed_dim)(e2, embed_quarter.view(b, self.embed_dim))
+
+        pooled_embed_quarter = F.adaptive_avg_pool2d(embed_quarter, (1, 1)).view(b, self.embed_dim)
+        e2 = SpatiallyFiLMLayer(64, self.embed_dim)(e2, pooled_embed_quarter)
+
+        # e1 = self.enc1(e0_modulated)
+        # e2 = self.enc2(e1)
 
         b = self.bottleneck(e2)
 
