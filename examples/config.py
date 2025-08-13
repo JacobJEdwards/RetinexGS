@@ -69,7 +69,7 @@ class Config:
 
     lambda_reflect: float = 1.0
     lambda_illum_curve: float = 1.0
-    lambda_illum_exposure: float = 1.0
+    lambda_illum_exposure: float = 0.0
     lambda_edge_aware_smooth: float = 20.0
     
     lambda_illum_color: float = 0.0
@@ -80,11 +80,11 @@ class Config:
     lambda_gradient: float = 0.0
     lambda_frequency: float = 0
     lambda_illum_frequency: float = 0.0
-    lambda_exclusion: float = 0.1
+    lambda_exclusion: float = 1.0
     lambda_clipping: float = 0.0
 
-    lambda_vq_commitment: float = 0.25
-    lambda_patch_consistency: float = 0.1
+    lambda_vq_commitment: float = 0.0
+    lambda_patch_consistency: float = 0.0
     lambda_bidirectional: float = 0.5
 
     pretrain_retinex: bool = True
