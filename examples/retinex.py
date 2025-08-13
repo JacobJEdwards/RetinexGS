@@ -236,16 +236,16 @@ class MultiScaleRetinexNet(nn.Module):
         )
 
         self.dec2 = UpBlock(64, 32)
-        self.dec2_conv = RetinexBlock(32, 32)
+        self.dec2_conv = RetinexBlock(64, 32)
         self.dec2_attn = ECALayer(32)
 
         self.dec1 = UpBlock(32, 16)
-        self.dec1_conv = RetinexBlock(16, 16)
+        self.dec1_conv = RetinexBlock(32, 16)
         self.dec1_attn = ECALayer(16)
 
         self.out_conv = DepthwiseSeparableConv(16, out_channels, kernel_size=3, padding=1)
 
-        self.nested_dec = RetinexBlock(16, 16)
+        self.nested_dec = RetinexBlock(32, 16)
 
         self.enable_dynamic_weights = enable_dynamic_weights
         self.predictive_adaptive_curve = predictive_adaptive_curve
@@ -306,7 +306,7 @@ class MultiScaleRetinexNet(nn.Module):
         if d2_up.shape[2:] != e1.shape[2:]:
             d2_up = F.interpolate(d2_up, size=e1.shape[2:], mode='bilinear', align_corners=False)
 
-        d2 = d2_up + e1
+        d2 = torch.cat([d2_up, e1], dim=1)
         d2 = self.dec2_conv(d2)
         d2 = self.dec2_attn(d2)
 
@@ -314,11 +314,11 @@ class MultiScaleRetinexNet(nn.Module):
         if d1_up.shape[2:] != e0_modulated.shape[2:]:
             d1_up = F.interpolate(d1_up, size=e0_modulated.shape[2:], mode='bilinear', align_corners=False)
 
-        d1 = d1_up + e0_modulated
+        d1 = torch.cat([d1_up, e0_modulated], dim=1)
         d1 = self.dec1_conv(d1)
         d1 = self.dec1_attn(d1)
 
-        d1_nested = self.nested_dec(d1 + e0_modulated) + d1
+        d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
 
         final_illumination = self.out_conv(d1_nested)
 
