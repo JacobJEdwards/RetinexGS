@@ -530,9 +530,12 @@ class Runner:
             loss_exposure_val = self.loss_exposure(reflectance_map)
 
         con_degree = (0.5 / torch.mean(pixels)).item()
-        loss_reflectance_spa = self.loss_spatial(
+        org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
+
+        loss_reflectance_spa = torch.mean(confidence_map * org_loss_reflectance_spa_map)
+
         loss_laplacian_val = torch.mean(
             torch.abs(
                 self.loss_details(reflectance_map)
@@ -563,6 +566,8 @@ class Runner:
             (loss_clipping_high + loss_clipping_low)
         )
 
+        loss_confidence_regularization = -torch.mean(torch.log(confidence_map + 1e-8))
+
         individual_losses = torch.stack(
             [
                 loss_reflectance_spa,  # 0
@@ -577,6 +582,7 @@ class Runner:
                 loss_illumination_frequency_penalty,  # 10
                 loss_exclusion_val,  # 11
                 loss_clipping,
+                loss_confidence_regularization
             ]
         )
 
@@ -594,6 +600,7 @@ class Runner:
                 cfg.lambda_illum_frequency,
                 cfg.lambda_exclusion,
                 cfg.lambda_clipping,
+                1.0
             ],
             device=device,
         )
@@ -633,6 +640,7 @@ class Runner:
                 "illumination_frequency_penalty",
                 "exclusion_val",
                 "clipping",
+                "confidence_regularisation"
             ]
 
             for i, name in enumerate(loss_names):
