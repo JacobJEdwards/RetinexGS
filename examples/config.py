@@ -92,8 +92,8 @@ class Config:
 
     use_hsv_color_space: bool = True
 
-    predictive_adaptive_curve: bool = False
-    enable_dynamic_weights: bool = False
+    predictive_adaptive_curve: bool = True
+    enable_dynamic_weights: bool = True
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
