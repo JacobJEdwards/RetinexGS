@@ -474,7 +474,7 @@ class Runner:
                         d_gamma = torch.autograd.grad(outputs=gamma.sum(), inputs=rand_points, create_graph=True)[0]
 
                         loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
-
+                    print("all good")
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 # exclusion loss for illumination field
