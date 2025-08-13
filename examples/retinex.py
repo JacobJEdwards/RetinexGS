@@ -359,9 +359,10 @@ class MultiScaleRetinexNet(nn.Module):
         e1 = self.enc1(e0_modulated)
         e2 = self.enc2(e1)
 
+        print("running forward pass retinex")
+
         b = self.bottleneck(e2)
 
-        print("running forward pass retinex")
 
         d2_up = self.dec2(b)
         if d2_up.shape[2:] != e1.shape[2:]:
