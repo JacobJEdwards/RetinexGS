@@ -296,7 +296,7 @@ class MultiScaleRetinexNet(nn.Module):
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
         self.in_conv = RetinexBlock(in_channels, 16)
-        self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=16)
 
         self.enc1 = RetinexBlock(16, 32, stride=2)
         self.enc2 = RetinexBlock(32, 64, stride=2)
@@ -360,7 +360,6 @@ class MultiScaleRetinexNet(nn.Module):
         e2 = self.enc2(e1)
 
         b = self.bottleneck(e2)
-
 
         d2_up = self.dec2(b)
         if d2_up.shape[2:] != e1.shape[2:]:
