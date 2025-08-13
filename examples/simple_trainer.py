@@ -30,7 +30,7 @@ from datasets.traj import (
 from config import Config
 from losses import TotalVariationLoss
 from losses import ExclusionLoss
-from utils import IlluminationField, sh_to_rgb, DecomposedIlluminationField
+from utils import IlluminationField, sh_to_rgb
 from rendering_double import rasterization_dual
 from gsplat import export_splats
 from gsplat.distributed import cli
@@ -188,12 +188,9 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        if cfg.decomposed_field:
-            self.illumination_field = DecomposedIlluminationField(self.scene_scale).to(self.device)
-        else:
-            self.illumination_field = IlluminationField(self.scene_scale,
-                                    use_appearance_embeds=cfg.appearance_embeddings).to(
-                self.device)
+        self.illumination_field = IlluminationField(self.scene_scale,
+                                use_appearance_embeds=cfg.appearance_embeddings).to(
+            self.device)
 
 
         if world_size > 1:
@@ -470,12 +467,8 @@ class Runner:
                         perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3 # Small random vector
                         perturbed_points = rand_points + perturbation
 
-                    if cfg.decomposed_field:
-                        (gain, gamma), _, _ = self.illumination_field(rand_points, return_components=True)
-                        (gain_perturbed, gamma_perturbed), _, _ = self.illumination_field(perturbed_points, return_components=True)
-                    else:
-                        gain, gamma = self.illumination_field(rand_points)
-                        gain_perturbed, gamma_perturbed = self.illumination_field(perturbed_points)
+                    gain, gamma = self.illumination_field(rand_points)
+                    gain_perturbed, gamma_perturbed = self.illumination_field(perturbed_points)
 
                     grad_approx_gain = gain - gain_perturbed
                     grad_approx_gamma = gamma - gamma_perturbed

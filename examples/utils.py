@@ -372,7 +372,6 @@ class IlluminationField(nn.Module):
     def forward(self, x: Tensor, embeds: Tensor | None = None) -> tuple[Tensor, Tensor]:
         # x: [N, 3]
         if self.use_hash_grid:
-            # might need to adjust to scene scale
             normalized_x = x / (2.0 * self.scene_scale) + 0.5
             normalized_x = torch.clamp(normalized_x, 0.0, 1.0)
             encoded_x = self.encoder(normalized_x)
@@ -391,75 +390,5 @@ class IlluminationField(nn.Module):
 
         gain = torch.sigmoid(gain)
         gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
-
-        return gain, gamma
-
-class DecomposedIlluminationField(nn.Module):
-    def __init__(self,
-                 scene_scale: float,
-                 use_hash_grid: bool = True,
-                 num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 2, ambient_layers: int = 2,
-                 use_appearance_embeds: bool = False, appearance_embedding_dim: int = 32):
-        super().__init__()
-        self.use_hash_grid = use_hash_grid
-        self.scene_scale = scene_scale
-        if self.use_hash_grid:
-            per_level_scale = 1.4472692012786865
-            self.encoder = tcnn.Encoding(
-                n_input_dims=3,
-                encoding_config={
-                    "otype": "HashGrid",
-                    "n_levels": 16,
-                    "n_features_per_level": 2,
-                    "log2_hashmap_size": 19,
-                    "base_resolution": 16,
-                    "per_level_scale": per_level_scale,
-                },
-                dtype=torch.float32,
-            )
-            in_dim = self.encoder.n_output_dims
-        else:
-            self.encoder = PositionalEncoder(num_freqs)
-            in_dim = 3 * 2 * num_freqs
-
-        if use_appearance_embeds:
-            in_dim += appearance_embedding_dim
-
-        direct_layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
-        for _ in range(num_layers - 1):
-            direct_layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
-        direct_layers.append(nn.Linear(hidden_dim, 6))
-        self.direct_mlp = nn.Sequential(*direct_layers)
-
-        ambient_layers_list = [nn.Linear(in_dim, hidden_dim // 2), nn.SiLU(inplace=True)]
-        for _ in range(ambient_layers - 1):
-            ambient_layers_list.extend([nn.Linear(hidden_dim // 2, hidden_dim // 2), nn.SiLU(inplace=True)])
-        ambient_layers_list.append(nn.Linear(hidden_dim // 2, 6))
-        self.ambient_mlp = nn.Sequential(*ambient_layers_list)
-
-    def forward(self, x: Tensor, embeddings: Tensor | None = None, return_components: bool = False) -> tuple[Tensor,
-    Tensor] | tuple:
-        if self.use_hash_grid:
-            normalized_x = x / (2.0 * self.scene_scale) + 0.5
-            normalized_x = torch.clamp(normalized_x, 0.0, 1.0)
-            encoded_x = self.encoder(normalized_x)
-        else:
-            encoded_x = self.encoder(x)
-
-        if embeddings is not None:
-            broadcasted_embed = embeddings.expand(encoded_x.shape[0], -1)
-            encoded_x = torch.cat([encoded_x, broadcasted_embed], dim=-1)
-
-        direct_params = self.direct_mlp(encoded_x)
-        ambient_params = self.ambient_mlp(encoded_x)
-
-        params = direct_params + ambient_params
-
-        gain, gamma = torch.chunk(params, 2, dim=-1)
-        gain = torch.sigmoid(gain)
-        gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
-
-        if return_components:
-            return (gain, gamma), direct_params, ambient_params
 
         return gain, gamma
