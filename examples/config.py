@@ -66,6 +66,8 @@ class Config:
     appearance_embeddings: bool = True
     appearance_embedding_dim: int = 32
 
+    postfix = "_variance"
+
     lambda_illum_smoothness: float = 0.01
     lambda_exclusion: float = 0.01
     lambda_shn_reg: float = 0.01
