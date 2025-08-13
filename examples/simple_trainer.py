@@ -1266,6 +1266,9 @@ class Runner:
                 f"PSNR: {stats_eval.get('psnr', 0):.3f}",
                 f"SSIM: {stats_eval.get('ssim', 0):.4f}",
                 f"LPIPS: {stats_eval.get('lpips', 0):.3f}",
+                f"PSNR Enh: {stats_eval.get('psnr_enh', 0):.3f}",
+                f"SSIM Enh: {stats_eval.get('ssim_enh', 0):.4f}",
+                f"LPIPS Enh: {stats_eval.get('lpips_enh', 0):.3f}",
             ]
             print_parts_eval.extend(
                 [
