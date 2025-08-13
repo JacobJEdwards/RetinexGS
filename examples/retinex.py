@@ -304,7 +304,7 @@ class MultiScaleRetinexNet(nn.Module):
         self.bottleneck = nn.Sequential(
             RetinexBlock(64, 64),
             # SSMBlock(64),
-            # ECALayer(64)
+            ECALayer(64)
         )
 
         self.dec2 = UpBlock(64, 32)
