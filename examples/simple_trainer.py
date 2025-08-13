@@ -1210,17 +1210,17 @@ class Runner:
                     (colors_enh_np * 255).astype(np.uint8),
                 )
 
-                illumination_map_np = illumination_map.squeeze(0).cpu().numpy()
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
-                    (illumination_map_np * 255).astype(np.uint8),
-                )
-
-                reflectance_map_np = reflectance_map.squeeze(0).cpu().numpy()
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
-                    (reflectance_map_np * 255).astype(np.uint8),
-                )
+                # illumination_map_np = illumination_map.squeeze(0).cpu().numpy()
+                # imageio.imwrite(
+                #     f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
+                #     (illumination_map_np * 255).astype(np.uint8),
+                # )
+                #
+                # reflectance_map_np = reflectance_map.squeeze(0).cpu().numpy()
+                # imageio.imwrite(
+                #     f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
+                #     (reflectance_map_np * 255).astype(np.uint8),
+                # )
 
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low.permute(0, 3, 1, 2)
