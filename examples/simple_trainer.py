@@ -270,7 +270,7 @@ class Runner:
                 predictive_adaptive_curve=cfg.predictive_adaptive_curve,
                 enable_dynamic_weights=cfg.enable_dynamic_weights,
                 learn_local_exposure=cfg.learn_local_exposure,
-                num_weight_scales=13,
+                num_weight_scales=12,
             ).to(self.device)
         else:
             self.retinex_net = RetinexNet(
