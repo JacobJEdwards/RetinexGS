@@ -5,6 +5,7 @@ from torch import Tensor
 from torch.nn import init
 import torch
 import torch.nn.functional as F
+from mamba_ssm import Mamba
 
 class ChannelAttention(nn.Module):
     def __init__(self, channel, reduction=16):
@@ -128,6 +129,35 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
+class MambaBlock(nn.Module):
+    def __init__(self, channels: int, d_state: int = 16, d_conv: int = 4, expand: int = 2):
+        super().__init__()
+        self.channels = channels
+        self.norm = nn.LayerNorm(channels)
+
+        self.mamba = Mamba(
+            d_model=channels,
+            d_state=d_state,
+            d_conv=d_conv,
+            expand=expand,
+            bidirectional=True
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        b, c, h, w = x.shape
+
+        x_residual = x
+
+        # (B, C, H, W) -> (B, H*W, C)
+        x_seq = x.flatten(2).transpose(1, 2)
+
+        x_mamba = self.mamba(self.norm(x_seq))
+
+        # (B, H*W, C) -> (B, C, H, W)
+        x_out = x_mamba.transpose(1, 2).reshape(b, c, h, w)
+
+        return x_out + x_residual
+
 class SpatiallyFiLMLayer(nn.Module):
     def __init__(self, feature_channels: int, embed_dim: int):
         super().__init__()
@@ -182,10 +212,8 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.bottleneck = nn.Sequential(
             RetinexBlock(64, 64),
-            # SSMBlock(64),
+            MambaBlock(64),
             CBAM(64)
-            # ECALayer(64)
-            # SEBlock(64)
         )
 
         self.dec2 = UpBlock(64, 32)
