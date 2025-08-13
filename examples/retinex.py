@@ -305,7 +305,6 @@ class MultiScaleRetinexNet(nn.Module):
             RetinexBlock(64, 64),
             # SSMBlock(64),
             # ECALayer(64)
-            # CBAM(64, reduction=16, kernel_size=7),
         )
 
         self.dec2 = UpBlock(64, 32)
@@ -361,6 +360,7 @@ class MultiScaleRetinexNet(nn.Module):
         e2 = self.enc2(e1)
 
         b = self.bottleneck(e2)
+
 
         d2_up = self.dec2(b)
         if d2_up.shape[2:] != e1.shape[2:]:
