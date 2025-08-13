@@ -458,30 +458,27 @@ class IlluminationFrequencyLoss(nn.Module):
         super(IlluminationFrequencyLoss, self).__init__()
 
     @staticmethod
+    def wavelet_decompose(img: Tensor):
+        low = F.avg_pool2d(img, 2)
+        high_h = img[:, :, ::2, ::2] - low
+        high_v = img[:, :, ::2, 1::2] - low
+        high_d = img[:, :, 1::2, 1::2] - low
+        return low, (high_h, high_v, high_d)
+
+    @staticmethod
     def forward(illumination_map: Tensor) -> Tensor:
         if illumination_map.shape[1] > 1:
             illum_gray = torch.mean(illumination_map, dim=1, keepdim=True).squeeze(1)
         else:
             illum_gray = illumination_map.squeeze(1)
 
-        fft_illum = torch.fft.fftshift(torch.fft.rfft2(illum_gray, norm="ortho"))
-        magnitude_illum = torch.log(torch.abs(fft_illum) + 1e-8)
+        low, highs = IlluminationFrequencyLoss.wavelet_decompose(illum_gray)
 
-        H, W = illum_gray.shape[1:]
-        center_h, center_w = H // 2, W // 2
+        high_loss = sum(torch.mean(torch.abs(h)) for h in highs)
+        low_loss = torch.mean(torch.abs(low)) * 0.1
 
-        freq_y = torch.linspace(-center_h, H - center_h - 1, H, device=illum_gray.device) if H % 2 == 0 else torch.linspace(-center_h, H - center_h, H, device=illum_gray.device)
-        freq_x = torch.linspace(0, W // 2, W // 2 + 1, device=illum_gray.device)
+        loss = high_loss - low_loss
 
-        mesh_x, mesh_y = torch.meshgrid(freq_x, freq_y, indexing='xy')
-
-        radius = torch.sqrt(mesh_x**2 + mesh_y**2)
-        max_radius = torch.sqrt(torch.tensor((center_h**2 + (W//2)**2), dtype=torch.float32, device=illum_gray.device))
-        normalized_radius = radius / max_radius
-
-        freq_penalty_mask = normalized_radius
-
-        loss = torch.mean(magnitude_illum * freq_penalty_mask)
         return loss
 
 class EdgeAwareSmoothingLoss(nn.Module):

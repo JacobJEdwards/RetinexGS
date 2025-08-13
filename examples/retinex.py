@@ -6,6 +6,7 @@ from torch.nn import init
 import torch
 import torch.nn.functional as F
 from mamba_ssm import Mamba
+from kornia.filters import gaussian_blur2d
 
 class ChannelAttention(nn.Module):
     def __init__(self, channel, reduction=16):
@@ -14,7 +15,7 @@ class ChannelAttention(nn.Module):
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.fc = nn.Sequential(
             nn.Conv2d(channel, channel // reduction, 1, bias=False),
-            nn.ReLU(inplace=True),
+            nn.SiLU(inplace=True),
             nn.Conv2d(channel // reduction, channel, 1, bias=False)
         )
         self.sigmoid = nn.Sigmoid()
@@ -192,6 +193,25 @@ class FiLMLayer(nn.Module):
 
         return gamma * x + beta
 
+class DenoisingHead(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.enc1 = RetinexBlock(in_channels, 16, stride=2)
+        self.enc2 = RetinexBlock(16, 32, stride=2)
+        self.bottle = RetinexBlock(32, 32)
+        self.dec2 = UpBlock(32, 16)
+        self.dec1 = UpBlock(16, in_channels)
+
+    def forward(self, x):
+        e1 = self.enc1(x)
+        e2 = self.enc2(e1)
+        b = self.bottle(e2)
+        d2 = self.dec2(b)
+        d2 = torch.cat([d2, e1], dim=1) if d2.shape[2:] != e1.shape[2:] else d2  # Skip
+        d1 = self.dec1(d2)
+        d1 = torch.cat([d1, x], dim=1) if d1.shape[2:] != x.shape[2:] else d1  # Skip
+        return d1
+
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
             self,
@@ -200,10 +220,13 @@ class MultiScaleRetinexNet(nn.Module):
             embed_dim: int = 32,
             enable_dynamic_weights: bool = False,
             predictive_adaptive_curve: bool = False,
-            learn_local_exposure: bool = True,
+            learn_local_exposure: bool = False,
             num_weight_scales: int = 11,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
+        self.denoising_head = DenoisingHead(in_channels)
+        self.embed_dim = embed_dim
+
         self.in_conv = RetinexBlock(in_channels, 16)
         self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
 
@@ -225,6 +248,8 @@ class MultiScaleRetinexNet(nn.Module):
         self.dec1_attn = ECALayer(16)
 
         self.out_conv = DepthwiseSeparableConv(16, out_channels, kernel_size=3, padding=1)
+
+        self.nested_dec = RetinexBlock(16, 16)
 
         self.enable_dynamic_weights = enable_dynamic_weights
         self.predictive_adaptive_curve = predictive_adaptive_curve
@@ -250,6 +275,19 @@ class MultiScaleRetinexNet(nn.Module):
         if self.enable_dynamic_weights:
             self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
 
+        self.confidence_head = nn.Sequential(
+            DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv2d(8, 1, kernel_size=1),
+            nn.Sigmoid()
+        )
+
+        self.variance_head = nn.Sequential(
+            DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv2d(8, 1, kernel_size=1)
+        )
+
         self.apply(self._init_weights)
 
     @staticmethod
@@ -263,15 +301,27 @@ class MultiScaleRetinexNet(nn.Module):
             init.constant_(m.bias, 0)
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None,
-    Tensor | None]:
+    Tensor | None, Tensor | None, Tensor | None]:
+        x = self.denoising_head(x)
+
+        b, _ = embedding.shape
+        embed_full = embedding.view(b, self.embed_dim, 1, 1).expand(b, self.embed_dim, x.shape[2], x.shape[3])
+        embed_half = F.avg_pool2d(embed_full, 2)
+        embed_quarter = F.avg_pool2d(embed_half, 2)
+
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
 
+        # e1 = self.enc1(e0_modulated)
+        # e2 = self.enc2(e1)
+
         e1 = self.enc1(e0_modulated)
+        e1 = SpatiallyFiLMLayer(32, self.embed_dim)(e1, embed_half.view(b, self.embed_dim))
+
         e2 = self.enc2(e1)
+        e2 = SpatiallyFiLMLayer(64, self.embed_dim)(e2, embed_quarter.view(b, self.embed_dim))
 
         b = self.bottleneck(e2)
-
 
         d2_up = self.dec2(b)
         if d2_up.shape[2:] != e1.shape[2:]:
@@ -289,7 +339,9 @@ class MultiScaleRetinexNet(nn.Module):
         d1 = self.dec1_conv(d1)
         d1 = self.dec1_attn(d1)
 
-        final_illumination = self.out_conv(d1)
+        d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
+
+        final_illumination = self.out_conv(d1_nested)
 
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
@@ -312,4 +364,7 @@ class MultiScaleRetinexNet(nn.Module):
         else:
             dynamic_weights = None
 
-        return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights
+        confidence_map = self.confidence_head(d1_nested)
+        log_variance_map = self.variance_head(d1_nested)
+
+        return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights, confidence_map, log_variance_map

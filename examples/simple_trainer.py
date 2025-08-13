@@ -447,7 +447,7 @@ class Runner:
 
     def get_retinex_output(
             self, images_ids: Tensor, pixels: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         epsilon = torch.finfo(pixels.dtype).eps
 
         if self.cfg.use_hsv_color_space:
@@ -463,7 +463,7 @@ class Runner:
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        log_illumination_map, alpha, beta, local_exposure, weights = checkpoint(
+        log_illumination_map, alpha, beta, local_exposure, weights, confidence_map, log_variance_map = checkpoint(
             self.retinex_net,
             input_image_for_net,
             retinex_embedding,
@@ -495,6 +495,8 @@ class Runner:
             beta,
             local_exposure,
             weights,
+            confidence_map,
+            log_variance_map
         )
 
     def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int) -> Tensor:
@@ -509,6 +511,8 @@ class Runner:
             beta,
             local_exposure_mean,
             dynamic_weights_from_net,
+            confidence_map,
+            log_variance_map
         ) = self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         global_mean_val_target = torch.sigmoid(self.global_mean_val_param)
 
@@ -908,7 +912,7 @@ class Runner:
                         gt_input_for_net,
                         gt_illumination_map,
                         gt_reflectance_target,
-                        _, _, _, _,
+                        _, _, _, _, _, _
                     ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
 
                 gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1).detach()
