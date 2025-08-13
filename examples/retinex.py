@@ -224,16 +224,14 @@ class MultiScaleRetinexNet(nn.Module):
         self.embed_dim = embed_dim
 
         self.in_conv = RetinexBlock(in_channels, 16)
+
         self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
-        self.film2 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=32)
-        self.film3 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=64)
 
         self.enc1 = RetinexBlock(16, 32, stride=2)
         self.enc2 = RetinexBlock(32, 64, stride=2)
 
         self.bottleneck = nn.Sequential(
             RetinexBlock(64, 64),
-            # MambaBlock(64),
             CBAM(64)
         )
 
@@ -306,13 +304,7 @@ class MultiScaleRetinexNet(nn.Module):
         e0_modulated = self.film1(e0, embedding)
 
         e1 = self.enc1(e0_modulated)
-        e1 = self.film2(e1, embedding)
-
         e2 = self.enc2(e1)
-        e2 = self.film3(e2, embedding)
-
-        # e1 = self.enc1(e0_modulated)
-        # e2 = self.enc2(e1)
 
         b = self.bottleneck(e2)
 
