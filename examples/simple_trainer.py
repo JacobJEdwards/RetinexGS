@@ -683,7 +683,7 @@ class Runner:
                 self.global_mean_val_param.item(),
                 step,
             )
-            if cfg.multi_scale_retinex:
+            if cfg.multi_scale_retinex and cfg.learn_local_exposure:
                 self.writer.add_scalar(
                     "retinex_net/local_mean_val_param",
                     local_exposure_mean.mean().item(),
