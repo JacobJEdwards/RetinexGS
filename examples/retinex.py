@@ -44,7 +44,7 @@ class UpBlock(nn.Module):
         super().__init__()
         self.conv = DepthwiseSeparableConv(in_channels, out_channels * 4, kernel_size=3, padding=1)
         self.shuffle = nn.PixelShuffle(2)
-        self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
+        # self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
         self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:
