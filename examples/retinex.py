@@ -353,7 +353,6 @@ class MultiScaleRetinexNet(nn.Module):
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None,
     Tensor | None]:
-        print("running forward pass retinex")
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
 
@@ -375,6 +374,8 @@ class MultiScaleRetinexNet(nn.Module):
 
         d1 = torch.cat([d1_up, e0_modulated], dim=1)
         d1 = self.dec1_conv(d1)
+
+        print("running forward pass retinex")
 
         final_illumination = self.out_conv(d1)
 
