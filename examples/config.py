@@ -70,18 +70,18 @@ class Config:
     lambda_reflect: float = 1.0
     lambda_illum_curve: float = 1.0
     lambda_illum_exposure: float = 0.0
-    lambda_edge_aware_smooth: float = 20.0
+    lambda_edge_aware_smooth: float = 250.0
     
     lambda_illum_color: float = 0.0
     lambda_illum_exposure_local: float = 0
     lambda_illum_variance: float = 0.0
 
-    lambda_laplacian: float = 0.0
-    lambda_gradient: float = 0.0
-    lambda_frequency: float = 0
-    lambda_illum_frequency: float = 0.0
+    lambda_laplacian: float = 1.0
+    lambda_gradient: float = 1.0
+    lambda_frequency: float = 1.0
+    lambda_illum_frequency: float = 1.0
     lambda_exclusion: float = 1.0
-    lambda_clipping: float = 0.0
+    lambda_clipping: float = 0.1
 
     lambda_vq_commitment: float = 0.0
     lambda_patch_consistency: float = 0.0
