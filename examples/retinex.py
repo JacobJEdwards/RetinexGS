@@ -191,31 +191,6 @@ class FiLMLayer(nn.Module):
 
         return gamma * x + beta
 
-class DenoisingHead(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.enc1 = RetinexBlock(in_channels, 16, stride=2)
-        self.enc2 = RetinexBlock(16, 32, stride=2)
-        self.bottle = RetinexBlock(32, 32)
-
-        self.dec2 = UpBlock(32, 16)
-        self.dec1 = UpBlock(32, in_channels / 2)
-
-    def forward(self, x):
-        e1 = self.enc1(x)
-        e2 = self.enc2(e1)
-        b = self.bottle(e2)
-        d2 = self.dec2(b)
-        if d2.shape[2:] != e1.shape[2:]:
-            d2 = F.interpolate(d2, size=e1.shape[2:], mode='bilinear', align_corners=False)
-        d2 = torch.cat([d2, e1], dim=1)
-        d1 = self.dec1(d2)
-        if d1.shape[2:] != x.shape[2:]:
-            d1 = F.interpolate(d1, size=x.shape[2:], mode='bilinear', align_corners=False)
-        d1 = torch.cat([d1, x], dim=1)
-
-        return d1
-
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
             self,
@@ -228,7 +203,6 @@ class MultiScaleRetinexNet(nn.Module):
             num_weight_scales: int = 11,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
-        self.denoising_head = DenoisingHead(in_channels)
         self.embed_dim = embed_dim
 
         self.in_conv = RetinexBlock(in_channels, 16)
@@ -306,8 +280,6 @@ class MultiScaleRetinexNet(nn.Module):
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None,
     Tensor | None, Tensor | None, Tensor | None]:
-        x = self.denoising_head(x)
-
         b, _ = embedding.shape
         embed_full = embedding.view(b, self.embed_dim, 1, 1).expand(b, self.embed_dim, x.shape[2], x.shape[3])
         embed_half = F.avg_pool2d(embed_full, 2)
