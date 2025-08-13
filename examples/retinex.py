@@ -296,7 +296,7 @@ class MultiScaleRetinexNet(nn.Module):
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
         self.in_conv = RetinexBlock(in_channels, 16)
-        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=16)
+        self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
 
         self.enc1 = RetinexBlock(16, 32, stride=2)
         self.enc2 = RetinexBlock(32, 64, stride=2)
@@ -305,7 +305,7 @@ class MultiScaleRetinexNet(nn.Module):
             RetinexBlock(64, 64),
             # SSMBlock(64),
             # ECALayer(64)
-            # CBAM(64, reduction=16, kernel_size=7),
+            CBAM(64, reduction=16, kernel_size=7),
         )
 
         self.dec2 = UpBlock(64, 32)
