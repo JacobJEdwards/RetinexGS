@@ -32,8 +32,7 @@ class RetinexBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, stride: int = 1):
         super().__init__()
         self.conv = DepthwiseSeparableConv(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
-        # self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
-        self.norm = lambda x: x
+        self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
         self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:
@@ -44,8 +43,7 @@ class UpBlock(nn.Module):
         super().__init__()
         self.conv = DepthwiseSeparableConv(in_channels, out_channels * 4, kernel_size=3, padding=1)
         self.shuffle = nn.PixelShuffle(2)
-        # self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
-        self.norm = lambda x: x
+        self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
         self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:

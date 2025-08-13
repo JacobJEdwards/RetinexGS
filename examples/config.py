@@ -93,15 +93,11 @@ class Config:
     use_hsv_color_space: bool = True
 
     predictive_adaptive_curve: bool = False
-    use_dilated_convs: bool = True
-    use_se_blocks: bool = True
-    enable_dynamic_weights: bool = False 
-    use_pixel_shuffle: bool = True
-    use_stride_conv: bool = True
+    enable_dynamic_weights: bool = False
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
-    learn_local_exposure: bool = True
+    learn_local_exposure: bool = False
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = False
 
