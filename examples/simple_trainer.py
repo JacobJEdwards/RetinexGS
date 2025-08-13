@@ -371,6 +371,14 @@ class Runner:
 
         return illum_map_vis
 
+    def check_tensor(t: torch.Tensor, name: str):
+        """Checks for NaN or Inf in a tensor and prints an error message."""
+        if torch.isnan(t).any() or torch.isinf(t).any():
+            print(f"!!!!!!!!!!\nWARNING: Invalid values (NaN or Inf) found in tensor: {name}\n!!!!!!!!!!")
+            # You can optionally raise an error to stop execution immediately
+            # raise ValueError(f"Invalid values in {name}")
+
+
     def train(self):
         cfg = self.cfg
         device = self.device
