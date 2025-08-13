@@ -9,6 +9,7 @@ import einops
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import tinycudann as tcnn
 
 
 class CrossAttention(nn.Module):
@@ -329,23 +330,54 @@ class PositionalEncoder(nn.Module):
 
 
 class IlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 2, use_appearance_embeds: bool =
-    False, appearance_embedding_dim: int = 32):
+    def __init__(self,
+                 scene_scale: float,
+                 use_hash_grid: bool = True,
+                 num_freqs: int = 4,
+                 hidden_dim: int = 64,
+                 num_layers: int = 2,
+                 use_appearance_embeds: bool = False,
+                 appearance_embedding_dim: int = 32):
         super().__init__()
-        self.encoder = PositionalEncoder(num_freqs)
-        in_dim = 3 * 2 * num_freqs
+        self.scene_scale = scene_scale
+        self.use_hash_grid = use_hash_grid
+        if self.use_hash_grid:
+            per_level_scale = 1.4472692012786865
+            self.encoder = tcnn.Encoding(
+                n_input_dims=3,
+                encoding_config={
+                    "otype": "HashGrid",
+                    "n_levels": 16,
+                    "n_features_per_level": 2,
+                    "log2_hashmap_size": 19,
+                    "base_resolution": 16,
+                    "per_level_scale": per_level_scale,
+                },
+                dtype=torch.float32,
+            )
+            in_dim = self.encoder.n_output_dims
+        else:
+            self.encoder = PositionalEncoder(num_freqs)
+            in_dim = 3 * 2 * num_freqs
+
         if use_appearance_embeds:
             in_dim += appearance_embedding_dim
 
-        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU(inplace=True)]
+        layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
         for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)])
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
         layers.append(nn.Linear(hidden_dim, 6)) # 3 for gain, 3 for gamma
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, x: Tensor, embeds: Tensor | None = None) -> tuple[Tensor, Tensor]:
         # x: [N, 3]
-        encoded_x = self.encoder(x)
+        if self.use_hash_grid:
+            # might need to adjust to scene scale
+            normalized_x = x / (2.0 * self.scene_scale) + 0.5
+            encoded_x = self.encoder(normalized_x)
+        else:
+            encoded_x = self.encoder(x)
+
         if embeds is not None:
             broadcasted_embed = embeds.expand(encoded_x.shape[0], -1)
             mlp_input = torch.cat([encoded_x, broadcasted_embed], dim=-1)
@@ -362,11 +394,32 @@ class IlluminationField(nn.Module):
         return gain, gamma
 
 class DecomposedIlluminationField(nn.Module):
-    def __init__(self, num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 2, ambient_layers: int = 2,
+    def __init__(self,
+                 scene_scale: float,
+                 use_hash_grid: bool = True,
+                 num_freqs: int = 4, hidden_dim: int = 64, num_layers: int = 2, ambient_layers: int = 2,
                  use_appearance_embeds: bool = False, appearance_embedding_dim: int = 32):
         super().__init__()
-        self.encoder = PositionalEncoder(num_freqs)
-        in_dim = 3 * 2 * num_freqs
+        self.use_hash_grid = use_hash_grid
+        self.scene_scale = scene_scale
+        if self.use_hash_grid:
+            per_level_scale = 1.4472692012786865
+            self.encoder = tcnn.Encoding(
+                n_input_dims=3,
+                encoding_config={
+                    "otype": "HashGrid",
+                    "n_levels": 16,
+                    "n_features_per_level": 2,
+                    "log2_hashmap_size": 19,
+                    "base_resolution": 16,
+                    "per_level_scale": per_level_scale,
+                },
+                dtype=torch.float32,
+            )
+            in_dim = self.encoder.n_output_dims
+        else:
+            self.encoder = PositionalEncoder(num_freqs)
+            in_dim = 3 * 2 * num_freqs
 
         if use_appearance_embeds:
             in_dim += appearance_embedding_dim
@@ -385,7 +438,12 @@ class DecomposedIlluminationField(nn.Module):
 
     def forward(self, x: Tensor, return_components: bool=False, embeddings: Tensor | None = None) -> tuple[Tensor,
     Tensor] | tuple:
-        encoded_x = self.encoder(x)
+        if self.use_hash_grid:
+            normalized_x = x / (2.0 * self.scene_scale) + 0.5
+            encoded_x = self.encoder(normalized_x)
+        else:
+            encoded_x = self.encoder(x)
+
         if embeddings is not None:
             broadcasted_embed = embeddings.expand(encoded_x.shape[0], -1)
             encoded_x = torch.cat([encoded_x, broadcasted_embed], dim=-1)

@@ -182,9 +182,11 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         if cfg.decomposed_field:
-            self.illumination_field = DecomposedIlluminationField().to(self.device)
+            self.illumination_field = DecomposedIlluminationField(self.scene_scale).to(self.device)
         else:
-            self.illumination_field = IlluminationField(use_appearance_embeds=cfg.appearance_embeddings).to(self.device)
+            self.illumination_field = IlluminationField(self.scene_scale,
+                                    use_appearance_embeds=cfg.appearance_embeddings).to(
+                self.device)
 
 
         if world_size > 1:
