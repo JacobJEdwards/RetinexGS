@@ -303,8 +303,8 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.bottleneck = nn.Sequential(
             RetinexBlock(64, 64),
-            SSMBlock(64),
-            ECALayer(64)
+            # SSMBlock(64),
+            # ECALayer(64)
         )
 
         self.dec2 = UpBlock(64, 32)
@@ -358,8 +358,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         e1 = self.enc1(e0_modulated)
         e2 = self.enc2(e1)
-
-        print("running forward pass retinex")
 
         b = self.bottleneck(e2)
 
