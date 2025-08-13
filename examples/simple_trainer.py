@@ -28,7 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.rendering_intrinsics import rasterize_intrinsics
+from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss
 from losses import ExclusionLoss
 from utils import IlluminationField, sh_to_rgb
