@@ -361,6 +361,8 @@ class MultiScaleRetinexNet(nn.Module):
 
         b = self.bottleneck(e2)
 
+        print("running forward pass retinex")
+
         d2_up = self.dec2(b)
         if d2_up.shape[2:] != e1.shape[2:]:
             d2_up = F.interpolate(d2_up, size=e1.shape[2:], mode='bilinear', align_corners=False)
@@ -375,7 +377,6 @@ class MultiScaleRetinexNet(nn.Module):
         d1 = torch.cat([d1_up, e0_modulated], dim=1)
         d1 = self.dec1_conv(d1)
 
-        print("running forward pass retinex")
 
         final_illumination = self.out_conv(d1)
 
