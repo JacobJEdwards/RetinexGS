@@ -28,6 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss
 from losses import ExclusionLoss
 from utils import IlluminationField, sh_to_rgb
@@ -281,25 +282,35 @@ class Runner:
         quats = self.splats["quats"]
         scales = torch.exp(self.splats["scales"])
         opacities = torch.sigmoid(self.splats["opacities"])
-
+        rasterize_mode: Literal["antialiased", "classic"] = (
+            "classic"
+        )
         colors_enh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
-        rasterize_mode: Literal["antialiased", "classic"] = (
-           "classic"
-        )
+        view_dirs_input = None
+        if self.cfg.use_view_dirs:
+            cam_origin = camtoworlds.squeeze(0)[:3, 3]
+            view_dirs_input = means - cam_origin
 
+        embeddings_input = None
         image_ids = kwargs.pop("image_ids", None)
         if self.cfg.appearance_embeddings and image_ids is not None:
-            embeddings = self.appearance_embeds(image_ids) if image_ids is not None else None
-        else:
-            embeddings = None
+            embeddings_input = self.appearance_embeds(image_ids)
 
-        gain, gamma = self.illumination_field(means, embeddings)
+        color_A, color_b = self.illumination_field(
+            means,
+            embeds=embeddings_input,
+            view_dirs=view_dirs_input
+        )
+
 
         base_reflectance_sh = colors_enh[:, 0, :] # (N, 3)
         base_reflectance_rgb = sh_to_rgb(base_reflectance_sh)
 
-        final_color_rgb = gain * (torch.clamp(base_reflectance_rgb, 1e-6, 1.0) ** gamma)
+        base_reflectance_rgb_expanded = base_reflectance_rgb.unsqueeze(-1) # -> [N, 3, 1]
+        transformed_color_rgb = torch.bmm(color_A, base_reflectance_rgb_expanded).squeeze(-1) + color_b # -> [N, 3]
+
+        final_color_rgb = torch.sigmoid(transformed_color_rgb)
 
         final_color_sh0 = rgb_to_sh(final_color_rgb)
 
@@ -426,28 +437,83 @@ class Runner:
                 pixels = data["image"].to(device) / 255.0
                 height, width = pixels.shape[1:3]
 
-                for name, param in self.splats.items():
-                    check_tensor(param.data, f"splats.{name}")
-
-                (
-                    renders_enh,
-                    renders_low,
-                    alphas_enh,
-                    alphas_low,
-                    info,
-                ) = self.rasterize_splats(
-                    camtoworlds=camtoworlds,
-                    Ks=Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=sh_degree_to_use,
-                    render_mode="RGB+ED",
-                    image_ids=data["image_id"].to(device),
-                )
-
-                colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
-                colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
+
+                if cfg.use_dual_rasterization:
+
+                    (
+                        renders_enh,
+                        renders_low,
+                        alphas_enh,
+                        alphas_low,
+                        info,
+                    ) = self.rasterize_splats(
+                        camtoworlds=camtoworlds,
+                        Ks=Ks,
+                        width=width,
+                        height=height,
+                        sh_degree=sh_degree_to_use,
+                        render_mode="RGB+ED",
+                        image_ids=data["image_id"].to(device),
+                    )
+
+                    colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
+                    colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
+
+                else:
+                    base_reflectance_sh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
+
+                    intrinsic_maps, render_alpha, info = rasterize_intrinsics(
+                        means=self.splats["means"],
+                        quats=self.splats["quats"],
+                        scales=torch.exp(self.splats["scales"]),
+                        opacities=torch.sigmoid(self.splats["opacities"]),
+                        base_reflectance_sh=base_reflectance_sh,
+                        viewmats=torch.linalg.inv(camtoworlds.float()),
+                        Ks=Ks,
+                        width=width,
+                        height=height,
+                        sh_degree=sh_degree_to_use,
+                    )
+                    reflectance_map = intrinsic_maps["reflectance"]
+                    world_position_map = intrinsic_maps["world_position"]
+                    depth_map = intrinsic_maps["depth"]
+
+                    H, W = height, width
+
+                    points_3d_world_flat = world_position_map.view(-1, 3)
+                    embeddings_input = None
+                    if self.cfg.appearance_embeddings:
+                        image_ids = data["image_id"].to(device)
+                        embeddings_input = self.appearance_embeds(image_ids).expand(H*W, -1)
+
+                    view_dirs_input = None
+                    if self.cfg.use_view_dirs:
+                        cam_origin = camtoworlds.squeeze(0)[:3, 3]
+                        view_dirs_input = points_3d_world_flat - cam_origin
+
+                    illum_A, illum_b = self.illumination_field(
+                        points_3d_world_flat,
+                        embeds=embeddings_input
+                        , view_dirs=view_dirs_input
+                    )
+
+                    illum_A_map = illum_A.view(1, H, W, 3, 3)
+                    illum_b_map = illum_b.view(1, H, W, 3)
+
+                    gray_color = torch.full_like(reflectance_map, 0.5)
+                    illum_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, gray_color) + illum_b_map
+                    illum_map_for_loss = torch.sigmoid(illum_color_map)
+
+                    final_color_map = torch.einsum(
+                        'bhwij,bhwj->bhwi',
+                        illum_A_map,
+                        reflectance_map
+                    ) + illum_b_map
+                    final_color_map = torch.sigmoid(final_color_map)
+
+                    colors_low = final_color_map
+                    colors_enh = reflectance_map
 
                 info["means2d"].retain_grad()
 
@@ -464,17 +530,16 @@ class Runner:
                 if cfg.lambda_illum_smoothness > 0:
                     with torch.no_grad():
                         rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
-                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3 # Small random vector
+                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
                         perturbed_points = rand_points + perturbation
 
-                    gain, gamma = self.illumination_field(rand_points)
-                    gain_perturbed, gamma_perturbed = self.illumination_field(perturbed_points)
+                    color_A, color_b = self.illumination_field(rand_points)
+                    color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
 
-                    grad_approx_gain = gain - gain_perturbed
-                    grad_approx_gamma = gamma - gamma_perturbed
+                    loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean() # Frobenius norm for matrices
+                    loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
 
-                    loss_illum_smoothness = grad_approx_gain.norm(dim=-1).mean() + grad_approx_gamma.norm(dim=-1).mean()
-
+                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 # exclusion loss for illumination field
@@ -490,20 +555,35 @@ class Runner:
 
                     points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam)
 
-                if cfg.appearance_embeddings:
-                    embeddings = self.appearance_embeds(data["image_id"].to(device)) if "image_id" in data else None
+                if cfg.use_dual_rasterization:
+
+                    if cfg.appearance_embeddings:
+                        embeddings = self.appearance_embeds(data["image_id"].to(device)) if "image_id" in data else None
+                    else:
+                        embeddings = None
+
+                    num_points = points_3d_world.view(-1, 3).shape[0]
+                    if embeddings is not None:
+                        embeddings = embeddings.expand(num_points, -1)
+
+                    illum_A, illum_b = self.illumination_field(points_3d_world.view(-1, 3), embeddings) # A:[H*W,3,3], b:[H*W,3]
+                    gray_color = torch.full((num_points, 3, 1), 0.5, device=device)
+                    illum_color = torch.bmm(illum_A, gray_color).squeeze(-1) + illum_b
+                    illum_map = torch.clamp(illum_color, 0.0, 1.0).reshape(1, H, W, 3).permute(0, 3, 1, 2)
+
+                    reflectance_map = renders_enh[..., :3]
+
+                    if cfg.lambda_exclusion > 0.0:
+                        loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
+                        loss += cfg.lambda_exclusion * loss_exclusion
                 else:
-                    embeddings = None
+                    illum_map = illum_map_for_loss
 
-                gain_map, gamma_map = self.illumination_field(points_3d_world.view(-1, 3), embeddings) # [H*W, 3] each
-
-
-                illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
-                reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
-
-                if cfg.lambda_exclusion > 0.0:
-                    loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
-                    loss += cfg.lambda_exclusion * loss_exclusion
+                    if cfg.lambda_exclusion > 0.0:
+                        loss_exclusion = self.loss_exclusion(
+                            reflectance_map, illum_map
+                        )
+                        loss += cfg.lambda_exclusion * loss_exclusion
 
                 if cfg.lambda_tv_loss > 0.0:
                     loss_illum_tv = self.loss_tv(illum_map)

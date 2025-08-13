@@ -332,15 +332,19 @@ class PositionalEncoder(nn.Module):
 class IlluminationField(nn.Module):
     def __init__(self,
                  scene_scale: float,
-                 use_hash_grid: bool = True,
                  num_freqs: int = 4,
+                 dir_num_freqs: int = 4,
                  hidden_dim: int = 64,
                  num_layers: int = 2,
+                 use_hash_grid: bool = True,
+                 use_view_dirs: bool = True,
                  use_appearance_embeds: bool = False,
                  appearance_embedding_dim: int = 32):
         super().__init__()
         self.scene_scale = scene_scale
         self.use_hash_grid = use_hash_grid
+        self.use_view_dirs = use_view_dirs
+
         if self.use_hash_grid:
             per_level_scale = 1.4472692012786865
             self.encoder = tcnn.Encoding(
@@ -360,16 +364,26 @@ class IlluminationField(nn.Module):
             self.encoder = PositionalEncoder(num_freqs)
             in_dim = 3 * 2 * num_freqs
 
+        if self.use_view_dirs:
+            self.dir_encoder = PositionalEncoder(dir_num_freqs)
+            in_dim += 3 * 2 * dir_num_freqs
+
         if use_appearance_embeds:
             in_dim += appearance_embedding_dim
 
         layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
-        layers.append(nn.Linear(hidden_dim, 6)) # 3 for gain, 3 for gamma
+
+        layers.append(nn.Linear(hidden_dim, 12)) # 3x3 matrix and 3 vector bias
         self.mlp = nn.Sequential(*layers)
 
-    def forward(self, x: Tensor, embeds: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        with torch.no_grad():
+            self.mlp[-1].weight.data.normal_(0.0, 1e-4)
+            self.mlp[-1].bias.data.zero_()
+
+    def forward(self, x: Tensor, embeds: Tensor | None = None, view_dirs: Tensor | None = None) -> tuple[Tensor,
+    Tensor]:
         # x: [N, 3]
         if self.use_hash_grid:
             normalized_x = x / (2.0 * self.scene_scale) + 0.5
@@ -378,17 +392,25 @@ class IlluminationField(nn.Module):
         else:
             encoded_x = self.encoder(x)
 
+        mlp_input = [encoded_x]
+
+        if self.use_view_dirs and view_dirs is not None:
+            encoded_dirs = self.dir_encoder(F.normalize(view_dirs, dim=-1))
+            mlp_input.append(encoded_dirs)
+
         if embeds is not None:
-            broadcasted_embed = embeds.expand(encoded_x.shape[0], -1)
-            mlp_input = torch.cat([encoded_x, broadcasted_embed], dim=-1)
-        else:
-            mlp_input = encoded_x
+            num_points = x.shape[0]
+            broadcasted_embeds = embeds.expand(num_points, -1)
+            mlp_input.append(broadcasted_embeds)
 
-        params = self.mlp(mlp_input) # [N, 6]
+        mlp_input_tensor = torch.cat(mlp_input, dim=-1)
+        params = self.mlp(mlp_input_tensor)
 
-        gain, gamma = torch.chunk(params, 2, dim=-1)
+        matrix_A_flat = params[..., :9]
+        bias_b = params[..., 9:]
 
-        gain = torch.sigmoid(gain)
-        gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
+        num_points = x.shape[0]
+        identity = torch.eye(3, device=x.device).unsqueeze(0).expand(num_points, -1, -1)
+        matrix_A = matrix_A_flat.view(num_points, 3, 3) + identity
 
-        return gain, gamma
+        return matrix_A, bias_b

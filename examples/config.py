@@ -65,6 +65,9 @@ class Config:
     appearance_embeddings: bool = False
     appearance_embedding_dim: int = 32
 
+    use_view_dirs: bool = True
+    use_dual_rasterization: bool = False
+
     postfix = "_variance"
 
     lambda_illum_smoothness: float = 0.01
