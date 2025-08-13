@@ -420,6 +420,9 @@ class Runner:
                 pixels = data["image"].to(device) / 255.0
                 height, width = pixels.shape[1:3]
 
+                for name, param in self.splats.items():
+                    check_tensor(param.data, f"splats.{name}")
+
                 (
                     renders_enh,
                     renders_low,
@@ -496,7 +499,6 @@ class Runner:
 
                 gain_map, gamma_map = self.illumination_field(points_3d_world.view(-1, 3), embeddings) # [H*W, 3] each
 
-                print("all good")
 
                 illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
                 reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
