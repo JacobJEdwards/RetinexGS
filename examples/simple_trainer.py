@@ -462,7 +462,7 @@ class Runner:
 
                 loss = low_loss
 
-                # # smoothness loss for illumination field
+                # smoothness loss for illumination field
                 # if cfg.lambda_illum_smoothness > 0:
                 #     rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
                 #     rand_points.requires_grad = True
@@ -486,48 +486,48 @@ class Runner:
                 #
                 #         loss_illum_smoothness = d_gain.norm(2, dim=-1).mean() + d_gamma.norm(2, dim=-1).mean()
                 #     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
-                #
-                # # exclusion loss for illumination field
-                # with torch.no_grad():
-                #     depth = renders_low[..., 3:4].detach()
-                #     H, W = depth.shape[1:3]
-                #
-                #     grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device)
-                #
-                #     points_3d_cam = kornia.geometry.depth.unproject_points(
-                #         grid, depth, Ks
-                #     )
-                #
-                #     points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam)
-                #
-                # if cfg.appearance_embeddings:
-                #     embeddings = self.appearance_embeds(data["image_id"].to(device)) if "image_id" in data else None
-                # else:
-                #     embeddings = None
-                #
-                # gain_map, gamma_map = self.illumination_field(points_3d_world.view(-1, 3), embeddings) # [H*W, 3] each
-                #
-                #
-                # illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
-                # reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
-                #
-                # if cfg.lambda_exclusion > 0.0:
-                #     loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
-                #     loss += cfg.lambda_exclusion * loss_exclusion
-                #
-                # if cfg.lambda_tv_loss > 0.0:
-                #     loss_illum_tv = self.loss_tv(illum_map)
-                #     loss += cfg.lambda_tv_loss * loss_illum_tv
-                #
-                # if cfg.lambda_shn_reg > 0.0:
-                #     loss_shn_reg = self.splats["shN"].pow(2).mean()
-                #     loss += cfg.lambda_shn_reg * loss_shn_reg
-                #
-                #
-                # if cfg.lambda_gray_world > 0.0:
-                #     reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
-                #     loss_gray_world = (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
-                #     loss += cfg.lambda_gray_world * loss_gray_world
+
+                # exclusion loss for illumination field
+                with torch.no_grad():
+                    depth = renders_low[..., 3:4].detach()
+                    H, W = depth.shape[1:3]
+
+                    grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device)
+
+                    points_3d_cam = kornia.geometry.depth.unproject_points(
+                        grid, depth, Ks
+                    )
+
+                    points_3d_world = kornia.geometry.transform_points(camtoworlds, points_3d_cam)
+
+                if cfg.appearance_embeddings:
+                    embeddings = self.appearance_embeds(data["image_id"].to(device)) if "image_id" in data else None
+                else:
+                    embeddings = None
+
+                gain_map, gamma_map = self.illumination_field(points_3d_world.view(-1, 3), embeddings) # [H*W, 3] each
+
+
+                illum_map = gain_map.reshape(1, H, W, 3).permute(0, 3, 1, 2) # [1, 3, H, W]
+                reflectance_map = renders_enh[..., :3].permute(0, 3, 1, 2)
+
+                if cfg.lambda_exclusion > 0.0:
+                    loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
+                    loss += cfg.lambda_exclusion * loss_exclusion
+
+                if cfg.lambda_tv_loss > 0.0:
+                    loss_illum_tv = self.loss_tv(illum_map)
+                    loss += cfg.lambda_tv_loss * loss_illum_tv
+
+                if cfg.lambda_shn_reg > 0.0:
+                    loss_shn_reg = self.splats["shN"].pow(2).mean()
+                    loss += cfg.lambda_shn_reg * loss_shn_reg
+
+
+                if cfg.lambda_gray_world > 0.0:
+                    reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
+                    loss_gray_world = (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
+                    loss += cfg.lambda_gray_world * loss_gray_world
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -576,13 +576,13 @@ class Runner:
                             colors_enh.permute(0, 3, 1, 2),
                             step,
                         )
-                        # vis_illum_map = illum_map
-                        #
-                        # if vis_illum_map.shape[1] == 1:
-                        #     vis_illum_map = vis_illum_map.repeat(1, 3, 1, 1)
-                        #
-                        # if vis_illum_map.shape[1] == 3:
-                        #     self.writer.add_images("train/illum_map_visualization", vis_illum_map, step)
+                        vis_illum_map = illum_map
+
+                        if vis_illum_map.shape[1] == 1:
+                            vis_illum_map = vis_illum_map.repeat(1, 3, 1, 1)
+
+                        if vis_illum_map.shape[1] == 3:
+                            self.writer.add_images("train/illum_map_visualization", vis_illum_map, step)
 
                 self.writer.flush()
 
