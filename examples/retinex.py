@@ -205,9 +205,13 @@ class DenoisingHead(nn.Module):
         e2 = self.enc2(e1)
         b = self.bottle(e2)
         d2 = self.dec2(b)
-        d2 = torch.cat([d2, e1], dim=1) if d2.shape[2:] != e1.shape[2:] else d2  # Skip
+        if d2.shape[2:] != e1.shape[2:]:
+            d2 = F.interpolate(d2, size=e1.shape[2:], mode='bilinear', align_corners=False)
+        d2 = torch.cat([d2, e1], dim=1)
         d1 = self.dec1(d2)
-        d1 = torch.cat([d1, x], dim=1) if d1.shape[2:] != x.shape[2:] else d1  # Skip
+        if d1.shape[2:] != x.shape[2:]:
+            d1 = F.interpolate(d1, size=x.shape[2:], mode='bilinear', align_corners=False)
+        d1 = torch.cat([d1, x], dim=1)
         return d1
 
 class MultiScaleRetinexNet(nn.Module):
