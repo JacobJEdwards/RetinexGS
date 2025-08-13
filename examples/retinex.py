@@ -82,13 +82,18 @@ class RetinexBlock(nn.Module):
 class UpBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
-        self.conv = DepthwiseSeparableConv(in_channels, out_channels * 4, kernel_size=3, padding=1)
-        self.shuffle = nn.PixelShuffle(2)
-        self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
-        self.act = nn.SiLU()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.conv = DepthwiseSeparableConv(in_channels, out_channels, kernel_size=3, padding=1)
+        # self.conv = DepthwiseSeparableConv(in_channels, out_channels * 4, kernel_size=3, padding=1)
+        # self.shuffle = nn.PixelShuffle(2)
+        # self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
+        # self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.act(self.norm(self.shuffle(self.conv(x))))
+        # return self.act(self.norm(self.shuffle(self.conv(x))))
+        x = self.upsample(x)
+        x = self.conv(x)
+        return x
 
 class ECALayer(nn.Module):
     def __init__(self, channels, gamma=2, b=1):
