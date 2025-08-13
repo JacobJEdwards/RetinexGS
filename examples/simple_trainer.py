@@ -545,7 +545,7 @@ class Runner:
             align_corners=False
         )
 
-        loss_reflectance_spa = torch.mean(confidence_map * org_loss_reflectance_spa_map)
+        loss_reflectance_spa = torch.mean(confidence_map * resized_spa_map)
 
         loss_laplacian_val = torch.mean(
             torch.abs(
