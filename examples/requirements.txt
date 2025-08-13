@@ -25,5 +25,3 @@ splines
 kornia
 piq
 einops
-mamba-ssm
-causal-conv1d

@@ -5,8 +5,6 @@ from torch import Tensor
 from torch.nn import init
 import torch
 import torch.nn.functional as F
-from mamba_ssm import Mamba
-from kornia.filters import gaussian_blur2d
 
 class ChannelAttention(nn.Module):
     def __init__(self, channel, reduction=16):
@@ -136,13 +134,13 @@ class MambaBlock(nn.Module):
         self.channels = channels
         self.norm = nn.LayerNorm(channels)
 
-        self.mamba = Mamba(
-            d_model=channels,
-            d_state=d_state,
-            d_conv=d_conv,
-            expand=expand,
-            bidirectional=True
-        )
+        # self.mamba = Mamba(
+        #     d_model=channels,
+        #     d_state=d_state,
+        #     d_conv=d_conv,
+        #     expand=expand,
+        #     bidirectional=True
+        # )
 
     def forward(self, x: Tensor) -> Tensor:
         b, c, h, w = x.shape
@@ -235,7 +233,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.bottleneck = nn.Sequential(
             RetinexBlock(64, 64),
-            MambaBlock(64),
+            # MambaBlock(64),
             CBAM(64)
         )
 
