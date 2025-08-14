@@ -383,7 +383,7 @@ class IlluminationField(nn.Module):
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
 
-        output_dim = latent_dim if self.use_color_mlp else 12
+        output_dim = latent_dim if self.use_colour_mlp else 12
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.mlp = nn.Sequential(*layers)
 
