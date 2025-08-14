@@ -68,7 +68,7 @@ class Config:
     use_view_dirs: bool = True
     use_dual_rasterization: bool = False
 
-    postfix = "_multiexposure"
+    postfix = "_contrast"
 
     lambda_illum_smoothness: float = 0.01
     lambda_exclusion: float = 0.01
