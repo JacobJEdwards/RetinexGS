@@ -551,16 +551,20 @@ class Runner:
 
                 if cfg.lambda_illum_smoothness > 0:
                     if cfg.use_gradient_aware_loss:
-                        img_grads = kornia.filters.spatial_gradient(pixels.permute(0, 3, 1, 2), order=1) # [B, C, 2, H, W]
-                        grad_mag = torch.norm(img_grads, dim=2).sum(dim=1, keepdim=True) # [B, 1, H, W]
 
-                        smooth_mask = (grad_mag < 0.1).float()
+                        img_grads = kornia.filters.spatial_gradient(pixels.permute(0, 3, 1, 2), order=1)
+                        grad_mag = torch.norm(img_grads, dim=2).sum(dim=1)  # Shape: [B, H, W]
 
-                        illum_tv_h = torch.pow(illum_map[:, :, 1:, :] - illum_map[:, :, :-1, :], 2)
-                        illum_tv_w = torch.pow(illum_map[:, :, :, 1:] - illum_map[:, :, :, :-1], 2)
+                        smooth_mask = torch.exp(-2.0 * grad_mag).unsqueeze(-1)  # Shape: [B, H, W, 1]
 
-                        loss_illum_smoothness = (torch.mean(illum_tv_h * smooth_mask[:, :, 1:, :]) +
-                                                 torch.mean(illum_tv_w * smooth_mask[:, :, :, 1:]))
+                        illum_map_diff_h = illum_map[:, 1:, :, :] - illum_map[:, :-1, :, :]
+                        illum_map_diff_w = illum_map[:, :, 1:, :] - illum_map[:, :, :-1, :]
+
+                        loss_h = (torch.pow(illum_map_diff_h, 2) * smooth_mask[:, :-1, :, :]).mean()
+                        loss_w = (torch.pow(illum_map_diff_w, 2) * smooth_mask[:, :, :-1, :]).mean()
+
+                        loss_illum_smoothness = loss_h + loss_w
+
                     else:
                         with torch.no_grad():
                             rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
