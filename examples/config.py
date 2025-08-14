@@ -66,19 +66,19 @@ class Config:
     appearance_embedding_dim: int = 32
 
     use_view_dirs: bool = True
-    use_normals: bool = False
+    use_normals: bool = True
     use_dual_rasterization: bool = False
-    use_camera_response_network: bool = False
-    use_gradient_aware_loss: bool = True
+    use_camera_response_network: bool = True
+    use_gradient_aware_loss: bool = False
 
     postfix = "_multiexposure"
 
-    lambda_illum_smoothness: float = 0.01
-    lambda_exclusion: float = 0.01
-    lambda_reflectance_reg: float = 0.1
-    lambda_shn_reg: float = 0.0
-    lambda_gray_world: float = 0.0
-    lambda_tv_loss = 0.1
+    lambda_illum_smoothness: float = 0.00
+    lambda_exclusion: float = 1.0
+    lambda_reflectance_reg: float = 1.0
+    lambda_shn_reg: float = 1.0
+    lambda_gray_world: float = 1.0
+    lambda_tv_loss = 1.0
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
