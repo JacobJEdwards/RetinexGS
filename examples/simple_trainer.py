@@ -453,6 +453,8 @@ class Runner:
                     colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
                     colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
 
+                    depth = renders_low[..., 3:4].detach()
+
                 else:
                     base_reflectance_sh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
@@ -470,7 +472,7 @@ class Runner:
                     )
                     reflectance_map = intrinsic_maps["reflectance"]
                     world_position_map = intrinsic_maps["world_position"]
-                    depth_map = intrinsic_maps["depth"]
+                    depth = intrinsic_maps["depth"]
 
                     H, W = height, width
 
@@ -537,7 +539,6 @@ class Runner:
 
                 # exclusion loss for illumination field
                 with torch.no_grad():
-                    depth = renders_low[..., 3:4].detach()
                     H, W = depth.shape[1:3]
 
                     grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(device)
