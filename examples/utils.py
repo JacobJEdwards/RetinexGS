@@ -404,7 +404,7 @@ class IlluminationField(nn.Module):
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
 
-        output_dim = 12
+        output_dim = 12 # 9 for matrix A (3x3) and 3 for bias b
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.mlp = nn.Sequential(*layers)
 
@@ -461,3 +461,25 @@ class IlluminationField(nn.Module):
         matrix_A = matrix_A_flat.view(num_points, 3, 3) + identity
 
         return matrix_A, bias_b
+
+class CameraResponseNet(nn.Module):
+    def __init__(self, embedding_dim, hidden_dim=32):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(embedding_dim, hidden_dim),
+            nn.SiLU(inplace=True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(inplace=True),
+            nn.Linear(hidden_dim, 6)  # 3 for scale, 3 for shift
+        )
+
+        with torch.no_grad():
+            self.mlp[-1].weight.zero_()
+            self.mlp[-1].bias.zero_()
+            self.mlp[-1].bias.data[:3] = 1.0
+
+    def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor]:
+        # embedding: [B, D_embed]
+        params = self.mlp(embedding) # [B, 6]
+        scale, shift = params.split(3, dim=-1) # 2 x [B, 3]
+        return scale, shift

@@ -28,6 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss
 from losses import ExclusionLoss
@@ -189,6 +190,7 @@ class Runner:
                                                     ).to(
             self.device)
 
+
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
@@ -196,7 +198,13 @@ class Runner:
             self.illumination_field.parameters(), lr=1e-4
         )
 
-        if cfg.appearance_embeddings:
+        if cfg.use_camera_response_network:
+            self.camera_reponse_net = CameraResponseNet(embedding_dim=cfg.appearance_embedding_dim)
+            self.camera_reponse_optimizer = torch.optim.AdamW(
+                self.camera_reponse_net.parameters(), lr=1e-4
+            )
+
+        if cfg.appearance_embeddings or cfg.use_camera_response_network:
             num_train_images = len(self.trainset)
             self.appearance_embeds = torch.nn.Embedding(num_train_images,cfg.appearance_embedding_dim).to(self.device)
             self.appearance_embeds_optimizer = torch.optim.AdamW(
@@ -411,6 +419,11 @@ class Runner:
                 ExponentialLR(self.appearance_embeds_optimizer, gamma=0.01 ** (1.0 / max_steps))
             )
 
+        if cfg.use_camera_response_network:
+            schedulers.append(
+                ExponentialLR(self.camera_reponse_optimizer, gamma=0.01 ** (1.0 / max_steps))
+            )
+
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
             batch_size=cfg.batch_size,
@@ -506,20 +519,28 @@ class Runner:
                         view_dirs_input = points_3d_world_flat - cam_origin
 
                     illum_A, illum_b = self.illumination_field(
-                        points_3d_world_flat, embeds=embeddings_input, view_dirs=view_dirs_input,
+                        points_3d_world_flat, embeds=embeddings_input if not cfg.use_camera_response_network else None,
+                        view_dirs=view_dirs_input,
                         normals=world_normals_flat,
                     )
 
                     illum_A_map = illum_A.view(1, height, width, 3, 3)
                     illum_b_map = illum_b.view(1, height, width, 3)
 
-                    final_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
+                    if cfg.use_camera_response_network:
+                        scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
+
+                        image_ids = data["image_id"].to(device)
+                        embedding = self.appearance_embeds(image_ids)
+                        cam_scale, cam_shift = self.camera_reponse_net(embedding)
+
+                        final_color_map = cam_scale[:, None, None, :] * scene_lit_color_map + cam_shift[:, None, None, :]
+
+                    colors_low = torch.sigmoid(final_color_map)
 
                     gray_color = torch.full_like(reflectance_map, 0.5)
                     illum_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, gray_color) + illum_b_map
                     illum_map = torch.sigmoid(illum_color_map)
-
-                    colors_low = torch.sigmoid(final_color_map)
 
                 info["means2d"].retain_grad()
 
@@ -649,6 +670,12 @@ class Runner:
                              "illumination_field": self.illumination_field.state_dict(),
                              "stats": stats_save}
 
+                if cfg.appearance_embeddings:
+                    data_save["appearance_embeds"] = self.appearance_embeds.state_dict()
+
+                if cfg.use_camera_response_network:
+                    data_save["camera_reponse_net"] = self.camera_reponse_net.state_dict()
+
                 torch.save(
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
                 )
@@ -679,6 +706,10 @@ class Runner:
             if cfg.appearance_embeddings:
                 self.appearance_embeds_optimizer.step()
                 self.appearance_embeds_optimizer.zero_grad()
+
+            if cfg.use_camera_response_network:
+                self.camera_reponse_optimizer.step()
+                self.camera_reponse_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()

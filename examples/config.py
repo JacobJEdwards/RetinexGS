@@ -68,6 +68,7 @@ class Config:
     use_view_dirs: bool = True
     use_normals: bool = True
     use_dual_rasterization: bool = False
+    use_camera_response_network: bool = False
 
     postfix = "_variance"
 
