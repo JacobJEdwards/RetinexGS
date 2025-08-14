@@ -199,7 +199,7 @@ class Runner:
         )
 
         if cfg.use_camera_response_network:
-            self.camera_reponse_net = CameraResponseNet(embedding_dim=cfg.appearance_embedding_dim)
+            self.camera_reponse_net = CameraResponseNet(embedding_dim=cfg.appearance_embedding_dim).to(self.device)
             self.camera_reponse_optimizer = torch.optim.AdamW(
                 self.camera_reponse_net.parameters(), lr=1e-4
             )
