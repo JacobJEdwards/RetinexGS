@@ -183,13 +183,11 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.illumination_field = IlluminationField(self.scene_scale,
-                                use_appearance_embeds=cfg.appearance_embeddings,
-                                                    use_view_dirs=cfg.use_view_dirs,
-                                                    use_normals= cfg.use_normals,
-                                                    ).to(
-            self.device)
-
+        self.illumination_field = IlluminationField(
+            self.scene_scale,
+            use_view_dirs=cfg.use_view_dirs,
+            use_normals=cfg.use_normals
+        ).to(self.device)
 
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
