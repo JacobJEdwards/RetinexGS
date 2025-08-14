@@ -511,7 +511,9 @@ class Runner:
                     embeddings_input = None
                     if cfg.appearance_embeddings:
                         image_ids = data["image_id"].to(device)
-                        embeddings_input = self.appearance_embeds(image_ids).expand(height * width, -1)
+                        embeddings_input = self.appearance_embeds(image_ids)
+                        if not cfg.use_camera_response_network:
+                            embeddings_input = embeddings_input.expand(height * width, -1)
 
                     view_dirs_input = None
                     if cfg.use_view_dirs:
@@ -527,14 +529,16 @@ class Runner:
                     illum_A_map = illum_A.view(1, height, width, 3, 3)
                     illum_b_map = illum_b.view(1, height, width, 3)
 
-                    if cfg.use_camera_response_network:
-                        scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
+                    scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
 
+                    if cfg.use_camera_response_network:
                         image_ids = data["image_id"].to(device)
                         embedding = self.appearance_embeds(image_ids)
                         cam_scale, cam_shift = self.camera_reponse_net(embedding)
 
                         final_color_map = cam_scale[:, None, None, :] * scene_lit_color_map + cam_shift[:, None, None, :]
+                    else:
+                        final_color_map = scene_lit_color_map
 
                     colors_low = torch.sigmoid(final_color_map)
 
@@ -763,48 +767,103 @@ class Runner:
             torch.cuda.synchronize()
             tic = time.time()
 
-            renders_enh, renders_low, alphas_enh, alphas_low, info = self.rasterize_splats(
-                camtoworlds=camtoworlds,
-                Ks=Ks,
-                width=width,
-                height=height,
-                sh_degree=cfg.sh_degree,
-                near_plane=cfg.near_plane,
-                far_plane=cfg.far_plane,
-                masks=masks,
-                image_ids=data["image_id"].to(device),
-                render_mode="RGB+ED",
-            )
+            if cfg.use_dual_rasterization:
+                renders_enh, renders_low, _, _, _ = self.rasterize_splats(
+                    camtoworlds=camtoworlds,
+                    Ks=Ks,
+                    width=width,
+                    height=height,
+                    sh_degree=cfg.sh_degree,
+                    near_plane=cfg.near_plane,
+                    far_plane=cfg.far_plane,
+                    masks=masks,
+                    image_ids=data["image_id"].to(device),
+                    render_mode="RGB+ED",
+                )
+
+                colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
+                colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
+
+            else:
+                base_reflectance_sh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
+                intrinsic_maps, _, info = rasterize_intrinsics(
+                    means=self.splats["means"],
+                    quats=self.splats["quats"],
+                    scales=torch.exp(self.splats["scales"]),
+                    opacities=torch.sigmoid(self.splats["opacities"]),
+                    base_reflectance_sh=base_reflectance_sh,
+                    viewmats=torch.linalg.inv(camtoworlds.float()),
+                    Ks=Ks,
+                    width=width,
+                    height=height,
+                    sh_degree=cfg.sh_degree,
+                )
+                reflectance_map = intrinsic_maps["reflectance"]
+                world_position_map = intrinsic_maps["world_position"]
+                world_normal_map = intrinsic_maps["world_normal"]
+                points_3d_world_flat = world_position_map.view(-1, 3)
+                world_normals_flat = world_normal_map.view(-1, 3)
+                embeddings_input = None
+                if cfg.appearance_embeddings:
+                    image_ids = data["image_id"].to(device)
+                    embeddings_input = self.appearance_embeds(image_ids)
+                    if not cfg.use_camera_response_network:
+                        embeddings_input = embeddings_input.expand(height * width, -1)
+                view_dirs_input = None
+                if cfg.use_view_dirs:
+                    cam_origin = camtoworlds.squeeze(0)[:3, 3]
+                    view_dirs_input = points_3d_world_flat - cam_origin
+                illum_A, illum_b = self.illumination_field(
+                    points_3d_world_flat, embeds=embeddings_input if not cfg.use_camera_response_network else None,
+                    view_dirs=view_dirs_input,
+                    normals=world_normals_flat,
+                )
+                illum_A_map = illum_A.view(1, height, width, 3, 3)
+                illum_b_map = illum_b.view(1, height, width, 3)
+                scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
+                if cfg.use_camera_response_network:
+                    image_ids = data["image_id"].to(device)
+                    embedding = self.appearance_embeds(image_ids)
+                    cam_scale, cam_shift = self.camera_reponse_net(embedding)
+                    final_color_map = cam_scale[:, None, None, :] * scene_lit_color_map + cam_shift[:, None, None, :]
+                else:
+                    final_color_map = scene_lit_color_map
+
+                colors_low = torch.sigmoid(final_color_map)
+                colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
-            colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
-            colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
-
-            depths_enh = renders_enh[..., 3:]
-            depths_low = renders_low[..., 3:]
-
             if world_rank == 0:
+                pixels_p = pixels.permute(0, 3, 1, 2)
+                colors_p = colors_low.permute(0, 3, 1, 2)
+                colors_enh_p = colors_enh.permute(0, 3, 1, 2)
+
                 canvas_list_low = [pixels, colors_low]
-                canvas_list_enh = [pixels, colors_enh]
 
                 canvas_eval_low = (
                     torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
                 )
                 canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
 
+                canvas_list_enh = [pixels, colors_enh]
                 canvas_eval_enh = (
                     torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
                 )
-                canvas_eval_enh = (canvas_eval_enh * 255).astype(np.uint8)
 
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_step{step}_low_{i:04d}.png",
                     canvas_eval_low,
                 )
 
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
+                    (canvas_eval_enh * 255).astype(np.uint8),
+                )
+
                 colors_low_np = colors_low.squeeze(0).cpu().numpy()
+                colors_enh_np = colors_enh.squeeze(0).cpu().numpy()
 
                 imageio.imwrite(
                     f"{self.render_dir}/{stage}_low_{i:04d}.png",
@@ -812,48 +871,17 @@ class Runner:
                 )
 
                 imageio.imwrite(
-                    f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
-                    canvas_eval_enh,
-                )
-                colors_enh_np = colors_enh.squeeze().cpu().numpy()
-                imageio.imwrite(
                     f"{self.render_dir}/{stage}_enh_{i:04d}.png",
                     (colors_enh_np * 255).astype(np.uint8),
                 )
-
-                pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_p = colors_low.permute(0, 3, 1, 2)
-
-                # illumination_map_hwc = self.visualize_illumination_field(
-                #     depths_low,
-                #     camtoworlds,
-                #     Ks,
-                #     image_ids=data["image_id"].to(device) if "image_id" in data else None,
-                # )
-                #
-                # imageio.imwrite(
-                #     f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
-                #     (torch.clamp(illumination_map_hwc, 0.0, 1.0).cpu().numpy() * 255).astype(np.uint8),
-                # )
-                #
-                # reflectance_map_bhwc = pixels / (illumination_map_hwc.unsqueeze(0) + 1e-8)
-                # reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0)
-                #
-                # imageio.imwrite(
-                #     f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
-                #     (reflectance_map_bhwc.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
-                # )
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
                 metrics["lpips"].append(self.lpips(colors_p, pixels_p))
 
-                with torch.no_grad():
-                    colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-
-                    metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
-                    metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
-                    metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
+                metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
+                metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
+                metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
 
         if world_rank == 0:
             avg_ellipse_time = (
