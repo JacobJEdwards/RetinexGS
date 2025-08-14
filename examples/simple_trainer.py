@@ -199,9 +199,9 @@ class Runner:
         )
 
         if cfg.use_camera_response_network:
-            self.camera_reponse_net = CameraResponseNet(embedding_dim=cfg.appearance_embedding_dim).to(self.device)
-            self.camera_reponse_optimizer = torch.optim.AdamW(
-                self.camera_reponse_net.parameters(), lr=1e-4
+            self.camera_response_net = CameraResponseNet(embedding_dim=cfg.appearance_embedding_dim).to(self.device)
+            self.camera_response_optimizer = torch.optim.AdamW(
+                self.camera_response_net.parameters(), lr=1e-4
             )
 
         if cfg.appearance_embeddings or cfg.use_camera_response_network:
@@ -376,10 +376,8 @@ class Runner:
 
         points_3d_cam = kornia.geometry.depth.unproject_points(grid, depth_map, K)
 
-        # Reshape for transformation
         points_3d_cam_flat = points_3d_cam.reshape(B, -1, 3)
 
-        # Transform points from camera to world space
         points_3d_world = kornia.geometry.transform_points(camtoworld, points_3d_cam_flat) # [B, H*W, 3]
 
         if self.cfg.appearance_embeddings:
@@ -387,10 +385,8 @@ class Runner:
         else:
             embeddings = None
 
-        # The illumination field expects a flat list of points (N, 3)
         gain, gamma = self.illumination_field(points_3d_world.view(-1, 3), embeddings)
 
-        # Reshape gain to an image. Assuming B=1 during eval, we squeeze the batch dim out.
         illum_map_vis = gain.reshape(B, H, W, 3).squeeze(0) # -> [H, W, 3]
 
         return illum_map_vis
@@ -421,7 +417,7 @@ class Runner:
 
         if cfg.use_camera_response_network:
             schedulers.append(
-                ExponentialLR(self.camera_reponse_optimizer, gamma=0.01 ** (1.0 / max_steps))
+                ExponentialLR(self.camera_response_optimizer, gamma=0.01 ** (1.0 / max_steps))
             )
 
         trainloader = torch.utils.data.DataLoader(
@@ -534,7 +530,7 @@ class Runner:
                     if cfg.use_camera_response_network:
                         image_ids = data["image_id"].to(device)
                         embedding = self.appearance_embeds(image_ids)
-                        cam_scale, cam_shift = self.camera_reponse_net(embedding)
+                        cam_scale, cam_shift = self.camera_response_net(embedding)
 
                         final_color_map = cam_scale[:, None, None, :] * scene_lit_color_map + cam_shift[:, None, None, :]
                     else:
@@ -555,21 +551,33 @@ class Runner:
                 )
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                # smoothness loss for illumination field
                 if cfg.lambda_illum_smoothness > 0:
-                    with torch.no_grad():
-                        rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
-                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
-                        perturbed_points = rand_points + perturbation
+                    if cfg.use_gradient_aware_loss:
+                        img_grads = kornia.filters.spatial_gradient(pixels.permute(0, 3, 1, 2), order=1) # [B, C, 2, H, W]
+                        grad_mag = torch.norm(img_grads, dim=2).sum(dim=1, keepdim=True) # [B, 1, H, W]
 
-                    color_A, color_b = self.illumination_field(rand_points)
-                    color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
+                        smooth_mask = (grad_mag < 0.1).float()
 
-                    loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean() # Frobenius norm for matrices
-                    loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
+                        illum_tv_h = torch.pow(illum_map[:, :, 1:, :] - illum_map[:, :, :-1, :], 2)
+                        illum_tv_w = torch.pow(illum_map[:, :, :, 1:] - illum_map[:, :, :, :-1], 2)
 
-                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
+                        loss_illum_smoothness = (torch.mean(illum_tv_h * smooth_mask[:, :, 1:, :]) +
+                                                 torch.mean(illum_tv_w * smooth_mask[:, :, :, 1:]))
+                    else:
+                        with torch.no_grad():
+                            rand_points = (torch.rand(4096, 3, device=device) * 2 - 1) * self.scene_scale
+                            perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
+                            perturbed_points = rand_points + perturbation
+
+                        color_A, color_b = self.illumination_field(rand_points)
+                        color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
+
+                        loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
+                        loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
+                        loss_illum_smoothness = loss_A_smooth + loss_b_smooth
+
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+
 
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
                 illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
@@ -678,7 +686,7 @@ class Runner:
                     data_save["appearance_embeds"] = self.appearance_embeds.state_dict()
 
                 if cfg.use_camera_response_network:
-                    data_save["camera_reponse_net"] = self.camera_reponse_net.state_dict()
+                    data_save["camera_reponse_net"] = self.camera_response_net.state_dict()
 
                 torch.save(
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
@@ -712,8 +720,8 @@ class Runner:
                 self.appearance_embeds_optimizer.zero_grad()
 
             if cfg.use_camera_response_network:
-                self.camera_reponse_optimizer.step()
-                self.camera_reponse_optimizer.zero_grad()
+                self.camera_response_optimizer.step()
+                self.camera_response_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
@@ -824,7 +832,7 @@ class Runner:
                 if cfg.use_camera_response_network:
                     image_ids = data["image_id"].to(device)
                     embedding = self.appearance_embeds(image_ids)
-                    cam_scale, cam_shift = self.camera_reponse_net(embedding)
+                    cam_scale, cam_shift = self.camera_response_net(embedding)
                     final_color_map = cam_scale[:, None, None, :] * scene_lit_color_map + cam_shift[:, None, None, :]
                 else:
                     final_color_map = scene_lit_color_map

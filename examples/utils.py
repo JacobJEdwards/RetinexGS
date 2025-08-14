@@ -497,3 +497,57 @@ class CameraResponseNet(nn.Module):
         params = self.mlp_head(hidden_features.float()) # [B, 6]
         scale, shift = params.split(3, dim=-1) # 2 x [B, 3]
         return scale, shift
+
+class IntraFrameAttention(nn.Module):
+    def __init__(self, model_dim: int = 64, num_freqs_pos: int = 6):
+        super().__init__()
+        self.model_dim = model_dim
+
+        self.feature_extractor = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, model_dim, kernel_size=1)
+        )
+
+        self.pos_encoder = PositionalEncoder(num_freqs_pos)
+        query_in_dim = 3 * 2 * num_freqs_pos
+
+        self.query_proj = nn.Linear(query_in_dim, model_dim)
+        self.key_proj = nn.Linear(model_dim, model_dim)
+        self.value_proj = nn.Linear(model_dim, model_dim)
+
+        self.out_mlp = nn.Sequential(
+            nn.Linear(model_dim, model_dim),
+            nn.SiLU(),
+            nn.Linear(model_dim, 12) # 9 for matrix A, 3 for bias b
+        )
+
+    def forward(self, image: Tensor, points_3d: Tensor) -> tuple[Tensor, Tensor]:
+        B, _, H, W = image.shape
+        num_points = points_3d.shape[0]
+
+        img_features = self.feature_extractor(image) # [1, D, H, W]
+        img_features_flat = img_features.view(B, self.model_dim, H * W).permute(0, 2, 1) # [1, H*W, D]
+
+        encoded_pos = self.pos_encoder(points_3d) # [H*W, D_pos]
+        query = self.query_proj(encoded_pos).unsqueeze(0) # [1, H*W, D]
+
+        keys = self.key_proj(img_features_flat) # [1, H*W, D]
+        values = self.value_proj(img_features_flat) # [1, H*W, D]
+
+        attention_scores = torch.bmm(query, keys.transpose(1, 2)) / (self.model_dim ** 0.5)
+        attention_weights = F.softmax(attention_scores, dim=-1)
+
+        context = torch.bmm(attention_weights, values).squeeze(0) # [H*W, D]
+
+        params = self.out_mlp(context) # [H*W, 12]
+
+        matrix_A_flat = params[..., :9]
+        bias_b = params[..., 9:]
+
+        identity = torch.eye(3, device=image.device).unsqueeze(0).expand(num_points, -1, -1)
+        matrix_A = matrix_A_flat.view(num_points, 3, 3) + identity
+
+        return matrix_A, bias_b
