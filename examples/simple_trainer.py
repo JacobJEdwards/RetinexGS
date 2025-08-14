@@ -28,7 +28,6 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from utils import ColourMLP
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss
 from losses import ExclusionLoss
@@ -185,8 +184,7 @@ class Runner:
 
         self.illumination_field = IlluminationField(self.scene_scale,
                                 use_appearance_embeds=cfg.appearance_embeddings,
-                                                    use_colour_mlp=cfg.use_colour_mlp,
-                                                    latent_dim=cfg.latent_dim,
+                                                    use_view_dirs=cfg.use_view_dirs,
                                                     ).to(
             self.device)
 
@@ -202,14 +200,6 @@ class Runner:
             self.appearance_embeds = torch.nn.Embedding(num_train_images,cfg.appearance_embedding_dim).to(self.device)
             self.appearance_embeds_optimizer = torch.optim.AdamW(
                 self.appearance_embeds.parameters(), lr=1e-4
-            )
-
-        if cfg.use_colour_mlp:
-            self.colour_mlp = ColourMLP(
-                latent_dim=cfg.latent_dim,
-            ).to(self.device)
-            self.colour_mlp_optimizer = torch.optim.AdamW(
-                self.colour_mlp.parameters(), lr=1e-4
             )
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
@@ -413,11 +403,6 @@ class Runner:
                 ExponentialLR(self.appearance_embeds_optimizer, gamma=0.01 ** (1.0 / max_steps))
             )
 
-        if cfg.use_colour_mlp:
-            schedulers.append(
-                ExponentialLR(self.colour_mlp_optimizer, gamma=0.01 ** (1.0 / max_steps))
-            )
-
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
             batch_size=cfg.batch_size,
@@ -510,37 +495,20 @@ class Runner:
                         cam_origin = camtoworlds.squeeze(0)[:3, 3]
                         view_dirs_input = points_3d_world_flat - cam_origin
 
-                    if cfg.use_colour_mlp:
-                        latent_map_flat = self.illumination_field(
-                            points_3d_world_flat, embeds=embeddings_input, view_dirs=view_dirs_input
-                        )
-                        latent_map = latent_map_flat.view(1, height, width, -1)
-                        final_color_map = self.colour_mlp(reflectance_map, latent_map)
+                    illum_A, illum_b = self.illumination_field(
+                        points_3d_world_flat, embeds=embeddings_input, view_dirs=view_dirs_input
+                    )
 
-                        with torch.no_grad():
-                            gray_color = torch.full_like(reflectance_map, 0.5)
-                            gray_latent_map = self.illumination_field(
-                                points_3d_world_flat, embeds=embeddings_input, view_dirs=view_dirs_input
-                            ).view(1, height, width, -1)
-                            illum_color_map = self.colour_mlp(gray_color, gray_latent_map)
-                            illum_map = torch.sigmoid(illum_color_map)
+                    illum_A_map = illum_A.view(1, height, width, 3, 3)
+                    illum_b_map = illum_b.view(1, height, width, 3)
 
-                        colors_low = torch.sigmoid(final_color_map)
-                    else:
-                        illum_A, illum_b = self.illumination_field(
-                            points_3d_world_flat, embeds=embeddings_input, view_dirs=view_dirs_input
-                        )
+                    final_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
 
-                        illum_A_map = illum_A.view(1, height, width, 3, 3)
-                        illum_b_map = illum_b.view(1, height, width, 3)
+                    gray_color = torch.full_like(reflectance_map, 0.5)
+                    illum_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, gray_color) + illum_b_map
+                    illum_map = torch.sigmoid(illum_color_map)
 
-                        final_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
-
-                        gray_color = torch.full_like(reflectance_map, 0.5)
-                        illum_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, gray_color) + illum_b_map
-                        illum_map = torch.sigmoid(illum_color_map)
-
-                        colors_low = torch.sigmoid(final_color_map)
+                    colors_low = torch.sigmoid(final_color_map)
 
                 info["means2d"].retain_grad()
 
@@ -558,21 +526,13 @@ class Runner:
                         perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
                         perturbed_points = rand_points + perturbation
 
-                    if self.cfg.use_colour_mlp:
-                        latent_code = self.illumination_field(rand_points)
-                        latent_code_perturbed = self.illumination_field(perturbed_points)
+                    color_A, color_b = self.illumination_field(rand_points)
+                    color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
 
-                        loss_illum_smoothness = (latent_code - latent_code_perturbed).pow(2).mean()
+                    loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean() # Frobenius norm for matrices
+                    loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
 
-
-                    else:
-                        color_A, color_b = self.illumination_field(rand_points)
-                        color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
-
-                        loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean() # Frobenius norm for matrices
-                        loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
-
-                        loss_illum_smoothness = loss_A_smooth + loss_b_smooth
+                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
@@ -708,10 +668,6 @@ class Runner:
             if cfg.appearance_embeddings:
                 self.appearance_embeds_optimizer.step()
                 self.appearance_embeds_optimizer.zero_grad()
-
-            if cfg.use_colour_mlp:
-                self.colour_mlp_optimizer.step()
-                self.colour_mlp_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()

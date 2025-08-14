@@ -65,9 +65,6 @@ class Config:
     appearance_embeddings: bool = True
     appearance_embedding_dim: int = 32
 
-    use_colour_mlp: bool = True
-    latent_dim: int = 32
-
     use_view_dirs: bool = True
     use_dual_rasterization: bool = False
 

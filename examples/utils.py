@@ -340,14 +340,12 @@ class IlluminationField(nn.Module):
                  use_view_dirs: bool = True,
                  use_appearance_embeds: bool = False,
                  appearance_embedding_dim: int = 32,
-                 use_colour_mlp: bool = False,
-                 latent_dim: int = 32):
+                 ):
         super().__init__()
         self.scene_scale = scene_scale
         self.use_hash_grid = use_hash_grid
         self.use_view_dirs = use_view_dirs
         self.use_appearance_embeds = use_appearance_embeds
-        self.use_colour_mlp = use_colour_mlp
 
         if self.use_hash_grid:
             per_level_scale = 1.4472692012786865
@@ -383,7 +381,7 @@ class IlluminationField(nn.Module):
         for _ in range(num_layers - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
 
-        output_dim = latent_dim if self.use_colour_mlp else 12
+        output_dim = 12
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.mlp = nn.Sequential(*layers)
 
@@ -423,9 +421,6 @@ class IlluminationField(nn.Module):
         mlp_input_tensor = torch.cat(mlp_input, dim=-1)
         params = self.mlp(mlp_input_tensor)
 
-        if self.use_colour_mlp:
-            return params
-
         matrix_A_flat = params[..., :9]
         bias_b = params[..., 9:]
 
@@ -434,23 +429,3 @@ class IlluminationField(nn.Module):
         matrix_A = matrix_A_flat.view(num_points, 3, 3) + identity
 
         return matrix_A, bias_b
-
-class ColourMLP(nn.Module):
-    def __init__(self, color_dim: int = 3, latent_dim: int = 32, hidden_dim: int = 64, num_layers: int = 2):
-        super().__init__()
-
-        in_dim = color_dim + latent_dim
-        layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
-
-        for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
-
-        layers.append(nn.Linear(hidden_dim, color_dim))
-        self.mlp = nn.Sequential(*layers)
-
-    def forward(self, color: Tensor, latent_code: Tensor) -> Tensor:
-        if latent_code.ndim < color.ndim:
-            latent_code = latent_code.expand(*color.shape[:-1], -1)
-
-        mlp_input = torch.cat([color, latent_code], dim=-1)
-        return self.mlp(mlp_input)
