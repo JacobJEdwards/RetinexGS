@@ -28,7 +28,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from utils import CameraResponseNet, IntraFrameAttention
+from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss
 from losses import ExclusionLoss
@@ -184,15 +184,12 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
 
-        if cfg.use_intra_frame_attention:
-            self.illumination_field = IntraFrameAttention().to(self.device)
-        else:
-            self.illumination_field = IlluminationField(
-                self.scene_scale,
-                use_view_dirs=cfg.use_view_dirs,
-                use_normals=cfg.use_normals,
-                use_appearance_embeds=cfg.appearance_embeddings,
-            ).to(self.device)
+        self.illumination_field = IlluminationField(
+            self.scene_scale,
+            use_view_dirs=cfg.use_view_dirs,
+            use_normals=cfg.use_normals,
+            use_appearance_embeds=cfg.appearance_embeddings,
+        ).to(self.device)
 
         if world_size > 1:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
@@ -507,30 +504,23 @@ class Runner:
                     points_3d_world_flat = world_position_map.view(-1, 3)
                     world_normals_flat = world_normal_map.view(-1, 3)
 
+                    embeddings_input = None
+                    if cfg.appearance_embeddings:
+                        image_ids = data["image_id"].to(device)
+                        embeddings_input = self.appearance_embeds(image_ids)
+                        if not cfg.use_camera_response_network:
+                            embeddings_input = embeddings_input.expand(height * width, -1)
 
-                    if cfg.use_intra_frame_attention:
-                        illum_A, illum_b = self.illumination_field(
-                            image=pixels.permute(0, 3, 1, 2),
-                            points_3d=points_3d_world_flat,
-                        )
-                    else:
-                        embeddings_input = None
-                        if cfg.appearance_embeddings:
-                            image_ids = data["image_id"].to(device)
-                            embeddings_input = self.appearance_embeds(image_ids)
-                            if not cfg.use_camera_response_network:
-                                embeddings_input = embeddings_input.expand(height * width, -1)
+                    view_dirs_input = None
+                    if cfg.use_view_dirs:
+                        cam_origin = camtoworlds.squeeze(0)[:3, 3]
+                        view_dirs_input = points_3d_world_flat - cam_origin
 
-                        view_dirs_input = None
-                        if cfg.use_view_dirs:
-                            cam_origin = camtoworlds.squeeze(0)[:3, 3]
-                            view_dirs_input = points_3d_world_flat - cam_origin
-
-                        illum_A, illum_b = self.illumination_field(
-                            points_3d_world_flat, embeds=embeddings_input if not cfg.use_camera_response_network else None,
-                            view_dirs=view_dirs_input,
-                            normals=world_normals_flat,
-                        )
+                    illum_A, illum_b = self.illumination_field(
+                        points_3d_world_flat, embeds=embeddings_input if not cfg.use_camera_response_network else None,
+                        view_dirs=view_dirs_input,
+                        normals=world_normals_flat,
+                    )
 
                     illum_A_map = illum_A.view(1, height, width, 3, 3)
                     illum_b_map = illum_b.view(1, height, width, 3)
@@ -583,14 +573,12 @@ class Runner:
                             perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
                             perturbed_points = rand_points + perturbation
 
-                        if cfg.use_intra_frame_attention:
-                            loss_illum_smoothness = 0.0
-                        else:
-                            color_A, color_b = self.illumination_field(rand_points)
-                            color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
-                            loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
-                            loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
-                            loss_illum_smoothness = loss_A_smooth + loss_b_smooth
+                        color_A, color_b = self.illumination_field(rand_points)
+                        color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
+
+                        loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
+                        loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
+                        loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
@@ -827,30 +815,21 @@ class Runner:
                 world_normal_map = intrinsic_maps["world_normal"]
                 points_3d_world_flat = world_position_map.view(-1, 3)
                 world_normals_flat = world_normal_map.view(-1, 3)
-
-                if cfg.use_intra_frame_attention:
-                    illum_A, illum_b = self.illumination_field(
-                        image=pixels.permute(0, 3, 1, 2),
-                        points_3d=points_3d_world_flat,
-                    )
-                else:
-
-                    embeddings_input = None
-                    if cfg.appearance_embeddings:
-                        image_ids = data["image_id"].to(device)
-                        embeddings_input = self.appearance_embeds(image_ids)
-                        if not cfg.use_camera_response_network:
-                            embeddings_input = embeddings_input.expand(height * width, -1)
-                    view_dirs_input = None
-                    if cfg.use_view_dirs:
-                        cam_origin = camtoworlds.squeeze(0)[:3, 3]
-                        view_dirs_input = points_3d_world_flat - cam_origin
-                    illum_A, illum_b = self.illumination_field(
-                        points_3d_world_flat, embeds=embeddings_input if not cfg.use_camera_response_network else None,
-                        view_dirs=view_dirs_input,
-                        normals=world_normals_flat,
-                    )
-
+                embeddings_input = None
+                if cfg.appearance_embeddings:
+                    image_ids = data["image_id"].to(device)
+                    embeddings_input = self.appearance_embeds(image_ids)
+                    if not cfg.use_camera_response_network:
+                        embeddings_input = embeddings_input.expand(height * width, -1)
+                view_dirs_input = None
+                if cfg.use_view_dirs:
+                    cam_origin = camtoworlds.squeeze(0)[:3, 3]
+                    view_dirs_input = points_3d_world_flat - cam_origin
+                illum_A, illum_b = self.illumination_field(
+                    points_3d_world_flat, embeds=embeddings_input if not cfg.use_camera_response_network else None,
+                    view_dirs=view_dirs_input,
+                    normals=world_normals_flat,
+                )
                 illum_A_map = illum_A.view(1, height, width, 3, 3)
                 illum_b_map = illum_b.view(1, height, width, 3)
                 scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
