@@ -33,7 +33,7 @@ def rasterize_intrinsics(
         radius_clip: float = 0.0,
         eps2d: float = 0.3,
         sh_degree: int | None = None,
-        packed: bool = True,
+        packed: bool = False,
         tile_size: int = 16,
         backgrounds: Tensor | None = None,
         render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
