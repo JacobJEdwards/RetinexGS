@@ -70,6 +70,7 @@ class Config:
     use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
     use_gradient_aware_loss: bool = True
+    use_intra_frame_attention: bool = True
 
     postfix = "_multiexposure"
 
