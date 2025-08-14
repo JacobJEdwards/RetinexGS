@@ -287,6 +287,22 @@ def apply_depth_colormap(
         img = img * acc + (1.0 - acc)
     return img
 
+def quaternion_to_matrix(quaternions: Tensor) -> Tensor:
+    quaternions = F.normalize(quaternions, p=2, dim=-1)
+
+    w, x, y, z = torch.unbind(quaternions, -1)
+
+    x2, y2, z2 = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
+
+    mat = torch.stack([
+        1 - 2 * (y2 + z2), 2 * (xy - wz),     2 * (xz + wy),
+        2 * (xy + wz),     1 - 2 * (x2 + z2), 2 * (yz - wx),
+        2 * (xz - wy),     2 * (yz + wx),     1 - 2 * (x2 + y2)
+    ], dim=-1)
+
+    return mat.reshape(quaternions.shape[:-1] + (3, 3))
 
 def generate_variational_intrinsics(
     base_K: Tensor,
@@ -339,6 +355,7 @@ class IlluminationField(nn.Module):
                  use_hash_grid: bool = True,
                  use_view_dirs: bool = True,
                  use_appearance_embeds: bool = False,
+                 use_normals: bool = False,
                  appearance_embedding_dim: int = 32,
                  ):
         super().__init__()
@@ -346,6 +363,7 @@ class IlluminationField(nn.Module):
         self.use_hash_grid = use_hash_grid
         self.use_view_dirs = use_view_dirs
         self.use_appearance_embeds = use_appearance_embeds
+        self.use_normals = use_normals
 
         if self.use_hash_grid:
             per_level_scale = 1.4472692012786865
@@ -371,11 +389,16 @@ class IlluminationField(nn.Module):
             self.dir_encoder = PositionalEncoder(dir_num_freqs)
             self.dir_in_dim += 3 * 2 * dir_num_freqs
 
+        self.normal_in_dim = 0
+        if self.use_normals:
+            self.normal_encoder = PositionalEncoder(num_freqs)
+            self.normal_in_dim += 3 * 2 * num_freqs
+
         self.embed_in_dim = 0
         if use_appearance_embeds:
             self.embed_in_dim += appearance_embedding_dim
 
-        in_dim = pos_in_dim + self.dir_in_dim + self.embed_in_dim
+        in_dim = pos_in_dim + self.dir_in_dim + self.embed_in_dim + self.normal_in_dim
 
         layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
         for _ in range(num_layers - 1):
@@ -389,8 +412,9 @@ class IlluminationField(nn.Module):
             self.mlp[-1].weight.data.normal_(0.0, 1e-4)
             self.mlp[-1].bias.data.zero_()
 
-    def forward(self, x: Tensor, embeds: Tensor | None = None, view_dirs: Tensor | None = None) -> tuple[Tensor,
-    Tensor]:
+    def forward(self, x: Tensor, embeds: Tensor | None = None, view_dirs: Tensor | None = None, normals: Tensor |
+                                                                                                         None = None)\
+            -> tuple[Tensor, Tensor]:
         # x: [N, 3]
         if self.use_hash_grid:
             normalized_x = x / (2.0 * self.scene_scale) + 0.5
@@ -407,6 +431,14 @@ class IlluminationField(nn.Module):
                 mlp_input.append(encoded_dirs)
             else:
                 zeros = torch.zeros(x.shape[0], self.dir_in_dim, device=x.device)
+                mlp_input.append(zeros)
+
+        if self.use_normals:
+            if normals is not None:
+                encoded_normals = self.normal_encoder(F.normalize(normals, dim=-1))
+                mlp_input.append(encoded_normals)
+            else:
+                zeros = torch.zeros(x.shape[0], self.normal_in_dim, device=x.device)
                 mlp_input.append(zeros)
 
         if self.use_appearance_embeds:

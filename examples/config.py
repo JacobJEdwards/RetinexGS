@@ -66,6 +66,7 @@ class Config:
     appearance_embedding_dim: int = 32
 
     use_view_dirs: bool = True
+    use_normals: bool = True
     use_dual_rasterization: bool = False
 
     postfix = "_contrast"

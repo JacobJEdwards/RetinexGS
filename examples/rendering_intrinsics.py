@@ -1,10 +1,12 @@
 import math
 from typing import Any
+import torch.nn.functional as F
 
 import torch
 import torch.distributed
 from torch import Tensor
 from typing_extensions import Literal
+from utils import quaternion_to_matrix
 
 from gsplat.cuda._wrapper import (
     RollingShutterType,
@@ -128,14 +130,26 @@ def rasterize_intrinsics(
     base_reflectance_rgb = spherical_harmonics(sh_degree, dirs, shs, masks=masks)
     base_reflectance_rgb = torch.clamp_min(base_reflectance_rgb + 0.5, 0.0)
 
+    with torch.no_grad():
+        rot_mats = quaternion_to_matrix(quats)
+        _, min_scale_idx = torch.min(scales, dim=-1)
+
+        original_shape = min_scale_idx.shape
+        idx = min_scale_idx.view(-1, 1, 1).expand(-1, 3, 1) # Shape: [Prod(...), 3, 1]
+        all_rots = rot_mats.view(-1, 3, 3)
+        normals = torch.gather(all_rots, 2, idx).squeeze(-1) # Shape: [Prod(...), 3]
+        normals = normals.view(original_shape + (3,))
+
     if packed:
         world_positions = means.view(B, N, 3)[batch_ids, gaussian_ids]
+        splat_normals = normals.view(B, N, 3)[batch_ids, gaussian_ids]
     else:
         world_positions = torch.broadcast_to(means[..., None, :, :], batch_dims + (C, N, 3))
+        splat_normals = torch.broadcast_to(normals[..., None, :, :], batch_dims + (C, N, 3))
 
 
     properties_to_render = torch.cat(
-        [base_reflectance_rgb, world_positions, depths.unsqueeze(-1)],
+        [base_reflectance_rgb, world_positions, depths.unsqueeze(-1), splat_normals],
         dim=-1
     )
 
@@ -165,14 +179,18 @@ def rasterize_intrinsics(
 
     reflectance_map = rendered_properties[..., :3]
     world_position_map = rendered_properties[..., 3:6]
-
     depth_map = rendered_properties[..., 6:7]
+    world_normals_map = rendered_properties[..., 7:10]
+
     expected_depth_map = depth_map / render_alpha.clamp(min=1e-10)
+
+    world_normal_map = F.normalize(world_normals_map, p=2, dim=-1, eps=1e-6)
 
     intrinsic_maps = {
         "reflectance": reflectance_map,
         "world_position": world_position_map,
         "depth": expected_depth_map,
+        "world_normal": world_normal_map,
     }
 
     meta.update(

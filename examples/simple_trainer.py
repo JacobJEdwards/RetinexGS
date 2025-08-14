@@ -31,7 +31,7 @@ from config import Config
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss
 from losses import ExclusionLoss
-from utils import IlluminationField, sh_to_rgb
+from utils import IlluminationField, sh_to_rgb, quaternion_to_matrix
 from rendering_double import rasterization_dual
 from gsplat import export_splats
 from gsplat.distributed import cli
@@ -185,6 +185,7 @@ class Runner:
         self.illumination_field = IlluminationField(self.scene_scale,
                                 use_appearance_embeds=cfg.appearance_embeddings,
                                                     use_view_dirs=cfg.use_view_dirs,
+                                                    use_normals= cfg.use_normals,
                                                     ).to(
             self.device)
 
@@ -280,6 +281,12 @@ class Runner:
         )
         colors_enh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
+        splat_normals = None
+        if self.cfg.use_normals:
+            rot_mats = quaternion_to_matrix(quats)
+            _, min_scale_idx = torch.min(scales, dim=-1)
+            splat_normals = rot_mats[torch.arange(len(rot_mats)), :, min_scale_idx]
+
         view_dirs_input = None
         if self.cfg.use_view_dirs:
             cam_origin = camtoworlds.squeeze(0)[:3, 3]
@@ -293,7 +300,8 @@ class Runner:
         color_A, color_b = self.illumination_field(
             means,
             embeds=embeddings_input,
-            view_dirs=view_dirs_input
+            view_dirs=view_dirs_input,
+            normals=splat_normals,
         )
 
 
@@ -483,7 +491,9 @@ class Runner:
 
                     reflectance_map = intrinsic_maps["reflectance"]
                     world_position_map = intrinsic_maps["world_position"]
+                    world_normal_map = intrinsic_maps["world_normal"]
                     points_3d_world_flat = world_position_map.view(-1, 3)
+                    world_normals_flat = world_normal_map.view(-1, 3)
 
                     embeddings_input = None
                     if cfg.appearance_embeddings:
@@ -496,7 +506,8 @@ class Runner:
                         view_dirs_input = points_3d_world_flat - cam_origin
 
                     illum_A, illum_b = self.illumination_field(
-                        points_3d_world_flat, embeds=embeddings_input, view_dirs=view_dirs_input
+                        points_3d_world_flat, embeds=embeddings_input, view_dirs=view_dirs_input,
+                        normals=world_normals_flat,
                     )
 
                     illum_A_map = illum_A.view(1, height, width, 3, 3)
@@ -782,25 +793,25 @@ class Runner:
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low.permute(0, 3, 1, 2)
 
-                # illumination_map_hwc = self.visualize_illumination_field(
-                #     depths_low,
-                #     camtoworlds,
-                #     Ks,
-                #     image_ids=data["image_id"].to(device) if "image_id" in data else None,
-                # )
-                #
-                # imageio.imwrite(
-                #     f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
-                #     (torch.clamp(illumination_map_hwc, 0.0, 1.0).cpu().numpy() * 255).astype(np.uint8),
-                # )
-                #
-                # reflectance_map_bhwc = pixels / (illumination_map_hwc.unsqueeze(0) + 1e-8)
-                # reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0)
-                #
-                # imageio.imwrite(
-                #     f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
-                #     (reflectance_map_bhwc.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
-                # )
+                illumination_map_hwc = self.visualize_illumination_field(
+                    depths_low,
+                    camtoworlds,
+                    Ks,
+                    image_ids=data["image_id"].to(device) if "image_id" in data else None,
+                )
+
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
+                    (torch.clamp(illumination_map_hwc, 0.0, 1.0).cpu().numpy() * 255).astype(np.uint8),
+                )
+
+                reflectance_map_bhwc = pixels / (illumination_map_hwc.unsqueeze(0) + 1e-8)
+                reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0)
+
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
+                    (reflectance_map_bhwc.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
+                )
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
