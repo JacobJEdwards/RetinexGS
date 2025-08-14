@@ -574,10 +574,13 @@ class Runner:
                     illum_map = illum_map_for_loss
 
                     if cfg.lambda_exclusion > 0.0:
-                        loss_exclusion = self.loss_exclusion(
-                            reflectance_map, illum_map
-                        )
-                        loss += cfg.lambda_exclusion * loss_exclusion
+                        if reflectance_map.shape[2] > 3 and reflectance_map.shape[3] > 3:
+                            loss_exclusion = self.loss_exclusion(reflectance_map, illum_map)
+                            loss += cfg.lambda_exclusion * loss_exclusion
+                        # loss_exclusion = self.loss_exclusion(
+                        #     reflectance_map, illum_map
+                        # )
+                        # loss += cfg.lambda_exclusion * loss_exclusion
 
                 if cfg.lambda_tv_loss > 0.0:
                     loss_illum_tv = self.loss_tv(illum_map)
