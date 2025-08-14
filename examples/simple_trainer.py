@@ -596,7 +596,7 @@ class Runner:
                         )
                         self.writer.add_images(
                             "train/render_enh",
-                            colors_enh.permute(0, 3, 1, 2),
+                            reflectance_map.permute(0, 3, 1, 2),
                             step,
                         )
                         vis_illum_map = illum_map
