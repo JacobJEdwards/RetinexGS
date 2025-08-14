@@ -459,7 +459,7 @@ class IlluminationField(nn.Module):
         mlp_input_tensor = torch.cat(mlp_input, dim=-1)
 
         hidden_features = self.mlp_base(mlp_input_tensor)
-        params = self.mlp_head(hidden_features)
+        params = self.mlp_head(hidden_features.float())
 
         matrix_A_flat = params[..., :9]
         bias_b = params[..., 9:]
@@ -494,6 +494,6 @@ class CameraResponseNet(nn.Module):
     def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor]:
         # embedding: [B, D_embed]
         hidden_features = self.mlp_base(embedding)
-        params = self.mlp_head(hidden_features) # [B, 6]
+        params = self.mlp_head(hidden_features.float()) # [B, 6]
         scale, shift = params.split(3, dim=-1) # 2 x [B, 3]
         return scale, shift
