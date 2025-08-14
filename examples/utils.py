@@ -495,6 +495,5 @@ class CameraResponseNet(nn.Module):
         # embedding: [B, D_embed]
         hidden_features = self.mlp_base(embedding)
         params = self.mlp_head(hidden_features) # [B, 6]
-        # --- END: Modified Code ---
         scale, shift = params.split(3, dim=-1) # 2 x [B, 3]
         return scale, shift
