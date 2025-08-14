@@ -400,17 +400,23 @@ class IlluminationField(nn.Module):
 
         in_dim = pos_in_dim + self.dir_in_dim + self.embed_in_dim + self.normal_in_dim
 
-        layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
-        for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU(inplace=True)])
+        self.mlp_base = tcnn.Network(
+            n_input_dims=in_dim,
+            n_output_dims=hidden_dim,
+            network_config={
+                "otype": "FullyFusedMLP",
+                "activation": "SiLU",
+                "output_activation": "None",
+                "n_neurons": hidden_dim,
+                "n_hidden_layers": num_layers - 1,
+            },
+        )
 
-        output_dim = 12 # 9 for matrix A (3x3) and 3 for bias b
-        layers.append(nn.Linear(hidden_dim, output_dim))
-        self.mlp = nn.Sequential(*layers)
+        self.mlp_head = nn.Linear(hidden_dim, 12)
 
         with torch.no_grad():
-            self.mlp[-1].weight.data.normal_(0.0, 1e-4)
-            self.mlp[-1].bias.data.zero_()
+            self.mlp_head.weight.data.normal_(0.0, 1e-4)
+            self.mlp_head.bias.data.zero_()
 
     def forward(self, x: Tensor, embeds: Tensor | None = None, view_dirs: Tensor | None = None, normals: Tensor |
                                                                                                          None = None)\
@@ -451,7 +457,9 @@ class IlluminationField(nn.Module):
                 mlp_input.append(zeros)
 
         mlp_input_tensor = torch.cat(mlp_input, dim=-1)
-        params = self.mlp(mlp_input_tensor)
+
+        hidden_features = self.mlp_base(mlp_input_tensor)
+        params = self.mlp_head(hidden_features)
 
         matrix_A_flat = params[..., :9]
         bias_b = params[..., 9:]
@@ -465,21 +473,28 @@ class IlluminationField(nn.Module):
 class CameraResponseNet(nn.Module):
     def __init__(self, embedding_dim, hidden_dim=32):
         super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(embedding_dim, hidden_dim),
-            nn.SiLU(inplace=True),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(inplace=True),
-            nn.Linear(hidden_dim, 6)  # 3 for scale, 3 for shift
+        self.mlp_base = tcnn.Network(
+            n_input_dims=embedding_dim,
+            n_output_dims=hidden_dim,
+            network_config={
+                "otype": "FullyFusedMLP",
+                "activation": "SiLU",
+                "output_activation": "None",
+                "n_neurons": hidden_dim,
+                "n_hidden_layers": 2,
+            },
         )
+        self.mlp_head = nn.Linear(hidden_dim, 6)
 
         with torch.no_grad():
-            self.mlp[-1].weight.zero_()
-            self.mlp[-1].bias.zero_()
-            self.mlp[-1].bias.data[:3] = 1.0
+            self.mlp_head.weight.zero_()
+            self.mlp_head.bias.zero_()
+            self.mlp_head.bias.data[:3] = 1.0
 
     def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor]:
         # embedding: [B, D_embed]
-        params = self.mlp(embedding) # [B, 6]
+        hidden_features = self.mlp_base(embedding)
+        params = self.mlp_head(hidden_features) # [B, 6]
+        # --- END: Modified Code ---
         scale, shift = params.split(3, dim=-1) # 2 x [B, 3]
         return scale, shift
