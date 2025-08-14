@@ -69,7 +69,7 @@ class Config:
     use_normals: bool = True
     use_dual_rasterization: bool = False
 
-    postfix = "_contrast"
+    postfix = ""
 
     lambda_illum_smoothness: float = 0.01
     lambda_exclusion: float = 0.01
