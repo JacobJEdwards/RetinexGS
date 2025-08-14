@@ -62,7 +62,7 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    appearance_embeddings: bool = False
+    appearance_embeddings: bool = True
     appearance_embedding_dim: int = 32
 
     use_view_dirs: bool = True
