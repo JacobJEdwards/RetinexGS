@@ -153,9 +153,12 @@ def rasterize_intrinsics(
         splat_normals = torch.broadcast_to(normals[..., None, :, :], batch_dims + (C, N, 3))
 
 
+    render_ts = [base_reflectance_rgb, world_positions, depths.unsqueeze(-1)],
+    if include_normals:
+        render_ts += splat_normals
+
     properties_to_render = torch.cat(
-        [base_reflectance_rgb, world_positions, depths.unsqueeze(-1), splat_normals],
-        dim=-1
+        render_ts, dim=-1
     )
 
     tile_width = math.ceil(width / float(tile_size))
@@ -185,7 +188,7 @@ def rasterize_intrinsics(
     reflectance_map = rendered_properties[..., :3]
     world_position_map = rendered_properties[..., 3:6]
     depth_map = rendered_properties[..., 6:7]
-    world_normals_map = rendered_properties[..., 7:10]
+    world_normals_map = rendered_properties[..., 7:10] if include_normals else torch.zeros_like(world_position_map)
 
     expected_depth_map = depth_map / render_alpha.clamp(min=1e-10)
 
