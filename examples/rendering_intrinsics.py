@@ -101,7 +101,18 @@ def rasterize_intrinsics(
     if compensations is not None:
         opacities_proj *= compensations
 
-    meta.update({ "means2d": means2d, "radii": radii, "depths": depths })
+    meta.update(
+        {
+            "batch_ids": batch_ids,
+            "camera_ids": camera_ids,
+            "gaussian_ids": gaussian_ids,
+            "radii": radii,
+            "means2d": means2d,
+            "depths": depths,
+            "conics": conics,
+            "opacities": opacities,
+        }
+    )
 
 
     campos = torch.inverse(viewmats)[..., :3, 3]
@@ -163,6 +174,22 @@ def rasterize_intrinsics(
         "world_position": world_position_map,
         "depth": expected_depth_map,
     }
+
+    meta.update(
+        {
+            "tile_width": tile_width,
+            "tile_height": tile_height,
+            "tiles_per_gauss": tiles_per_gauss,
+            "isect_ids": isect_ids,
+            "flatten_ids": flatten_ids,
+            "isect_offsets": isect_offsets,
+            "width": width,
+            "height": height,
+            "tile_size": tile_size,
+            "n_batches": B,
+            "n_cameras": C,
+        }
+    )
 
     meta.update({ "flatten_ids": flatten_ids })
 
