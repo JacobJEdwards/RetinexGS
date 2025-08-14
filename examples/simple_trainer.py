@@ -558,13 +558,21 @@ class Runner:
                         perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
                         perturbed_points = rand_points + perturbation
 
-                    color_A, color_b = self.illumination_field(rand_points)
-                    color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
+                    if self.cfg.use_colour_mlp:
+                        latent_code = self.illumination_field(rand_points)
+                        latent_code_perturbed = self.illumination_field(perturbed_points)
 
-                    loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean() # Frobenius norm for matrices
-                    loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
+                        loss_illum_smoothness = (latent_code - latent_code_perturbed).pow(2).mean()
 
-                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
+
+                    else:
+                        color_A, color_b = self.illumination_field(rand_points)
+                        color_A_perturbed, color_b_perturbed = self.illumination_field(perturbed_points)
+
+                        loss_A_smooth = (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean() # Frobenius norm for matrices
+                        loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
+
+                        loss_illum_smoothness = loss_A_smooth + loss_b_smooth
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
