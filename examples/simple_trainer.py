@@ -461,7 +461,7 @@ class Runner:
                         quats=self.splats["quats"],
                         scales=torch.exp(self.splats["scales"]),
                         opacities=torch.sigmoid(self.splats["opacities"]),
-                        colors=base_reflectance_sh,
+                        base_reflectance_sh=base_reflectance_sh,
                         viewmats=torch.linalg.inv(camtoworlds.float()),
                         Ks=Ks,
                         width=width,
