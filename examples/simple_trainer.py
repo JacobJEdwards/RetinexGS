@@ -815,25 +815,25 @@ class Runner:
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low.permute(0, 3, 1, 2)
 
-                illumination_map_hwc = self.visualize_illumination_field(
-                    depths_low,
-                    camtoworlds,
-                    Ks,
-                    image_ids=data["image_id"].to(device) if "image_id" in data else None,
-                )
-
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
-                    (torch.clamp(illumination_map_hwc, 0.0, 1.0).cpu().numpy() * 255).astype(np.uint8),
-                )
-
-                reflectance_map_bhwc = pixels / (illumination_map_hwc.unsqueeze(0) + 1e-8)
-                reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0)
-
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
-                    (reflectance_map_bhwc.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
-                )
+                # illumination_map_hwc = self.visualize_illumination_field(
+                #     depths_low,
+                #     camtoworlds,
+                #     Ks,
+                #     image_ids=data["image_id"].to(device) if "image_id" in data else None,
+                # )
+                #
+                # imageio.imwrite(
+                #     f"{self.render_dir}/{stage}_illumination_map_{i:04d}.png",
+                #     (torch.clamp(illumination_map_hwc, 0.0, 1.0).cpu().numpy() * 255).astype(np.uint8),
+                # )
+                #
+                # reflectance_map_bhwc = pixels / (illumination_map_hwc.unsqueeze(0) + 1e-8)
+                # reflectance_map_bhwc = torch.clamp(reflectance_map_bhwc, 0.0, 1.0)
+                #
+                # imageio.imwrite(
+                #     f"{self.render_dir}/{stage}_reflectance_map_{i:04d}.png",
+                #     (reflectance_map_bhwc.squeeze(0).cpu().numpy() * 255).astype(np.uint8),
+                # )
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
