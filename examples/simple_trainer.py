@@ -534,6 +534,14 @@ class Runner:
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
                 illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
 
+                if cfg.lambda_reflectance_reg > 0.0:
+                    reflectance_reg_loss = torch.mean(torch.pow(torch.clamp(reflectance_map - 1.0, min=0.0), 2))
+
+                    # Penalize values less than 0
+                    reflectance_reg_loss += torch.mean(torch.pow(torch.clamp(-reflectance_map, min=0.0), 2))
+
+                    loss += cfg.lambda_reflectance_reg * reflectance_reg_loss
+
                 if cfg.lambda_exclusion > 0.0:
                     if reflectance_map_for_loss.shape[2] > 3 and reflectance_map_for_loss.shape[3] > 3:
                         loss_exclusion = self.loss_exclusion(reflectance_map_for_loss, illum_map_for_loss)
