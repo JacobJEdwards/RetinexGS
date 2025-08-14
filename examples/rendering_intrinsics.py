@@ -35,6 +35,7 @@ def rasterize_intrinsics(
         tile_size: int = 16,
         backgrounds: Tensor | None = None,
         absgrad: bool = False,
+        include_normals: bool = False,
         rasterize_mode: Literal["classic", "antialiased"] = "classic",
 ) -> tuple[dict[str, Tensor], Tensor, dict[str, Any]]:
     """
@@ -130,15 +131,19 @@ def rasterize_intrinsics(
     base_reflectance_rgb = spherical_harmonics(sh_degree, dirs, shs, masks=masks)
     base_reflectance_rgb = torch.clamp_min(base_reflectance_rgb + 0.5, 0.0)
 
-    with torch.no_grad():
-        rot_mats = quaternion_to_matrix(quats)
-        _, min_scale_idx = torch.min(scales, dim=-1)
+    if include_normals:
 
-        original_shape = min_scale_idx.shape
-        idx = min_scale_idx.view(-1, 1, 1).expand(-1, 3, 1) # Shape: [Prod(...), 3, 1]
-        all_rots = rot_mats.view(-1, 3, 3)
-        normals = torch.gather(all_rots, 2, idx).squeeze(-1) # Shape: [Prod(...), 3]
-        normals = normals.view(original_shape + (3,))
+        with torch.no_grad():
+            rot_mats = quaternion_to_matrix(quats)
+            _, min_scale_idx = torch.min(scales, dim=-1)
+
+            original_shape = min_scale_idx.shape
+            idx = min_scale_idx.view(-1, 1, 1).expand(-1, 3, 1) # Shape: [Prod(...), 3, 1]
+            all_rots = rot_mats.view(-1, 3, 3)
+            normals = torch.gather(all_rots, 2, idx).squeeze(-1) # Shape: [Prod(...), 3]
+            normals = normals.view(original_shape + (3,))
+    else:
+        normals = torch.zeros_like(means[..., :3])
 
     if packed:
         world_positions = means.view(B, N, 3)[batch_ids, gaussian_ids]
