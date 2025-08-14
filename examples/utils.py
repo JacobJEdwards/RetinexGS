@@ -344,6 +344,7 @@ class IlluminationField(nn.Module):
         self.scene_scale = scene_scale
         self.use_hash_grid = use_hash_grid
         self.use_view_dirs = use_view_dirs
+        self.use_appearance_embeds = use_appearance_embeds
 
         if self.use_hash_grid:
             per_level_scale = 1.4472692012786865
@@ -359,17 +360,21 @@ class IlluminationField(nn.Module):
                 },
                 dtype=torch.float32,
             )
-            in_dim = self.encoder.n_output_dims
+            pos_in_dim = self.encoder.n_output_dims
         else:
             self.encoder = PositionalEncoder(num_freqs)
-            in_dim = 3 * 2 * num_freqs
+            pos_in_dim = 3 * 2 * num_freqs
 
+        self.dir_in_dim = 0
         if self.use_view_dirs:
             self.dir_encoder = PositionalEncoder(dir_num_freqs)
-            in_dim += 3 * 2 * dir_num_freqs
+            self.dir_in_dim += 3 * 2 * dir_num_freqs
 
+        self.embed_in_dim = 0
         if use_appearance_embeds:
-            in_dim += appearance_embedding_dim
+            self.embed_in_dim += appearance_embedding_dim
+
+        in_dim = pos_in_dim + self.dir_in_dim + self.embed_in_dim
 
         layers = [nn.Linear(in_dim, hidden_dim), nn.SiLU(inplace=True)]
         for _ in range(num_layers - 1):
@@ -394,14 +399,22 @@ class IlluminationField(nn.Module):
 
         mlp_input = [encoded_x]
 
-        if self.use_view_dirs and view_dirs is not None:
-            encoded_dirs = self.dir_encoder(F.normalize(view_dirs, dim=-1))
-            mlp_input.append(encoded_dirs)
+        if self.use_view_dirs:
+            if view_dirs is not None:
+                encoded_dirs = self.dir_encoder(F.normalize(view_dirs, dim=-1))
+                mlp_input.append(encoded_dirs)
+            else:
+                zeros = torch.zeros(x.shape[0], self.dir_in_dim, device=x.device)
+                mlp_input.append(zeros)
 
-        if embeds is not None:
-            num_points = x.shape[0]
-            broadcasted_embeds = embeds.expand(num_points, -1)
-            mlp_input.append(broadcasted_embeds)
+        if self.use_appearance_embeds:
+            if embeds is not None:
+                num_points = x.shape[0]
+                broadcasted_embeds = embeds.expand(num_points, -1)
+                mlp_input.append(broadcasted_embeds)
+            else:
+                zeros = torch.zeros(x.shape[0], self.embed_in_dim, device=x.device)
+                mlp_input.append(zeros)
 
         mlp_input_tensor = torch.cat(mlp_input, dim=-1)
         params = self.mlp(mlp_input_tensor)
