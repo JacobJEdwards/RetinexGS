@@ -69,20 +69,20 @@ class Config:
     use_normals: bool = True
     use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
-    use_gradient_aware_loss: bool = False
+    use_gradient_aware_loss: bool = True
 
     use_yuv_colourspace: bool = False
 
-    postfix = "_variance"
+    postfix = "_contrast"
 
-    lambda_illum_smoothness: float = 0.015
-    lambda_exclusion: float = 0.01
-    lambda_reflectance_reg: float = 1.35
-    lambda_shn_reg: float = 0.4
-    lambda_gray_world: float = 1.95
-    lambda_tv_loss: float = 2.2
-    lambda_camera_reg: float = 0.001
-    lambda_illum_reg: float = 0.015
+    lambda_illum_smoothness: float = 0.005
+    lambda_exclusion: float = 0.3
+    lambda_reflectance_reg: float = 5
+    lambda_shn_reg: float = 0.8
+    lambda_gray_world: float = 3.5
+    lambda_tv_loss: float = 3.5
+    lambda_camera_reg: float = 0.2
+    lambda_illum_reg: float = 0.005
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
