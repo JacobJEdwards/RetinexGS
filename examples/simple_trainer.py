@@ -681,12 +681,6 @@ class Runner:
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
 
-                if hasattr(self, "trial"):
-                    self.trial.report(loss.item(), step + (0 if self.cfg.postfix == "_variance" else 1500))
-                    if self.trial.should_prune():
-                        raise optuna.TrialPruned()
-
-
                 if cfg.lambda_illum_smoothness > 0:
                     self.writer.add_scalar("train/loss_illum_smoothness", loss_illum_smoothness.item(), step)
 
@@ -1163,7 +1157,7 @@ def objective(trial: optuna.Trial):
     avg_ssim = total_ssim / num_runs
     avg_lpips = total_lpips / num_runs
 
-    return avg_ssim
+    return avg_psnr, avg_ssim, avg_lpips
 
 
 
@@ -1227,8 +1221,7 @@ if __name__ == "__main__":
     # cli(main, config, verbose=True)
 
     study = optuna.create_study(
-        direction="maximize",
-        pruner=optuna.pruners.HyperbandPruner(),
+        directions=["maximize", "maximize", "minimize"],
     )
     study.optimize(objective, n_trials=100)
 
