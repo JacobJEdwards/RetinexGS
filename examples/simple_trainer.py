@@ -1129,6 +1129,15 @@ def objective(trial: optuna.Trial):
     cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 0, 0.5)
     cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 0, 0.2)
 
+    cfg.use_gradient_aware_loss = trial.suggest_categorical("use_gradient_aware_loss", [True, False])
+    cfg.use_yuv_colourspace = trial.suggest_categorical("use_yuv_colourspace", [True, False])
+    cfg.use_camera_response_network = trial.suggest_categorical("use_camera_response_network", [True, False])
+    cfg.appearance_embeddings = trial.suggest_categorical("appearance_embeddings", [True, False])
+    cfg.use_view_dirs = trial.suggest_categorical("use_view_dirs", [True, False])
+    cfg.use_normals = trial.suggest_categorical("use_normals", [True, False])
+
+
+
     cfg.max_steps = 1500
     cfg.eval_steps = [1500]
 
