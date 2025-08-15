@@ -862,11 +862,12 @@ class Runner:
                 if cfg.use_camera_response_network:
                     image_ids = data["image_id"].to(device)
                     embedding = self.appearance_embeds(image_ids) if embeddings_input is None else embeddings_input
-                    a, b, c = self.camera_response_net(embedding)
+                    a, b, c, d = self.camera_response_net(embedding)
                     final_color_map = (
-                            a[:, None, None, :] * torch.pow(scene_lit_color_map, 2) +
-                            b[:, None, None, :] * scene_lit_color_map +
-                            c[:, None, None, :]
+                        a[:, None, None, :] * torch.pow(scene_lit_color_map, 3) +
+                        b[:, None, None, :] * torch.pow(scene_lit_color_map, 2) +
+                        c[:, None, None, :] * scene_lit_color_map +
+                        d[:, None, None, :]
                     )
 
 

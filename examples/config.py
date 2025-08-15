@@ -76,12 +76,12 @@ class Config:
     postfix = "_variance"
 
     lambda_illum_smoothness: float = 1.0
-    lambda_exclusion: float = 0.5
-    lambda_reflectance_reg: float = 0.2
-    lambda_shn_reg: float = 0.2
-    lambda_gray_world: float = 0.0
-    lambda_tv_loss: float = 0.2
-    lambda_camera_reg: float = 0.1
+    lambda_exclusion: float = 0.0
+    lambda_reflectance_reg: float = 0.0
+    lambda_shn_reg: float = 0.0
+    lambda_gray_world: float = 0.01
+    lambda_tv_loss: float = 0.0
+    lambda_camera_reg: float = 0.0
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
