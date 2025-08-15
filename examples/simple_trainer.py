@@ -1163,7 +1163,7 @@ def objective(trial: optuna.Trial):
     avg_ssim = total_ssim / num_runs
     avg_lpips = total_lpips / num_runs
 
-    return avg_psnr, avg_ssim, avg_lpips
+    return avg_ssim
 
 
 
@@ -1227,18 +1227,18 @@ if __name__ == "__main__":
     # cli(main, config, verbose=True)
 
     study = optuna.create_study(
-        directions=["maximize", "maximize", "minimize"],
+        direction="maximize",
         pruner=optuna.pruners.SuccessiveHalvingPruner(),
     )
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=100)
 
-    print("Study statistics: ")
-    print(f"  Number of finished trials: {len(study.trials)}")
+    print("Best trial:")
+    trial = study.best_trial
+    print(f"  Value: {trial.value}")
+    print("  Params:")
+    for key, value in trial.params.items():
+        print(f"    {key}: {value}")
 
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f"  Trial {i}:")
-        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print("    Params: ")
-        for key, value in trial.params.items():
-            print(f"      {key}: {value}")
+
+
+
