@@ -80,7 +80,7 @@ class Config:
     lambda_reflectance_reg: float = 0
     lambda_shn_reg: float = 0.8
     lambda_gray_world: float = 0
-    lambda_tv_loss: float = 100
+    lambda_tv_loss: float = 5000
     lambda_camera_reg: float = 0.2
     lambda_illum_reg: float = 0.0
 
