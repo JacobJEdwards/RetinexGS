@@ -1228,7 +1228,7 @@ if __name__ == "__main__":
 
     study = optuna.create_study(
         direction="maximize",
-        pruner=optuna.pruners.SuccessiveHalvingPruner(),
+        pruner=optuna.pruners.HyperbandPruner(),
     )
     study.optimize(objective, n_trials=100)
 
