@@ -1120,8 +1120,6 @@ class Runner:
 def objective(trial: optuna.Trial):
     cfg = Config()
 
-    total = 0
-
     cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 0, 0.2)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0, 0.2)
     cfg.lambda_reflectance_reg = trial.suggest_float("lambda_reflectance_reg", 0.5, 5)
@@ -1134,6 +1132,11 @@ def objective(trial: optuna.Trial):
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
 
+    total_psnr = 0
+    total_ssim = 0
+    total_lpips = 0
+    num_runs = 0
+
     for t in ["_variance", "_contrast"]:
         cfg.postfix = t
 
@@ -1143,9 +1146,16 @@ def objective(trial: optuna.Trial):
         with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
             stats = json.load(f)
 
-        total += stats["psnr_enh"]
+        total_psnr += stats.get("psnr_enh", 0)
+        total_ssim += stats.get("ssim_enh", 0)
+        total_lpips += stats.get("lpips_enh", 0)
+        num_runs += 1
 
-    return total / 2
+    avg_psnr = total_psnr / num_runs
+    avg_ssim = total_ssim / num_runs
+    avg_lpips = total_lpips / num_runs
+
+    return avg_psnr, avg_ssim, avg_lpips
 
 
 
@@ -1208,12 +1218,16 @@ if __name__ == "__main__":
     #
     # cli(main, config, verbose=True)
 
-    study = optuna.create_study(direction="maximize")
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
     study.optimize(objective, n_trials=50)
 
-    print("Best trial:")
-    trial = study.best_trial
-    print(f"  Value: {trial.value}")
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print(f"    {key}: {value}")
+    print("Study statistics: ")
+    print(f"  Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")
