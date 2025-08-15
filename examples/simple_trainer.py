@@ -681,6 +681,12 @@ class Runner:
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
 
+                if hasattr(self, "trial"):
+                    self.trial.report(loss.item(), step)
+                    if self.trial.should_prune():
+                        raise optuna.TrialPruned()
+
+
                 if cfg.lambda_illum_smoothness > 0:
                     self.writer.add_scalar("train/loss_illum_smoothness", loss_illum_smoothness.item(), step)
 
@@ -1141,6 +1147,7 @@ def objective(trial: optuna.Trial):
         cfg.postfix = t
 
         runner = Runner(0, 0, 1, cfg)
+        runner.trial = trial
         runner.train()
 
         with open(f"{runner.stats_dir}/val_step{1500 - 1:04d}.json") as f:
@@ -1151,10 +1158,6 @@ def objective(trial: optuna.Trial):
         total_lpips += stats.get("lpips_enh", 0)
 
         num_runs += 1
-
-        trial.report(total_psnr, num_runs)
-        if trial.should_prune():
-            raise optuna.TrialPruned()
 
     avg_psnr = total_psnr / num_runs
     avg_ssim = total_ssim / num_runs
