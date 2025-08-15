@@ -71,7 +71,7 @@ class Config:
     use_camera_response_network: bool = True
     use_gradient_aware_loss: bool = False
 
-    postfix = "_multiexposure"
+    postfix = "_variance"
 
     lambda_illum_smoothness: float = 1.0
     lambda_exclusion: float = 0.05
