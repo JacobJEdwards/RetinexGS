@@ -1157,6 +1157,8 @@ def objective(trial: optuna.Trial):
     avg_ssim = total_ssim / num_runs
     avg_lpips = total_lpips / num_runs
 
+    torch.cuda.empty_cache()
+
     return avg_psnr, avg_ssim, avg_lpips
 
 
@@ -1223,7 +1225,7 @@ if __name__ == "__main__":
     study = optuna.create_study(
         directions=["maximize", "maximize", "minimize"],
     )
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, n_trials=100, catch=(RuntimeError, ValueError))
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
