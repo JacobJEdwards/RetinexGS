@@ -1225,7 +1225,7 @@ if __name__ == "__main__":
 
     study = optuna.create_study(
         directions=["maximize", "maximize", "minimize"],
-        pruner=optuna.pruners.MedianPruner(),
+        pruner=optuna.pruners.SuccessiveHalvingPruner(),
     )
     study.optimize(objective, n_trials=50)
 
