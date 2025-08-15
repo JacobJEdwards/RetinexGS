@@ -614,6 +614,16 @@ class Runner:
 
                     loss += cfg.lambda_reflectance_reg * reflectance_reg_loss
 
+                if cfg.lambda_illum_reg > 0.0:
+                    identity = torch.eye(3, device=illum_A.device).expand_as(illum_A)
+
+                    loss_A_reg = torch.mean((illum_A - identity) ** 2)
+
+                    loss_b_reg = torch.mean(illum_b ** 2)
+
+                    loss_illum_reg = loss_A_reg + loss_b_reg
+                    loss += cfg.lambda_illum_reg * loss_illum_reg
+
                 if cfg.lambda_exclusion > 0.0:
                     if reflectance_map_for_loss.shape[2] > 3 and reflectance_map_for_loss.shape[3] > 3:
                         loss_exclusion = self.loss_exclusion(reflectance_map_for_loss, illum_map_for_loss)
