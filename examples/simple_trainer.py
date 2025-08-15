@@ -682,7 +682,7 @@ class Runner:
                 self.writer.add_scalar("train/mem", mem, step)
 
                 if hasattr(self, "trial"):
-                    self.trial.report(loss.item(), step)
+                    self.trial.report(loss.item(), step + (0 if self.cfg.postfix == "_variance" else 1000))
                     if self.trial.should_prune():
                         raise optuna.TrialPruned()
 
