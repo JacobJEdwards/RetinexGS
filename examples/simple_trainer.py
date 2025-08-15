@@ -679,6 +679,38 @@ class Runner:
                 self.writer.add_scalar("train/ssim_low", ssim_loss_low.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
+
+                if cfg.lambda_illum_smoothness > 0:
+                    self.writer.add_scalar("train/loss_illum_smoothness", loss_illum_smoothness.item(), step)
+
+                if cfg.lambda_reflectance_reg > 0.0:
+                    self.writer.add_scalar("train/loss_reflectance_reg", reflectance_reg_loss.item(), step)
+
+                if cfg.lambda_illum_reg > 0.0:
+                    self.writer.add_scalar("train/loss_illum_reg", loss_illum_reg.item(), step)
+
+                if cfg.lambda_exclusion > 0.0:
+                    self.writer.add_scalar("train/loss_exclusion", loss_exclusion.item(), step)
+
+                if cfg.lambda_tv_loss > 0.0:
+                    self.writer.add_scalar("train/loss_illum_tv", loss_illum_tv.item(), step)
+
+                if cfg.lambda_shn_reg > 0.0:
+                    self.writer.add_scalar("train/loss_shn_reg", loss_shn_reg.item(), step)
+
+                if cfg.lambda_gray_world > 0.0:
+                    self.writer.add_scalar("train/loss_gray_world", loss_gray_world.item(), step)
+
+                if cfg.opacity_reg > 0.0:
+                    self.writer.add_scalar("train/loss_opacity_reg", cfg.opacity_reg * torch.abs(torch.sigmoid(self.splats["opacities"])).mean().item(), step)
+
+                if cfg.scale_reg > 0.0:
+                    self.writer.add_scalar("train/loss_scale_reg", cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean().item(), step)
+
+                if cfg.use_camera_response_network and cfg.lambda_camera_reg > 0.0:
+                    self.writer.add_scalar("train/loss_camera_reg", cfg.lambda_camera_reg * (a.pow(2).mean() + b.pow(2).mean() + (c - 1).pow(2).mean() + d.pow(2).mean()).item(), step)
+
+
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(
@@ -696,11 +728,7 @@ class Runner:
                         )
                         vis_illum_map = illum_map
 
-                        if vis_illum_map.shape[1] == 1:
-                            vis_illum_map = vis_illum_map.repeat(1, 3, 1, 1)
-
-                        if vis_illum_map.shape[1] == 3:
-                            self.writer.add_images("train/illum_map_visualization", vis_illum_map, step)
+                        self.writer.add_images("train/illum_map_visualization", vis_illum_map, step)
 
                 self.writer.flush()
 
