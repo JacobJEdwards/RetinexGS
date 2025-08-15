@@ -530,11 +530,12 @@ class Runner:
                     if cfg.use_camera_response_network:
                         image_ids = data["image_id"].to(device)
                         embedding = self.appearance_embeds(image_ids) if embeddings_input is None else embeddings_input
-                        a, b, c = self.camera_response_net(embedding)
+                        a, b, c, d = self.camera_response_net(embedding)
                         final_color_map = (
-                                a[:, None, None, :] * torch.pow(scene_lit_color_map, 2) +
-                                b[:, None, None, :] * scene_lit_color_map +
-                                c[:, None, None, :]
+                                a[:, None, None, :] * torch.pow(scene_lit_color_map, 3) +
+                                b[:, None, None, :] * torch.pow(scene_lit_color_map, 2) +
+                                c[:, None, None, :] * scene_lit_color_map +
+                                d[:, None, None, :]
                         )
 
                     else:
@@ -555,21 +556,37 @@ class Runner:
                 )
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
+                if cfg.use_yuv_colourspace:
+                    reflectance_map_yuv = kornia.color.rgb_to_yuv(reflectance_map.permute(0, 3, 1, 2))
+                    illum_map_yuv = kornia.color.rgb_to_yuv(illum_map.permute(0, 3, 1, 2))
+
+                    reflectance_lum = reflectance_map_yuv[:, 0:1, :, :] # Shape: [B, 1, H, W]
+                    illum_lum = illum_map_yuv[:, 0:1, :, :]
+
                 if cfg.lambda_illum_smoothness > 0:
                     if cfg.use_gradient_aware_loss:
 
-                        img_grads = kornia.filters.spatial_gradient(pixels.permute(0, 3, 1, 2), order=1)
+                        img_grads = kornia.filters.spatial_gradient(pixels.permute(0, 3, 1, 2))
                         grad_mag = torch.norm(img_grads, dim=2).sum(dim=1)  # Shape: [B, H, W]
-
                         smooth_mask = torch.exp(-2.0 * grad_mag).unsqueeze(-1)  # Shape: [B, H, W, 1]
 
-                        illum_map_diff_h = illum_map[:, 1:, :, :] - illum_map[:, :-1, :, :]
-                        illum_map_diff_w = illum_map[:, :, 1:, :] - illum_map[:, :, :-1, :]
+                        if cfg.use_yuv_colourspace:
+                            smooth_mask = smooth_mask.permute(0, 3, 1, 2)
+                            illum_lum_diff_h = illum_lum[:, :, 1:, :] - illum_lum[:, :, :-1, :]
+                            illum_lum_diff_w = illum_lum[:, :, :, 1:] - illum_lum[:, :, :, :-1]
 
-                        loss_h = (torch.pow(illum_map_diff_h, 2) * smooth_mask[:, :-1, :, :]).mean()
-                        loss_w = (torch.pow(illum_map_diff_w, 2) * smooth_mask[:, :, :-1, :]).mean()
+                            loss_h = (torch.pow(illum_lum_diff_h, 2) * smooth_mask[:, :, :-1, :]).mean()
+                            loss_w = (torch.pow(illum_lum_diff_w, 2) * smooth_mask[:, :, :, :-1]).mean()
 
-                        loss_illum_smoothness = loss_h + loss_w
+                            loss_illum_smoothness = loss_h + loss_w
+                        else:
+                            illum_map_diff_h = illum_map[:, 1:, :, :] - illum_map[:, :-1, :, :]
+                            illum_map_diff_w = illum_map[:, :, 1:, :] - illum_map[:, :, :-1, :]
+
+                            loss_h = (torch.pow(illum_map_diff_h, 2) * smooth_mask[:, :-1, :, :]).mean()
+                            loss_w = (torch.pow(illum_map_diff_w, 2) * smooth_mask[:, :, :-1, :]).mean()
+
+                            loss_illum_smoothness = loss_h + loss_w
 
                     else:
                         with torch.no_grad():
@@ -627,7 +644,9 @@ class Runner:
                     )
 
                 if cfg.use_camera_response_network and cfg.lambda_camera_reg > 0.0:
-                    loss += 0.001 * (a.pow(2).mean() + (b - 1).pow(2).mean())
+                    loss += cfg.lambda_camera_reg * (
+                        a.pow(2).mean() + b.pow(2).mean() + (c - 1).pow(2).mean() + d.pow(2).mean()
+                    )
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -849,6 +868,8 @@ class Runner:
                             b[:, None, None, :] * scene_lit_color_map +
                             c[:, None, None, :]
                     )
+
+
                 else:
                     final_color_map = scene_lit_color_map
 

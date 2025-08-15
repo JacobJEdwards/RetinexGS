@@ -484,16 +484,17 @@ class CameraResponseNet(nn.Module):
                 "n_hidden_layers": 2,
             },
         )
-        self.mlp_head = nn.Linear(hidden_dim, 9)
+        self.mlp_head = nn.Linear(hidden_dim, 12)
 
         with torch.no_grad():
             self.mlp_head.weight.zero_()
             self.mlp_head.bias.zero_()
-            self.mlp_head.bias.data[3:6] = 1.0
+            self.mlp_head.bias.data[6:9] = 1.0
 
-    def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         # embedding: [B, D_embed]
         hidden_features = self.mlp_base(embedding)
         params = self.mlp_head(hidden_features.float()) # [B, 6]
-        a, b, c = params.split(3, dim=-1) # 3 x [B, 3]
-        return a, b, c
+
+        a, b, c, d = params.split(3, dim=-1) # 3 x [B, 3]
+        return a, b, c, d
