@@ -1436,28 +1436,38 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    configs = {
-        "default": (
-            "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-        ),
-        "mcmc": (
-            "Gaussian splatting training using MCMC.",
-            Config(
-                init_opa=0.5,
-                init_scale=0.1,
-                opacity_reg=0.01,
-                scale_reg=0.01,
-                strategy=MCMCStrategy(verbose=True),
-            ),
-        ),
-    }
-    # config = tyro.extras.overridable_config_cli(configs)
-    config = tyro.cli(
-        Config,
-    )
+    # configs = {
+    #     "default": (
+    #         "Gaussian splatting training using densification heuristics from the original paper.",
+    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+    #     ),
+    #     "mcmc": (
+    #         "Gaussian splatting training using MCMC.",
+    #         Config(
+    #             init_opa=0.5,
+    #             init_scale=0.1,
+    #             opacity_reg=0.01,
+    #             scale_reg=0.01,
+    #             strategy=MCMCStrategy(verbose=True),
+    #         ),
+    #     ),
+    # }
+    # # config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.cli(
+    #     Config,
+    # )
+    #
+    # config.adjust_steps(config.steps_scaler)
+    # torch.set_float32_matmul_precision("high")
+    #
+    # cli(main, config, verbose=True)
 
-    config.adjust_steps(config.steps_scaler)
-    torch.set_float32_matmul_precision("high")
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=50)
 
-    cli(main, config, verbose=True)
+    print("Best trial:")
+    trial = study.best_trial
+    print(f"  Value: {trial.value}")
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print(f"    {key}: {value}")
