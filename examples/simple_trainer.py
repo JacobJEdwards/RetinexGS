@@ -1120,25 +1120,32 @@ class Runner:
 def objective(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 0, 1.0,)
-    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 1e-2, 1.0, log=True)
-    cfg.lambda_reflectance_reg = trial.suggest_float("lambda_reflectance_reg", 0.5, 2.5)
+    total = 0
+
+    cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 0, 0.2)
+    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0, 0.2)
+    cfg.lambda_reflectance_reg = trial.suggest_float("lambda_reflectance_reg", 0.5, 5)
     cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0, 1.0)
     cfg.lambda_gray_world = trial.suggest_float("lambda_gray_world", 0, 5.0)
-    cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 1.0, 5.0)
-    cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 0, 1.0)
-    cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 0, 1.0)
+    cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 0.5, 5.0)
+    cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 0, 0.2)
+    cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 0, 0.1)
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
 
-    runner = Runner(0, 0, 1, cfg)
-    runner.train()
+    for t in ["_variance", "_contrast"]:
+        cfg.postfix = t
 
-    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
-        stats = json.load(f)
+        runner = Runner(0, 0, 1, cfg)
+        runner.train()
 
-    return stats["psnr_enh"]
+        with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+            stats = json.load(f)
+
+        total += stats["psnr_enh"]
+
+    return total / 2
 
 
 
