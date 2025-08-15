@@ -188,7 +188,7 @@ class Runner:
             self.scene_scale,
             use_view_dirs=cfg.use_view_dirs,
             use_normals=cfg.use_normals,
-            use_appearance_embeds=cfg.appearance_embeddings,
+            use_appearance_embeds=cfg.appearance_embeddings and not cfg.use_camera_response_network,
         ).to(self.device)
 
         if world_size > 1:
@@ -529,10 +529,14 @@ class Runner:
 
                     if cfg.use_camera_response_network:
                         image_ids = data["image_id"].to(device)
-                        embedding = self.appearance_embeds(image_ids)
-                        cam_scale, cam_shift = self.camera_response_net(embedding)
+                        embedding = self.appearance_embeds(image_ids) if embeddings_input is None else embeddings_input
+                        a, b, c = self.camera_response_net(embedding)
+                        final_color_map = (
+                                a[:, None, None, :] * torch.pow(scene_lit_color_map, 2) +
+                                b[:, None, None, :] * scene_lit_color_map +
+                                c[:, None, None, :]
+                        )
 
-                        final_color_map = cam_scale[:, None, None, :] * scene_lit_color_map + cam_shift[:, None, None, :]
                     else:
                         final_color_map = scene_lit_color_map
 
@@ -621,6 +625,9 @@ class Runner:
                             cfg.scale_reg
                             * torch.abs(torch.exp(self.splats["scales"])).mean()
                     )
+
+                if cfg.use_camera_response_network and cfg.lambda_camera_reg > 0.0:
+                    loss += 0.001 * (a.pow(2).mean() + (b - 1).pow(2).mean())
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -835,9 +842,13 @@ class Runner:
                 scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
                 if cfg.use_camera_response_network:
                     image_ids = data["image_id"].to(device)
-                    embedding = self.appearance_embeds(image_ids)
-                    cam_scale, cam_shift = self.camera_response_net(embedding)
-                    final_color_map = cam_scale[:, None, None, :] * scene_lit_color_map + cam_shift[:, None, None, :]
+                    embedding = self.appearance_embeds(image_ids) if embeddings_input is None else embeddings_input
+                    a, b, c = self.camera_response_net(embedding)
+                    final_color_map = (
+                            a[:, None, None, :] * torch.pow(scene_lit_color_map, 2) +
+                            b[:, None, None, :] * scene_lit_color_map +
+                            c[:, None, None, :]
+                    )
                 else:
                     final_color_map = scene_lit_color_map
 

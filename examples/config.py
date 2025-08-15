@@ -78,7 +78,8 @@ class Config:
     lambda_reflectance_reg: float = 0.2
     lambda_shn_reg: float = 0.1
     lambda_gray_world: float = 0.1
-    lambda_tv_loss = 0.2
+    lambda_tv_loss: float = 0.2
+    lambda_camera_reg: float = 0.1
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
