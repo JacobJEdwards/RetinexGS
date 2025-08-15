@@ -73,7 +73,7 @@ class Config:
 
     use_yuv_colourspace: bool = True
 
-    postfix = "_variance"
+    postfix = "_contrast"
 
     lambda_illum_smoothness: float = 1.0
     lambda_exclusion: float = 0.1
