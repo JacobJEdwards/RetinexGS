@@ -1129,9 +1129,6 @@ def objective(trial: optuna.Trial):
     cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 1e-2, 2.0)
     cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 1e-2, 2.0)
 
-    cfg.use_camera_response_network = trial.suggest_categorical(
-        "use_camera_response_network", [True, False]
-    )
     cfg.use_gradient_aware_loss = trial.suggest_categorical(
         "use_gradient_aware_loss", [True, False]
     )
