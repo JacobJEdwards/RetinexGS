@@ -1122,12 +1122,12 @@ def objective(trial: optuna.Trial):
 
     cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 1e-2, 5.0, log=True)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 1e-2, 5.0, log=True)
-    cfg.lambda_reflectance_reg = trial.suggest_float("lambda_reflectance_reg", 1e-2, 2.0)
-    cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 1e-2, 2.0)
-    cfg.lambda_gray_world = trial.suggest_float("lambda_gray_world", 1e-2, 2.0)
+    cfg.lambda_reflectance_reg = trial.suggest_float("lambda_reflectance_reg", 0, 2.0)
+    cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0, 2.0)
+    cfg.lambda_gray_world = trial.suggest_float("lambda_gray_world", 0, 2.0)
     cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 1e-2, 5.0, log=True)
-    cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 1e-2, 2.0)
-    cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 1e-2, 2.0)
+    cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 0, 2.0)
+    cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 0, 2.0)
 
     cfg.use_gradient_aware_loss = trial.suggest_categorical(
         "use_gradient_aware_loss", [True, False]
