@@ -526,7 +526,6 @@ class Runner:
                     illum_b_map = illum_b.view(1, height, width, 3)
 
                     scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
-                    scene_lit_color_map = torch.clamp(scene_lit_color_map, 0.0, 1.0)
 
                     if cfg.use_camera_response_network:
                         image_ids = data["image_id"].to(device)
@@ -860,7 +859,6 @@ class Runner:
                 illum_A_map = illum_A.view(1, height, width, 3, 3)
                 illum_b_map = illum_b.view(1, height, width, 3)
                 scene_lit_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, reflectance_map) + illum_b_map
-                scene_lit_color_map = torch.clamp(scene_lit_color_map, 0.0, 1.0)
                 if cfg.use_camera_response_network:
                     image_ids = data["image_id"].to(device)
                     embedding = self.appearance_embeds(image_ids) if embeddings_input is None else embeddings_input
