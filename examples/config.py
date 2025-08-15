@@ -77,7 +77,7 @@ class Config:
 
     lambda_illum_smoothness: float = 0.005
     lambda_exclusion: float = 0.3
-    lambda_reflectance_reg: float = 5
+    lambda_reflectance_reg: float = 0
     lambda_shn_reg: float = 0.8
     lambda_gray_world: float = 3.5
     lambda_tv_loss: float = 3.5
