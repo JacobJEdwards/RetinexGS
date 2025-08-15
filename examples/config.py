@@ -69,7 +69,7 @@ class Config:
     use_normals: bool = True
     use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
-    use_gradient_aware_loss: bool = False
+    use_gradient_aware_loss: bool = True
 
     postfix = "_variance"
 
@@ -77,7 +77,7 @@ class Config:
     lambda_exclusion: float = 0.05
     lambda_reflectance_reg: float = 0.2
     lambda_shn_reg: float = 0.1
-    lambda_gray_world: float = 0.1
+    lambda_gray_world: float = 0.5
     lambda_tv_loss: float = 0.2
     lambda_camera_reg: float = 0.1
 

@@ -491,7 +491,7 @@ class CameraResponseNet(nn.Module):
             self.mlp_head.bias.zero_()
             self.mlp_head.bias.data[3:6] = 1.0
 
-    def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         # embedding: [B, D_embed]
         hidden_features = self.mlp_base(embedding)
         params = self.mlp_head(hidden_features.float()) # [B, 6]
