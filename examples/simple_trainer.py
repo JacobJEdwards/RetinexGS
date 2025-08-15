@@ -8,6 +8,7 @@ from typing import Any
 import imageio
 import kornia.color
 import numpy as np
+import optuna
 import torch
 import torch.nn.functional as F
 import tqdm
@@ -1429,6 +1430,51 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     else:
         runner.train()
 
+def objective(trial: optuna.Trial):
+    cfg = Config()
+
+    cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 0.5)
+    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.0, 0.5)
+    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 0.0, 50.0)
+    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 0.0, 100.0)
+
+    cfg.lambda_illum_color = trial.suggest_float("lambda_illum_color", 0.0, 1.0)
+    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
+    cfg.lambda_illum_variance = trial.suggest_float("lambda_illum_variance", 0.0, 1.0)
+
+    cfg.lambda_laplacian = trial.suggest_float("lambda_laplacian", 0.0, 1.0)
+    cfg.lambda_gradient = trial.suggest_float("lambda_gradient", 0.0, 1.0)
+    cfg.lambda_frequency = trial.suggest_float("lambda_frequency", 0.0, 1.0)
+    cfg.lambda_illum_frequency = trial.suggest_float("lambda_illum_frequency", 0.0, 1.0)
+    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 1.0)
+    cfg.lambda_clipping = trial.suggest_float("lambda_clipping", 0.0, 1.0)
+    cfg.lambda_vq_commitment = trial.suggest_float("lambda_vq_commitment", 0.0, 1.0)
+    cfg.lambda_patch_consistency = trial.suggest_float("lambda_patch_consistency", 0.0, 1.0)
+    cfg.lambda_bidirectional = trial.suggest_float("lambda_bidirectional", 0.0, 1.0)
+
+    cfg.use_hsv_color_space = trial.suggest_categorical("use_hsv_color_space", [True, False])
+    cfg.predictive_adaptive_curve = trial.suggest_categorical("predictive_adaptive_curve", [True, False])
+    cfg.enable_dynamic_weights = trial.suggest_categorical("enable_dynamic_weights", [True, False])
+    cfg.learn_spatial_contrast = trial.suggest_categorical("learn_spatial_contrast", [True, False])
+    cfg.learn_local_exposure = trial.suggest_categorical("learn_local_exposure", [True, False])
+    cfg.learn_global_exposure = trial.suggest_categorical("learn_global_exposure", [True, False])
+    cfg.learn_edge_aware_gamma = trial.suggest_categorical("learn_edge_aware_gamma", [True, False])
+    cfg.use_illum_opt = trial.suggest_categorical("use_illum_opt", [True, False])
+    cfg.illum_opt_type = trial.suggest_categorical("illum_opt_type", ["base", "quantized", "content_aware"])
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+
+    runner = Runner(0, 0, 1, cfg)
+    runner.train()
+
+    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+        stats = json.load(f)
+
+    return stats["psnr_enh"]
+
 
 BilateralGrid = None
 color_correct = None
@@ -1463,7 +1509,7 @@ if __name__ == "__main__":
     # cli(main, config, verbose=True)
 
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=100)
 
     print("Best trial:")
     trial = study.best_trial
