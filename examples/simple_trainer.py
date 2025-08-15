@@ -8,6 +8,7 @@ from typing import Any
 import imageio
 import kornia
 import numpy as np
+import optuna
 import torch
 import torch.nn.functional as F
 import tqdm
@@ -1116,6 +1117,38 @@ class Runner:
 
         self.writer.flush()
 
+def objective(trial: optuna.Trial):
+    cfg = Config()
+
+    cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 1e-2, 5.0, log=True)
+    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 1e-2, 5.0, log=True)
+    cfg.lambda_reflectance_reg = trial.suggest_float("lambda_reflectance_reg", 1e-2, 2.0)
+    cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 1e-2, 2.0)
+    cfg.lambda_gray_world = trial.suggest_float("lambda_gray_world", 1e-2, 2.0)
+    cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 1e-2, 5.0, log=True)
+    cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 1e-2, 2.0)
+    cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 1e-2, 2.0)
+
+    cfg.use_camera_response_network = trial.suggest_categorical(
+        "use_camera_response_network", [True, False]
+    )
+    cfg.use_gradient_aware_loss = trial.suggest_categorical(
+        "use_gradient_aware_loss", [True, False]
+    )
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+
+    runner = Runner(0, 0, 1, cfg)
+    runner.train()
+
+    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+        stats = json.load(f)
+
+    return stats["psnr_enh"]
+
+
+
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     if world_size > 1 and not cfg_param.disable_viewer:
         cfg_param.disable_viewer = True
@@ -1149,28 +1182,38 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    configs = {
-        "default": (
-            "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-        ),
-        "mcmc": (
-            "Gaussian splatting training using MCMC.",
-            Config(
-                init_opa=0.5,
-                init_scale=0.1,
-                opacity_reg=0.01,
-                scale_reg=0.01,
-                strategy=MCMCStrategy(verbose=True),
-            ),
-        ),
-    }
-    # config = tyro.extras.overridable_config_cli(configs)
-    config = tyro.cli(
-        Config,
-    )
+    # configs = {
+    #     "default": (
+    #         "Gaussian splatting training using densification heuristics from the original paper.",
+    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+    #     ),
+    #     "mcmc": (
+    #         "Gaussian splatting training using MCMC.",
+    #         Config(
+    #             init_opa=0.5,
+    #             init_scale=0.1,
+    #             opacity_reg=0.01,
+    #             scale_reg=0.01,
+    #             strategy=MCMCStrategy(verbose=True),
+    #         ),
+    #     ),
+    # }
+    # # config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.cli(
+    #     Config,
+    # )
+    #
+    # config.adjust_steps(config.steps_scaler)
+    # torch.set_float32_matmul_precision("high")
+    #
+    # cli(main, config, verbose=True)
 
-    config.adjust_steps(config.steps_scaler)
-    torch.set_float32_matmul_precision("high")
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=50)
 
-    cli(main, config, verbose=True)
+    print("Best trial:")
+    trial = study.best_trial
+    print(f"  Value: {trial.value}")
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print(f"    {key}: {value}")
