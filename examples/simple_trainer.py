@@ -1129,8 +1129,8 @@ def objective(trial: optuna.Trial):
     cfg.lambda_camera_reg = trial.suggest_float("lambda_camera_reg", 0, 0.5)
     cfg.lambda_illum_reg = trial.suggest_float("lambda_illum_reg", 0, 0.2)
 
-    cfg.max_steps = 3000
-    cfg.eval_steps = [3000]
+    cfg.max_steps = 1500
+    cfg.eval_steps = [1500]
 
     total_psnr = 0
     total_ssim = 0
@@ -1143,13 +1143,18 @@ def objective(trial: optuna.Trial):
         runner = Runner(0, 0, 1, cfg)
         runner.train()
 
-        with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+        with open(f"{runner.stats_dir}/val_step{1500 - 1:04d}.json") as f:
             stats = json.load(f)
 
         total_psnr += stats.get("psnr_enh", 0)
         total_ssim += stats.get("ssim_enh", 0)
         total_lpips += stats.get("lpips_enh", 0)
+
         num_runs += 1
+
+        trial.report(total_psnr, num_runs)
+        if trial.should_prune():
+            raise optuna.TrialPruned()
 
     avg_psnr = total_psnr / num_runs
     avg_ssim = total_ssim / num_runs
@@ -1218,8 +1223,11 @@ if __name__ == "__main__":
     #
     # cli(main, config, verbose=True)
 
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-    study.optimize(objective, n_trials=50)
+    study = optuna.create_study(
+        directions=["maximize", "maximize", "minimize"],
+        pruner=optuna.pruners.MedianPruner(),
+    )
+    study.optimize(objective, n_trials=50, n_jobs=5)
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
