@@ -1227,7 +1227,7 @@ if __name__ == "__main__":
         directions=["maximize", "maximize", "minimize"],
         pruner=optuna.pruners.MedianPruner(),
     )
-    study.optimize(objective, n_trials=50, n_jobs=5)
+    study.optimize(objective, n_trials=50)
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
