@@ -68,7 +68,7 @@ class Config:
     use_view_dirs: bool = True
     use_normals: bool = True
     use_dual_rasterization: bool = False
-    use_camera_response_network: bool = True
+    use_camera_response_network: bool = False
     use_gradient_aware_loss: bool = False
 
     use_yuv_colourspace: bool = False
@@ -89,7 +89,7 @@ class Config:
     camera_net_lr: float = 0.006
     illumination_field_lr: float = 5e-5
 
-    learning_steps: int = 0
+    learning_steps: int = 3000
 
 
     def adjust_steps(self, factor: float) -> None:
