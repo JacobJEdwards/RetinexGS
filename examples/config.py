@@ -12,7 +12,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("../../360_v2/bicycle")
+    data_dir: Path = Path("../../360_v2/garden")
     data_factor: int = 1
     result_dir: Path = Path("../../result")
     test_every: int = 8
@@ -73,7 +73,7 @@ class Config:
 
     use_yuv_colourspace: bool = False
 
-    postfix = "_contrast"
+    postfix = "_variance"
 
     lambda_illum_smoothness: float = 0.005
     lambda_exclusion: float = 0.3
