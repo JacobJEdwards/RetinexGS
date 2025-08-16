@@ -468,9 +468,6 @@ class Runner:
                 height, width = pixels.shape[1:3]
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
-                if torch.mean(pixels) < 0.04:
-                    pbar.set_description(f"Skipping step {step} due to black image")
-                    continue
 
                 if cfg.use_dual_rasterization:
                     (
@@ -686,7 +683,10 @@ class Runner:
                     info=info,
                 )
 
-            loss.backward()
+            if torch.mean(pixels) < 0.04
+                pbar.set_description(f"Skipping step {step} due to black image")
+            else:
+                loss.backward()
 
             desc_parts = [f"loss={loss.item():.3f}",
                           f"sh_deg={sh_degree_to_use}"]
