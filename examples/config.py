@@ -98,7 +98,7 @@ class Config:
     retinex_opt_lr: float = 2e-5
     retinex_embedding_lr: float = 3e-4
 
-    retinex_embedding_dim: int = 64
+    retinex_embedding_dim: int = 32
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
