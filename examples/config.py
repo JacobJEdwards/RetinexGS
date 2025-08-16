@@ -70,11 +70,11 @@ class Config:
     lambda_reflect: float = 1.0
     lambda_illum_curve: float = 5.0
     lambda_illum_exposure: float = 2.0
-    lambda_edge_aware_smooth: float = 50.0
+    lambda_edge_aware_smooth: float = 20.0
     lambda_illum_exclusion: float = 0.1
     
     lambda_illum_color: float = 1.0
-    lambda_illum_exposure_local: float = 0.1
+    lambda_illum_exposure_local: float = 1.0
 
     lambda_bidirectional: float = 0.5
 
@@ -86,7 +86,7 @@ class Config:
     predictive_adaptive_curve: bool = False
 
     learn_spatial_contrast: bool = False
-    learn_adaptive_curve_lambdas: bool = True
+    learn_adaptive_curve_lambdas: bool = False
     learn_local_exposure: bool = False
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = False
