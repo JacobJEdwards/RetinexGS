@@ -1,3 +1,4 @@
+import gc
 import json
 import math
 import os
@@ -191,18 +192,18 @@ class Runner:
             # is_mip360=True,
         )
 
-        print("Memory allocated before dataset init:", torch.cuda.max_memory_allocated(self.device) / 1024**3, "GB")
+        # print("Memory allocated before dataset init:", torch.cuda.max_memory_allocated(self.device) / 1024**3, "GB")
 
         self.trainset = Dataset(
             self.parser, patch_size=cfg.patch_size
         )
         self.valset = Dataset(self.parser, split="val")
-        print("Memory allocated after dataset init:", torch.cuda.max_memory_allocated(self.device) / 1024**3, "GB")
+        # print("Memory allocated after dataset init:", torch.cuda.max_memory_allocated(self.device) / 1024**3, "GB")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
-        print("Scene scale from parser:", self.parser.scene_scale)
+        # print("Scene scale from parser:", self.parser.scene_scale)
         print("Scene scale:", self.scene_scale)
 
-        print(f"Memory allocated before illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
+        # print(f"Memory allocated before illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         if cfg.use_illum_opt:
             if cfg.illum_opt_type == "base":
@@ -232,7 +233,7 @@ class Runner:
                 )
             ]
 
-        print(f"Memory allocated after illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
+        # print(f"Memory allocated after illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_color.compile()
@@ -266,7 +267,7 @@ class Runner:
         self.loss_patch_consistency = PatchConsistencyLoss().to(self.device)
         self.loss_patch_consistency.compile()
 
-        print(f"Memory allocated after losses: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
+        # print(f"Memory allocated after losses: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
         retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
@@ -806,18 +807,18 @@ class Runner:
                 pixels = data["image"].to(device) / 255.0
 
                 # torch.cuda.reset_peak_memory_stats(device)
-                print(f"Memory allocated before forward pass: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+                # print(f"Memory allocated before forward pass: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
 
 
                 loss = self.retinex_train_step(
                     images_ids=images_ids, pixels=pixels, step=step
                 )
 
-                print(f"Memory allocated after forward pass & loss: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+                # print(f"Memory allocated after forward pass & loss: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
 
             loss.backward()
 
-            print(f"Memory allocated after backward pass: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+            # print(f"Memory allocated after backward pass: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
