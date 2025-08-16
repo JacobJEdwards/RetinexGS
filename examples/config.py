@@ -92,7 +92,7 @@ class Config:
     postfix: str = "_variance"
 
     use_illum_opt: bool = True
-    illum_opt_type: Literal["base", "content_aware"] = "content_aware"
+    illum_opt_type: Literal["base", "content_aware"] = "base"
 
     illum_opt_lr: float = 1e-4
     retinex_opt_lr: float = 1e-3
