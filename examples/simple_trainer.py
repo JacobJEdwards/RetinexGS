@@ -197,8 +197,8 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        torch.cuda.reset_peak_memory_stats(device)
-        print(f"Memory allocated before illum opt: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+        torch.cuda.reset_peak_memory_stats(self.device)
+        print(f"Memory allocated before illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         if cfg.use_illum_opt:
             if cfg.illum_opt_type == "base":
@@ -228,7 +228,7 @@ class Runner:
                 )
             ]
 
-        print(f"Memory allocated after illum opt: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+        print(f"Memory allocated after illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_color.compile()
@@ -262,7 +262,7 @@ class Runner:
         self.loss_patch_consistency = PatchConsistencyLoss().to(self.device)
         self.loss_patch_consistency.compile()
 
-        print(f"Memory allocated after losses: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+        print(f"Memory allocated after losses: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
         retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
