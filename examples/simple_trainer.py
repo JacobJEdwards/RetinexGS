@@ -1303,7 +1303,7 @@ def objective(trial: optuna.Trial):
     cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
     cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1e-3, 100.0, log=True)
 
-    cfg.lambda_illum_color = trial.suggest_float("lambda_illum_color", 0.0, 1.0)
+    cfg.lambda_illum_color = trial.suggest_float("lambda_illum_color", 1e-4, 100.0, log=True)
     cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
 
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
@@ -1318,6 +1318,11 @@ def objective(trial: optuna.Trial):
     cfg.learn_edge_aware_gamma = trial.suggest_categorical("learn_edge_aware_gamma", [True, False])
     cfg.use_illum_opt = trial.suggest_categorical("use_illum_opt", [True, False])
     cfg.illum_opt_type = trial.suggest_categorical("illum_opt_type", ["base", "content_aware"])
+
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
+    cfg.illum_opt_lr = trial.suggest_float("illum_opt_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_lr = trial.suggest_float("retinex_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_embed_lr = trial.suggest_float("retinex_embed_lr", 1e-5, 1e-2, log=True)
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
