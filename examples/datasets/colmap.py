@@ -17,6 +17,7 @@ from .normalize import (
     transform_cameras,
     transform_points,
 )
+import torchvision.transforms as T
 
 
 def _get_rel_paths(path_dir: str) -> List[str]:
@@ -372,8 +373,14 @@ class Dataset:
         indices = np.arange(len(self.parser.image_names))
         if split == "train":
             self.indices = indices[indices % self.parser.test_every != 0]
+            self.transform = T.Compose([
+                T.RandomApply([
+                    T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)
+                ], p=0.8),
+            ])
         else:
             self.indices = indices[indices % self.parser.test_every == 0]
+            self.transform = None
 
     def __len__(self):
         return len(self.indices)
@@ -401,6 +408,13 @@ class Dataset:
             image = cv2.remap(image, mapx, mapy, cv2.INTER_LINEAR)
             x, y, w, h = self.parser.roi_undist_dict[camera_id]
             image = image[y : y + h, x : x + w]
+
+        image_pil = Image.fromarray(image)
+
+        if self.transform:
+            image_pil = self.transform(image_pil)
+
+        image = np.array(image_pil)
 
         if self.patch_size is not None:
             # Random crop.
