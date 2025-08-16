@@ -25,3 +25,4 @@ splines
 kornia
 piq
 einops
+optuna
