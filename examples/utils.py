@@ -463,6 +463,7 @@ class IlluminationField(nn.Module):
         hidden_features = self.mlp_base(mlp_input_tensor)
         residual = mlp_input_tensor[:, :self.hidden_dim]
         hidden_features = hidden_features.clone() + residual
+
         params = self.mlp_head(hidden_features.float())
 
         matrix_A_flat = params[..., :9]
