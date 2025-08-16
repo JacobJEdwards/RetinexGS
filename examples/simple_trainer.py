@@ -1115,7 +1115,29 @@ class Runner:
         self.writer.flush()
 
 def objective_lr(trial: optuna.Trial):
+    cfg = Config()
 
+    cfg.camera_net_lr = trial.suggest_float("camera_net_lr", 1e-6, 1e-2, log=True)
+    cfg.appearance_embeds_lr = trial.suggest_float("appearance_embeds_lr", 1e-6, 1e-2, log=True)
+    cfg.illumination_field_lr = trial.suggest_float("illumination_field_lr", 1e-5, 1e-2, log=True)
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+
+    runner = Runner(0, 0, 1, cfg)
+    runner.trial = trial
+    runner.train()
+
+    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+        stats = json.load(f)
+
+    avg_psnr = stats.get("psnr_enh", 0)
+    avg_ssim = stats.get("ssim_enh", 0)
+    avg_lpips = stats.get("lpips_enh", 0)
+
+    torch.cuda.empty_cache()
+
+    return avg_psnr, avg_ssim, avg_lpips
 
 
 def objective(trial: optuna.Trial):
@@ -1206,47 +1228,47 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    configs = {
-        "default": (
-            "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-        ),
-        "mcmc": (
-            "Gaussian splatting training using MCMC.",
-            Config(
-                init_opa=0.5,
-                init_scale=0.1,
-                opacity_reg=0.01,
-                scale_reg=0.01,
-                strategy=MCMCStrategy(verbose=True),
-            ),
-        ),
-    }
-    # config = tyro.extras.overridable_config_cli(configs)
-    config = tyro.cli(
-        Config,
-    )
-
-    config.adjust_steps(config.steps_scaler)
-    torch.set_float32_matmul_precision("high")
-
-    cli(main, config, verbose=True)
-    #
-    # study = optuna.create_study(
-    #     directions=["maximize", "maximize", "minimize"],
+    # configs = {
+    #     "default": (
+    #         "Gaussian splatting training using densification heuristics from the original paper.",
+    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+    #     ),
+    #     "mcmc": (
+    #         "Gaussian splatting training using MCMC.",
+    #         Config(
+    #             init_opa=0.5,
+    #             init_scale=0.1,
+    #             opacity_reg=0.01,
+    #             scale_reg=0.01,
+    #             strategy=MCMCStrategy(verbose=True),
+    #         ),
+    #     ),
+    # }
+    # # config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.cli(
+    #     Config,
     # )
-    # study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError))
     #
-    # print("Study statistics: ")
-    # print(f"  Number of finished trials: {len(study.trials)}")
+    # config.adjust_steps(config.steps_scaler)
+    # torch.set_float32_matmul_precision("high")
     #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f"  Trial {i}:")
-    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print("    Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f"      {key}: {value}")
+    # cli(main, config, verbose=True)
+
+    study = optuna.create_study(
+        directions=["maximize", "maximize", "minimize"],
+    )
+    study.optimize(objective_lr, n_trials=50, catch=(RuntimeError, ValueError))
+
+    print("Study statistics: ")
+    print(f"  Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")
 
 
 
