@@ -190,14 +190,18 @@ class Runner:
             postfix=cfg.postfix,
             # is_mip360=True,
         )
+
+        print("Memory allocated before dataset init:", torch.cuda.max_memory_allocated(self.device) / 1024**3, "GB")
+
         self.trainset = Dataset(
             self.parser, patch_size=cfg.patch_size
         )
         self.valset = Dataset(self.parser, split="val")
+        print("Memory allocated after dataset init:", torch.cuda.max_memory_allocated(self.device) / 1024**3, "GB")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
+        print("Scene scale from parser:", self.parser.scene_scale)
         print("Scene scale:", self.scene_scale)
 
-        # torch.cuda.reset_peak_memory_stats(self.device)
         print(f"Memory allocated before illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         if cfg.use_illum_opt:
