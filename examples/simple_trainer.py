@@ -1486,16 +1486,23 @@ def objective(trial: optuna.Trial):
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
 
-    runner = Runner(0, 0, 1, cfg)
-    runner.train()
+    runner = None
+    try:
+        runner = Runner(0, 0, 1, cfg)
+        runner.train()
 
-    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
-        stats = json.load(f)
+        with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+            stats = json.load(f)
 
-    torch.cuda.empty_cache()
+        return stats["psnr_enh"], stats["ssim_enh"], stats["lpips_enh"]
 
-    return stats["psnr_enh"], stats["ssim_enh"], stats["lpips_enh"]
+    finally:
+        print("--- Cleaning up trial resources ---")
+        if runner is not None:
+            del runner
 
+        gc.collect()
+        torch.cuda.empty_cache()
 
 BilateralGrid = None
 color_correct = None
