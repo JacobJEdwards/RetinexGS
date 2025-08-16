@@ -808,6 +808,8 @@ class Runner:
 
             loss.backward()
 
+            print(f"Memory allocated after backward pass: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
 
