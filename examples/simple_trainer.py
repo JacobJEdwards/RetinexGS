@@ -1365,7 +1365,7 @@ if __name__ == "__main__":
 
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError))
+    study.optimize(objective, n_trials=50)
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
