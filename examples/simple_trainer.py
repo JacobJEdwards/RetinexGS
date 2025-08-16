@@ -409,17 +409,21 @@ class Runner:
 
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
-            ExponentialLR(self.illum_field_optimizer, gamma=0.01 ** (1.0 / max_steps)),
+            CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
         ]
 
         if cfg.appearance_embeddings:
             schedulers.append(
-                ExponentialLR(self.appearance_embeds_optimizer, gamma=0.01 ** (1.0 / max_steps))
+                CosineAnnealingLR(
+                    self.appearance_embeds_optimizer, T_max=max_steps, eta_min=0
+                )
             )
 
         if cfg.use_camera_response_network:
             schedulers.append(
-                ExponentialLR(self.camera_response_optimizer, gamma=0.01 ** (1.0 / max_steps))
+                CosineAnnealingLR(
+                    self.camera_response_optimizer, T_max=max_steps, eta_min=0
+                )
             )
 
         trainloader = torch.utils.data.DataLoader(
