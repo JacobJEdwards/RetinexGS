@@ -468,9 +468,9 @@ class Runner:
                 height, width = pixels.shape[1:3]
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
-                if torch.mean(pixels) < 0.05:
-                    pbar.set_description(f"Skipping step {step} due to black image")
-                    continue
+                # if torch.mean(pixels) < 0.05:
+                #     pbar.set_description(f"Skipping step {step} due to black image")
+                #     continue
 
                 if cfg.use_dual_rasterization:
                     (
@@ -561,7 +561,7 @@ class Runner:
                     else:
                         final_color_map = scene_lit_color_map
 
-                    colors_low = torch.sigmoid(final_color_map)
+                    colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
                     gray_color = torch.full_like(reflectance_map, 0.5)
                     illum_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, gray_color) + illum_b_map
