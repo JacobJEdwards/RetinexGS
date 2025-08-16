@@ -647,16 +647,6 @@ class Runner:
             ),
         ]
 
-        if self.cfg.use_illum_opt:
-            for optimizer in self.illum_optimizers:
-                schedulers.append(
-                    CosineAnnealingLR(
-                        optimizer,
-                        T_max=cfg.pretrain_steps + cfg.max_steps,
-                        eta_min=optimizer.param_groups[0]["lr"] * 0.01,
-                    )
-                )
-
         pbar = tqdm.tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
         for step in pbar:
             try:
