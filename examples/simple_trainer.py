@@ -468,7 +468,7 @@ class Runner:
                 height, width = pixels.shape[1:3]
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
-                if torch.mean(pixels) < 0.04 and step not in cfg.eval_steps:
+                if torch.mean(pixels) < 0.05 and step not in cfg.eval_steps:
                     pbar.set_description(f"Skipping step {step} due to black image")
 
 
