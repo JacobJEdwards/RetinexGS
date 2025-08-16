@@ -190,6 +190,7 @@ class Runner:
             use_view_dirs=cfg.use_view_dirs,
             use_normals=cfg.use_normals,
             use_appearance_embeds=cfg.appearance_embeddings and not cfg.use_camera_response_network,
+            appearance_embedding_dim=cfg.appearance_embedding_dim,
         ).to(self.device)
 
         if world_size > 1:
