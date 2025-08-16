@@ -461,14 +461,14 @@ class Runner:
                 for param in self.illumination_field.parameters():
                     param.requires_grad = False
 
-            with torch.autocast(enabled=False, device_type=device):
+            with (torch.autocast(enabled=False, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
                 pixels = data["image"].to(device) / 255.0
                 height, width = pixels.shape[1:3]
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
-                if torch.mean(pixels) < 0.04 and step not in cfg.eval_steps:
+                if torch.mean(pixels) < 0.04 and step not in [i - 1 for i in cfg.save_steps] and step != max_steps -1 and step not in [i - 1 for i in cfg.eval_steps]:
                     pbar.set_description(f"Skipping step {step} due to black image")
                     continue
 
