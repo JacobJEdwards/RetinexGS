@@ -814,7 +814,8 @@ class Runner:
                     images_ids=images_ids, pixels=pixels, step=step
                 )
 
-                # print(f"Memory allocated after forward pass & loss: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
+                # print(f"Memory allocated after forward pass & loss: {torch.cuda.max_memory_allocated(device) /
+            # 1024**3:.4f} GB")
 
             loss.backward()
 
