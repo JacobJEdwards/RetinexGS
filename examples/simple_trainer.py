@@ -707,7 +707,9 @@ class Runner:
                     self.writer.add_scalar("train/loss_scale_reg", cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean().item(), step)
 
                 if cfg.use_camera_response_network and cfg.lambda_camera_reg > 0.0:
-                    self.writer.add_scalar("train/loss_camera_reg", cfg.lambda_camera_reg * (a.pow(2).mean() + b.pow(2).mean() + (c - 1).pow(2).mean() + d.pow(2).mean()).item(), step)
+                    self.writer.add_scalar("train/loss_camera_reg", cfg.lambda_camera_reg * (
+                        (c - 1).pow(2).mean() + d.pow(2).mean()
+                    ).item(), step)
 
 
                 if cfg.tb_save_image:
