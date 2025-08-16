@@ -683,7 +683,7 @@ class Runner:
                     info=info,
                 )
 
-            if torch.mean(pixels) < 0.04
+            if torch.mean(pixels) < 0.04:
                 pbar.set_description(f"Skipping step {step} due to black image")
             else:
                 loss.backward()
