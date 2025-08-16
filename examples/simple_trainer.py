@@ -321,7 +321,7 @@ class Runner:
         base_reflectance_rgb_expanded = base_reflectance_rgb.unsqueeze(-1) # -> [N, 3, 1]
         transformed_color_rgb = torch.bmm(color_A, base_reflectance_rgb_expanded).squeeze(-1) + color_b # -> [N, 3]
 
-        final_color_rgb = torch.sigmoid(transformed_color_rgb)
+        final_color_rgb = torch.clamp(transformed_color_rgb, 0.0, 1.0)
 
         final_color_sh0 = rgb_to_sh(final_color_rgb)
 
@@ -563,11 +563,11 @@ class Runner:
                     else:
                         final_color_map = scene_lit_color_map
 
-                    colors_low = torch.sigmoid(final_color_map)
+                    colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
                     gray_color = torch.full_like(reflectance_map, 0.5)
                     illum_color_map = torch.einsum('bhwij,bhwj->bhwi', illum_A_map, gray_color) + illum_b_map
-                    illum_map = torch.sigmoid(illum_color_map)
+                    illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
 
                 info["means2d"].retain_grad()
 
@@ -937,7 +937,7 @@ class Runner:
                 else:
                     final_color_map = scene_lit_color_map
 
-                colors_low = torch.sigmoid(final_color_map)
+                colors_low = torch.clamp(final_color_map, 0.0, 1.0)
                 colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
 
             torch.cuda.synchronize()
