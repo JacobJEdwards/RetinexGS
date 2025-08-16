@@ -95,7 +95,7 @@ class Config:
     illum_opt_type: Literal["base", "content_aware"] = "content_aware"
 
     illum_opt_lr: float = 1e-4
-    retinex_opt_lr: float = 2e-5
+    retinex_opt_lr: float = 1e-3
     retinex_embedding_lr: float = 3e-4
 
     retinex_embedding_dim: int = 32
