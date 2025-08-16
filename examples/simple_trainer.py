@@ -241,6 +241,7 @@ class Runner:
             out_channels=retinex_out_channels,
             predictive_adaptive_curve=cfg.predictive_adaptive_curve,
             learn_local_exposure=cfg.learn_local_exposure,
+            embed_dim=cfg.retinex_embedding_dim
         ).to(self.device)
 
         if world_size > 1:
