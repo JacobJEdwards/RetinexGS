@@ -197,20 +197,20 @@ class Runner:
             self.illumination_field = DDP(self.illumination_field, device_ids=[local_rank])
 
         self.illum_field_optimizer = torch.optim.AdamW(
-            self.illumination_field.parameters(), lr=1e-4
+            self.illumination_field.parameters(), lr=cfg.illumination_field_lr
         )
 
         if cfg.use_camera_response_network:
             self.camera_response_net = CameraResponseNet(embedding_dim=cfg.appearance_embedding_dim).to(self.device)
             self.camera_response_optimizer = torch.optim.AdamW(
-                self.camera_response_net.parameters(), lr=1e-3
+                self.camera_response_net.parameters(), lr=cfg.camera_net_lr
             )
 
         if cfg.appearance_embeddings or cfg.use_camera_response_network:
             num_train_images = len(self.trainset)
             self.appearance_embeds = torch.nn.Embedding(num_train_images,cfg.appearance_embedding_dim).to(self.device)
             self.appearance_embeds_optimizer = torch.optim.AdamW(
-                self.appearance_embeds.parameters(), lr=1e-4
+                self.appearance_embeds.parameters(), lr=cfg.appearance_embeds_lr
             )
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
@@ -1113,6 +1113,10 @@ class Runner:
         print(f"Video saved to {video_path}")
 
         self.writer.flush()
+
+def objective_lr(trial: optuna.Trial):
+
+
 
 def objective(trial: optuna.Trial):
     cfg = Config()
