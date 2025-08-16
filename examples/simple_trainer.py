@@ -1473,6 +1473,8 @@ def objective(trial: optuna.Trial):
     with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
         stats = json.load(f)
 
+    torch.cuda.empty_cache()
+
     return stats["psnr_enh"], stats["ssim_enh"], stats["lpips_enh"]
 
 
