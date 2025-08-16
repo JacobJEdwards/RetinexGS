@@ -1436,23 +1436,23 @@ def objective(trial: optuna.Trial):
     cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 0.5)
     cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.0, 0.5)
     cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 0.0, 50.0)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-4, 50.0, log=True)
     cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 0.0, 100.0)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1e-3, 100.0, log=True)
 
     cfg.lambda_illum_color = trial.suggest_float("lambda_illum_color", 0.0, 1.0)
     cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
     cfg.lambda_illum_variance = trial.suggest_float("lambda_illum_variance", 0.0, 1.0)
 
-    cfg.lambda_laplacian = trial.suggest_float("lambda_laplacian", 0.0, 1.0)
-    cfg.lambda_gradient = trial.suggest_float("lambda_gradient", 0.0, 1.0)
-    cfg.lambda_frequency = trial.suggest_float("lambda_frequency", 0.0, 1.0)
-    cfg.lambda_illum_frequency = trial.suggest_float("lambda_illum_frequency", 0.0, 1.0)
-    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 1.0)
-    cfg.lambda_clipping = trial.suggest_float("lambda_clipping", 0.0, 1.0)
-    cfg.lambda_vq_commitment = trial.suggest_float("lambda_vq_commitment", 0.0, 1.0)
-    cfg.lambda_patch_consistency = trial.suggest_float("lambda_patch_consistency", 0.0, 1.0)
-    cfg.lambda_bidirectional = trial.suggest_float("lambda_bidirectional", 0.0, 1.0)
+    cfg.lambda_laplacian = trial.suggest_float("lambda_laplacian", 0.0, 2.0)
+    cfg.lambda_gradient = trial.suggest_float("lambda_gradient", 0.0, 2.0)
+    cfg.lambda_frequency = trial.suggest_float("lambda_frequency", 0.0, 2.0)
+    cfg.lambda_illum_frequency = trial.suggest_float("lambda_illum_frequency", 0.0, 2.0)
+    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
+    cfg.lambda_clipping = trial.suggest_float("lambda_clipping", 0.0, 2.0)
+    cfg.lambda_vq_commitment = trial.suggest_float("lambda_vq_commitment", 0.0, 2.0)
+    cfg.lambda_patch_consistency = trial.suggest_float("lambda_patch_consistency", 0.0, 2.0)
+    cfg.lambda_bidirectional = trial.suggest_float("lambda_bidirectional", 0.0, 2.0)
 
     cfg.use_hsv_color_space = trial.suggest_categorical("use_hsv_color_space", [True, False])
     cfg.predictive_adaptive_curve = trial.suggest_categorical("predictive_adaptive_curve", [True, False])
@@ -1473,7 +1473,7 @@ def objective(trial: optuna.Trial):
     with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
         stats = json.load(f)
 
-    return stats["psnr_enh"]
+    return stats["psnr_enh"], stats["ssim_enh"], stats["lpips_enh"]
 
 
 BilateralGrid = None
@@ -1508,12 +1508,8 @@ if __name__ == "__main__":
     #
     # cli(main, config, verbose=True)
 
-    study = optuna.create_study(direction="maximize")
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
     study.optimize(objective, n_trials=50)
 
-    print("Best trial:")
-    trial = study.best_trial
-    print(f"  Value: {trial.value}")
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print(f"    {key}: {value}")
+
+
