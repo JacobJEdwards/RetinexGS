@@ -348,8 +348,6 @@ class Runner:
         image_ids = kwargs.pop("image_ids", None)
         colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
-        commitment_loss = torch.tensor(0.0, device=self.device)
-
         rasterize_mode: Literal["antialiased", "classic"] = (
            "classic"
         )
@@ -727,9 +725,6 @@ class Runner:
 
         if cfg.pretrain_retinex:
             self.pre_train_retinex()
-
-            for param in self.retinex_net.parameters():
-                param.requires_grad = False
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
