@@ -197,7 +197,7 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        torch.cuda.reset_peak_memory_stats(self.device)
+        # torch.cuda.reset_peak_memory_stats(self.device)
         print(f"Memory allocated before illum opt: {torch.cuda.max_memory_allocated(self.device) / 1024**3:.4f} GB")
 
         if cfg.use_illum_opt:
