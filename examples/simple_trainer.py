@@ -831,6 +831,11 @@ class Runner:
 
             pbar.set_postfix({"loss": loss.item()})
 
+            del loss
+            torch.cuda.empty_cache()
+            gc.collect()
+
+
     def train(self):
         cfg = self.cfg
         device = self.device
