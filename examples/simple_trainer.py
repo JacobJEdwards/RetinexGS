@@ -670,20 +670,12 @@ class Runner:
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
 
-                # torch.cuda.reset_peak_memory_stats(device)
-                # print(f"Memory allocated before forward pass: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
-
 
                 loss = self.retinex_train_step(
                     images_ids=images_ids, pixels=pixels, step=step
                 )
 
-                # print(f"Memory allocated after forward pass & loss: {torch.cuda.max_memory_allocated(device) /
-            # 1024**3:.4f} GB")
-
             loss.backward()
-
-            # print(f"Memory allocated after backward pass: {torch.cuda.max_memory_allocated(device) / 1024**3:.4f} GB")
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
