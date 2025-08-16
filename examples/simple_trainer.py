@@ -210,7 +210,7 @@ class Runner:
             num_train_images = len(self.trainset)
             self.appearance_embeds = torch.nn.Embedding(num_train_images,cfg.appearance_embedding_dim).to(self.device)
             self.appearance_embeds_optimizer = torch.optim.AdamW(
-                self.appearance_embeds.parameters(), lr=cfg.appearance_embeds_lr
+                self.appearance_embeds.parameters(), lr=cfg.appearance_embedding_lr
             )
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
@@ -1118,7 +1118,7 @@ def objective_lr(trial: optuna.Trial):
     cfg = Config()
 
     cfg.camera_net_lr = trial.suggest_float("camera_net_lr", 1e-6, 1e-2, log=True)
-    cfg.appearance_embeds_lr = trial.suggest_float("appearance_embeds_lr", 1e-6, 1e-2, log=True)
+    cfg.appearance_embedding_lr = trial.suggest_float("appearance_embeds_lr", 1e-6, 1e-2, log=True)
     cfg.illumination_field_lr = trial.suggest_float("illumination_field_lr", 1e-5, 1e-2, log=True)
 
     cfg.max_steps = 3000
