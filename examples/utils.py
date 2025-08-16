@@ -405,7 +405,7 @@ class IlluminationField(nn.Module):
             n_output_dims=hidden_dim,
             network_config={
                 "otype": "FullyFusedMLP",
-                "activation": "ReLU",
+                "activation": "LeakyReLU",
                 "output_activation": "None",
                 "n_neurons": hidden_dim,
                 "n_hidden_layers": num_layers - 1,
@@ -478,7 +478,7 @@ class CameraResponseNet(nn.Module):
             n_output_dims=hidden_dim,
             network_config={
                 "otype": "FullyFusedMLP",
-                "activation": "ReLU",
+                "activation": "LeakyReLU",
                 "output_activation": "None",
                 "n_neurons": hidden_dim,
                 "n_hidden_layers": 2,
