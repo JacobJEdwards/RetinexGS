@@ -71,7 +71,7 @@ class Config:
     use_camera_response_network: bool = True
     use_gradient_aware_loss: bool = True
 
-    use_yuv_colourspace: bool = False
+    use_yuv_colourspace: bool = True
 
     postfix = "_variance"
 
