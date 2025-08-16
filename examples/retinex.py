@@ -291,9 +291,9 @@ class MultiScaleRetinexNet(nn.Module):
 
         d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
 
-        predicted_illumination = self.out_conv(d1_nested)
+        final_illumination = self.out_conv(d1_nested)
 
-        final_illumination = enhancement_gate * predicted_illumination
+        # final_illumination = enhancement_gate * predicted_illumination
 
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
