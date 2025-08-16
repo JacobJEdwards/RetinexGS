@@ -313,13 +313,13 @@ def generate_variational_intrinsics(
 
 # In utils.py
 class IlluminationOptModule(nn.Module):
-    def __init__(self, num_images: int, embed_dim: int = 32, feature_dim: int = 128):
+    def __init__(self, num_images: int, embed_dim: int = 64, feature_dim: int = 128):
         super().__init__()
         self.embeds = nn.Embedding(num_images, embed_dim)
 
         self.adjustment_head = nn.Sequential(
             nn.Linear(embed_dim, feature_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(feature_dim, 6),
         )
         torch.nn.init.zeros_(self.embeds.weight)
@@ -336,23 +336,23 @@ class IlluminationOptModule(nn.Module):
         return adjust_k.unsqueeze(1), adjust_b.unsqueeze(1)
 
 class ContentAwareIlluminationOptModule(nn.Module):
-    def __init__(self, num_images: int, embed_dim: int = 16, feature_dim: int = 64):
+    def __init__(self, num_images: int, embed_dim: int = 64, feature_dim: int = 64):
         super().__init__()
         self.embeds = nn.Embedding(num_images, embed_dim)
         torch.nn.init.zeros_(self.embeds.weight)
 
         self.content_encoder = nn.Sequential(
             nn.Conv2d(3, 16, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
         )
 
         self.adjustment_head = nn.Sequential(
             nn.Linear(32 + embed_dim, feature_dim),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(feature_dim, 6),
         )
 
@@ -370,64 +370,3 @@ class ContentAwareIlluminationOptModule(nn.Module):
         gamma = 0.5 + 2.0 * torch.sigmoid(gamma)
 
         return gain.view(-1, 1, 3), gamma.view(-1, 1, 3), appearance_embedding
-
-
-class VectorQuantizer(nn.Module):
-    def __init__(self, num_embeddings: int, embedding_dim: int, commitment_cost: float):
-        super(VectorQuantizer, self).__init__()
-
-        self._embedding_dim = embedding_dim
-        self._num_embeddings = num_embeddings
-
-        self._embedding = nn.Embedding(self._num_embeddings, self._embedding_dim)
-        self._embedding.weight.data.uniform_(-1/self._num_embeddings, 1/self._num_embeddings)
-        self._commitment_cost = commitment_cost
-
-    def forward(self, inputs: Tensor) -> tuple[Tensor, Tensor]:
-        # convert inputs from BCHW -> BHWC
-        inputs = inputs.contiguous()
-        input_shape = inputs.shape
-
-        flat_input = inputs.view(-1, self._embedding_dim)
-
-        distances = (torch.sum(flat_input**2, dim=1, keepdim=True)
-                     + torch.sum(self._embedding.weight**2, dim=1)
-                     - 2 * torch.matmul(flat_input, self._embedding.weight.t()))
-
-        encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
-        encodings = torch.zeros(encoding_indices.shape[0], self._num_embeddings, device=inputs.device)
-        encodings.scatter_(1, encoding_indices, 1)
-
-        quantized = torch.matmul(encodings, self._embedding.weight).view(input_shape)
-
-        e_latent_loss = F.mse_loss(quantized.detach(), inputs)
-        q_latent_loss = F.mse_loss(quantized, inputs.detach())
-        loss = q_latent_loss + self._commitment_cost * e_latent_loss
-
-        quantized = inputs + (quantized - inputs).detach()
-
-        return quantized, loss
-
-class QuantizedIlluminationModule(nn.Module):
-    def __init__(self, num_images: int, embed_dim: int = 16, feature_dim: int = 64,
-                 num_vq_embeddings: int = 512, vq_commitment_cost: float = 0.25):
-        super().__init__()
-        self.base_module = ContentAwareIlluminationOptModule(
-            num_images=num_images,
-            embed_dim=embed_dim,
-            feature_dim=feature_dim
-        )
-        self.quantizer = VectorQuantizer(
-            num_embeddings=num_vq_embeddings,
-            embedding_dim=embed_dim,
-            commitment_cost=vq_commitment_cost
-        )
-
-    def forward(self, image_tensor: Tensor, embed_ids: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        gain, gamma, unquantized_embedding = self.base_module(image_tensor, embed_ids)
-
-        quantized_embedding, commitment_loss = self.quantizer(unquantized_embedding)
-
-        # gain, gamma, _ = self.base_module(image_tensor, quantized_embedding)
-
-        return gain, gamma, commitment_loss

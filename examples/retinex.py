@@ -128,35 +128,6 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
-class MambaBlock(nn.Module):
-    def __init__(self, channels: int, d_state: int = 16, d_conv: int = 4, expand: int = 2):
-        super().__init__()
-        self.channels = channels
-        self.norm = nn.LayerNorm(channels)
-
-        # self.mamba = Mamba(
-        #     d_model=channels,
-        #     d_state=d_state,
-        #     d_conv=d_conv,
-        #     expand=expand,
-        #     bidirectional=True
-        # )
-
-    def forward(self, x: Tensor) -> Tensor:
-        b, c, h, w = x.shape
-
-        x_residual = x
-
-        # (B, C, H, W) -> (B, H*W, C)
-        x_seq = x.flatten(2).transpose(1, 2)
-
-        x_mamba = self.mamba(self.norm(x_seq))
-
-        # (B, H*W, C) -> (B, C, H, W)
-        x_out = x_mamba.transpose(1, 2).reshape(b, c, h, w)
-
-        return x_out + x_residual
-
 class SpatiallyFiLMLayer(nn.Module):
     def __init__(self, feature_channels: int, embed_dim: int):
         super().__init__()
@@ -214,11 +185,9 @@ class MultiScaleRetinexNet(nn.Module):
             self,
             in_channels: int = 3,
             out_channels: int = 3,
-            embed_dim: int = 32,
-            enable_dynamic_weights: bool = False,
+            embed_dim: int = 64,
             predictive_adaptive_curve: bool = False,
             learn_local_exposure: bool = False,
-            num_weight_scales: int = 11,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
         self.embed_dim = embed_dim
@@ -247,7 +216,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.nested_dec = RetinexBlock(32, 16)
 
-        self.enable_dynamic_weights = enable_dynamic_weights
         self.predictive_adaptive_curve = predictive_adaptive_curve
         self.learn_local_exposure = learn_local_exposure
 
@@ -268,16 +236,6 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Sigmoid()
             )
 
-        if self.enable_dynamic_weights:
-            self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
-
-        self.confidence_head = nn.Sequential(
-            DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(8, 1, kernel_size=1),
-            nn.Sigmoid()
-        )
-
         self.apply(self._init_weights)
 
     @staticmethod
@@ -290,8 +248,7 @@ class MultiScaleRetinexNet(nn.Module):
             init.constant_(m.weight, 1)
             init.constant_(m.bias, 0)
 
-    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None,
-    Tensor | None, Tensor | None, Tensor | None]:
+    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
         b, _ = embedding.shape
 
         e0 = self.in_conv(x)
@@ -338,11 +295,4 @@ class MultiScaleRetinexNet(nn.Module):
         else:
             predicted_local_mean_val = None
 
-        if self.enable_dynamic_weights:
-            dynamic_weights = torch.exp(-self.log_vars)
-        else:
-            dynamic_weights = None
-
-        confidence_map = self.confidence_head(d1_nested)
-
-        return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights, confidence_map, None
+        return final_illumination, alpha_map, beta_map, predicted_local_mean_val

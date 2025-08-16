@@ -64,27 +64,18 @@ class Config:
 
     multi_scale_retinex: bool = True
 
-    lambda_low: float = 0.05
+    lambda_low: float = 0.2
     lambda_illumination: float = 0.1
 
     lambda_reflect: float = 1.0
     lambda_illum_curve: float = 5.0
     lambda_illum_exposure: float = 1.0
     lambda_edge_aware_smooth: float = 20.0
+    lambda_illum_exclusion: float = 0.5
     
-    lambda_illum_color: float = 0.0
+    lambda_illum_color: float = 1.0
     lambda_illum_exposure_local: float = 0.1
-    lambda_illum_variance: float = 0.0
 
-    lambda_laplacian: float = 0.0
-    lambda_gradient: float = 0.0
-    lambda_frequency: float = 0.0
-    lambda_illum_frequency: float = 0.0
-    lambda_exclusion: float = 0.0
-    lambda_clipping: float = 0.0
-
-    lambda_vq_commitment: float = 0.0
-    lambda_patch_consistency: float = 0.0
     lambda_bidirectional: float = 0.5
 
     pretrain_retinex: bool = True
@@ -93,7 +84,6 @@ class Config:
     use_hsv_color_space: bool = True
 
     predictive_adaptive_curve: bool = False
-    enable_dynamic_weights: bool = False
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
@@ -104,7 +94,13 @@ class Config:
     postfix: str = "_variance"
 
     use_illum_opt: bool = True
-    illum_opt_type: Literal["base", "quantized", "content_aware"] = "content_aware"
+    illum_opt_type: Literal["base", "content_aware"] = "content_aware"
+
+    illum_opt_lr: float = 1e-3
+    retinex_opt_lr: float = 1e-4
+    retinex_embedding_lr: float = 1e-3
+
+    retinex_embedding_dim: int = 64
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
