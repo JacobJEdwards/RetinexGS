@@ -62,8 +62,6 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    multi_scale_retinex: bool = True
-
     lambda_low: float = 0.2
     lambda_illumination: float = 0.1
 
