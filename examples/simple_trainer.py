@@ -606,6 +606,11 @@ class Runner:
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
                 illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
 
+                pred_brightness = final_color_map.mean(dim=[1,2,3])
+                gt_brightness = pixels.mean(dim=[1,2,3])
+                loss_brightness = F.mse_loss(pred_brightness, gt_brightness)
+                loss += loss_brightness
+
                 if cfg.lambda_reflectance_reg > 0.0:
                     reflectance_reg_loss = torch.mean(torch.pow(torch.clamp(reflectance_map - 1.0, min=0.0), 2))
 
