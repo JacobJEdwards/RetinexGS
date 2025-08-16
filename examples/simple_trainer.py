@@ -1150,7 +1150,7 @@ def objective_lr(trial: optuna.Trial):
 
     cfg.max_steps = 10_000
     cfg.eval_steps = [10_000]
-    cfg.learning_steps = trial.suggest_categorical("learning_steps", [1000, 3000, 7000, 10000])
+    cfg.learning_steps = trial.suggest_categorical("learning_steps", [3000, 7000, 10000])
 
     runner = Runner(0, 0, 1, cfg)
     runner.trial = trial
@@ -1285,7 +1285,7 @@ if __name__ == "__main__":
     study = optuna.create_study(
         directions=["maximize", "maximize", "minimize"],
     )
-    study.optimize(objective_lr, n_trials=20, catch=(RuntimeError, ValueError))
+    study.optimize(objective_lr, n_trials=30, catch=(RuntimeError, ValueError))
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
