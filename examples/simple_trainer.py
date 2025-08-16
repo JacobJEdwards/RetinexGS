@@ -935,7 +935,7 @@ class Runner:
                 else:
                     final_color_map = scene_lit_color_map
 
-                colors_low = torch.sigmoid(final_color_map)
+                colors_low = torch.clamp(final_color_map, 0.0, 1.0)
                 colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
 
             torch.cuda.synchronize()
