@@ -83,7 +83,7 @@ class Config:
 
     predictive_adaptive_curve: bool = False
 
-    learn_spatial_contrast: bool = False
+    learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = False
     learn_local_exposure: bool = False
     learn_global_exposure: bool = True
