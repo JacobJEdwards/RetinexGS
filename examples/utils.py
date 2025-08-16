@@ -355,7 +355,7 @@ class IlluminationField(nn.Module):
                  use_hash_grid: bool = True,
                  use_view_dirs: bool = True,
                  use_appearance_embeds: bool = False,
-                 use_normals: bool = False,
+                 use_normals: bool = True,
                  appearance_embedding_dim: int = 32,
                  ):
         super().__init__()
@@ -364,6 +364,8 @@ class IlluminationField(nn.Module):
         self.use_view_dirs = use_view_dirs
         self.use_appearance_embeds = use_appearance_embeds
         self.use_normals = use_normals
+
+        self.hidden_dim = hidden_dim
 
         if self.use_hash_grid:
             per_level_scale = 1.4472692012786865
@@ -459,6 +461,8 @@ class IlluminationField(nn.Module):
         mlp_input_tensor = torch.cat(mlp_input, dim=-1)
 
         hidden_features = self.mlp_base(mlp_input_tensor)
+        residual = mlp_input_tensor[:, :self.hidden_dim]
+        hidden_features += residual
         params = self.mlp_head(hidden_features.float())
 
         matrix_A_flat = params[..., :9]
