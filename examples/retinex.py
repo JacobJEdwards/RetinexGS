@@ -293,7 +293,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.out_conv(d1_nested)
 
-        # final_illumination = enhancement_gate * predicted_illumination
+        final_illumination = enhancement_gate * final_illumination
 
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
