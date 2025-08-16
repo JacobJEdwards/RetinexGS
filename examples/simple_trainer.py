@@ -712,6 +712,11 @@ class Runner:
                         (c - 1).pow(2).mean() + d.pow(2).mean()
                     ).item(), step)
 
+                self.writer.add_scalar("train/illum_A_mean", illum_A.abs().mean().item(), step)
+                self.writer.add_scalar("train/illum_b_mean", illum_b.abs().mean().item(), step)
+                self.writer.add_scalar("train/illum_A_std", illum_A.abs().std().item(), step)
+                self.writer.add_scalar("train/illum_b_std", illum_b.abs().std().item(), step)
+
 
                 if cfg.tb_save_image:
                     with torch.no_grad():

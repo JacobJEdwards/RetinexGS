@@ -86,8 +86,8 @@ class Config:
     lambda_illum_reg: float = 0.0
 
     appearance_embedding_lr: float = 1e-4
-    camera_net_lr: float = 1e-3
-    illumination_field_lr: float = 1e-4
+    camera_net_lr: float = 0.006
+    illumination_field_lr: float = 5e-5
 
 
     def adjust_steps(self, factor: float) -> None:
