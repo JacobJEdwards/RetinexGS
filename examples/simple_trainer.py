@@ -569,7 +569,11 @@ class Runner:
 
                 info["means2d"].retain_grad()
 
-                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
+                # loss_reconstruct_low = F.l1_loss(colors_low, pixels)
+                epsilon = 1e-3
+                loss_reconstruct_low = F.l1_loss(
+                    torch.log(colors_low + epsilon), torch.log(pixels + epsilon)
+                )
                 ssim_loss_low = 1.0 - self.ssim(
                     colors_low.permute(0, 3, 1, 2),
                     pixels.permute(0, 3, 1, 2),
