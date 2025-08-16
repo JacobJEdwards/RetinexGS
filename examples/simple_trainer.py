@@ -31,6 +31,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from gsplat.distributed import cli
 from utils import ContentAwareIlluminationOptModule, IlluminationOptModule
 from losses import (
     ColourConsistencyLoss,
