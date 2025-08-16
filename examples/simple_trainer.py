@@ -727,7 +727,7 @@ class Runner:
                             reflectance_map.permute(0, 3, 1, 2),
                             step,
                         )
-                        self.writer.add_images("train/illum_map_visualization", illum_map, step)
+                        self.writer.add_images("train/illum_map_visualization", illum_map.permute(0,3,1,2), step)
 
                 self.writer.flush()
 
