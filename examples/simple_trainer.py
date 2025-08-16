@@ -449,6 +449,16 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
+            if step == cfg.learning_steps:
+                for param in self.camera_response_net.parameters():
+                    param.requires_grad = False
+
+                for param in self.appearance_embeds.parameters():
+                    param.requires_grad = False
+
+                for param in self.illumination_field.parameters():
+                    param.requires_grad = False
+
             with torch.autocast(enabled=False, device_type=device):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
