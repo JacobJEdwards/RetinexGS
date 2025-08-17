@@ -629,6 +629,8 @@ class Runner:
                 )[0]
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
+
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
