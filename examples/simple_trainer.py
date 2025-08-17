@@ -1295,9 +1295,6 @@ class Runner:
                     gt_input_for_net
                 )
 
-                if cfg.use_hsv_color_space:
-                    illumination_map = hsv_to_rgb(illumination_map)
-
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 reflectance_map_p = reflectance_map.permute(0, 3, 1, 2)
 
