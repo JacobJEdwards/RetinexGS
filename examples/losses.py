@@ -685,6 +685,34 @@ class PatchConsistencyLoss(nn.Module):
 
         return photometric_loss
 
+def white_preservation_loss(input_image: Tensor, illumination_map: Tensor, threshold: float = 0.95) -> Tensor:
+    bright_mask = (torch.max(input_image, dim=1, keepdim=True)[0] > threshold).float()
+    loss = torch.mean(torch.abs(illumination_map - 1.0) * bright_mask)
+    return loss
+
+class HistogramLoss(nn.Module):
+    def __init__(self):
+        super(HistogramLoss, self).__init__()
+
+    @staticmethod
+    def forward(reflectance_map: Tensor, target_dist: Tensor) -> Tensor:
+        reflectance_flat = reflectance_map.mean(dim=1, keepdim=True).view(-1)
+
+        reflectance_sorted, _ = torch.sort(reflectance_flat)
+        reflectance_cdf = torch.linspace(0.0, 1.0, steps=len(reflectance_sorted))
+
+        target_cdf = torch.cumsum(target_dist, dim=0)
+
+        target_quantiles = torch.interp(
+            reflectance_cdf,
+            target_cdf,
+            torch.linspace(0.0, 1.0, steps=len(target_dist))
+        )
+
+        loss = torch.abs(reflectance_sorted - target_quantiles).mean()
+        return loss
+
+
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
     x_in_enh = torch.rand(1, 3, 399, 499)  # Pred normal-light

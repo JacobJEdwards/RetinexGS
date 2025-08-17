@@ -31,6 +31,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.losses import white_preservation_loss, HistogramLoss
 from gsplat.distributed import cli
 from utils import ContentAwareIlluminationOptModule, IlluminationOptModule
 from losses import (
@@ -229,6 +230,9 @@ class Runner:
             patch_size=64, patch_grid_size=8
         ).to(self.device)
         self.loss_exclusion = ExclusionLoss().to(self.device)
+        self.histogram_loss = HistogramLoss().to(self.device)
+
+        self.target_histogram_dist = nn.Parameter(torch.randn(256).to(self.device).softmax(dim=0))
 
         retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
         retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
@@ -254,6 +258,7 @@ class Runner:
         net_params += self.loss_adaptive_curve.parameters()
         net_params += self.loss_spatial.parameters()
         net_params.append(self.global_mean_val_param)
+        net_params.append(self.target_histogram_dist)
 
         self.retinex_optimizer = torch.optim.AdamW(
             net_params,
@@ -438,10 +443,11 @@ class Runner:
 
         if self.cfg.use_hsv_color_space:
             reflectance_v_target = torch.exp(log_reflectance_target)
+
             h_channel = pixels_hsv[:, 0:1, :, :]
-            s_channel_dampened = pixels_hsv[:, 1:2, :, :]
+            s_channel_adjusted = torch.clamp(pixels_hsv[:, 1:2, :, :] / torch.clamp(illumination_map, min=1e-5), 0.0, 1.0)
             reflectance_hsv_target = torch.cat(
-                [h_channel, s_channel_dampened, reflectance_v_target], dim=1
+                [h_channel, s_channel_adjusted, reflectance_v_target], dim=1
             )
             reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
         else:
@@ -504,6 +510,13 @@ class Runner:
 
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
 
+        loss_white_preservation = white_preservation_loss(
+            input_image=pixels, illumination_map=illumination_map
+        )
+
+        loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
+
+
         individual_losses = torch.stack(
             [
                 loss_reflectance_spa,  # 0
@@ -513,6 +526,8 @@ class Runner:
                 loss_smooth_edge_aware,  # 8
                 loss_exposure_local,  # 9
                 loss_exclusion_val,  # 11
+                loss_white_preservation,  # 12
+                loss_histogram,  # 13
             ]
         )
 
@@ -525,6 +540,8 @@ class Runner:
                 cfg.lambda_edge_aware_smooth,
                 cfg.lambda_illum_exposure_local,
                 cfg.lambda_illum_exclusion,
+                cfg.lambda_white_preservation,
+                cfg.lambda_histogram,
             ],
             device=device,
         )
@@ -542,6 +559,8 @@ class Runner:
                 "smooth_edge_aware",
                 "exposure_local",
                 "exclusion_val",
+                "white_preservation",
+                "histogram_loss",
             ]
 
             for i, name in enumerate(loss_names):
