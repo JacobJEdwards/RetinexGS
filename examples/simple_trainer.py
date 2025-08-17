@@ -722,7 +722,6 @@ class Runner:
                     sh_degree=sh_degree_to_use,
                     near_plane=cfg.near_plane,
                     far_plane=cfg.far_plane,
-                    image_ids=image_ids,
                     render_mode="RGB",
                     masks=masks,
                 )
