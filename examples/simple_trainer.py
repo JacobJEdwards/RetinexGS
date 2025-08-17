@@ -773,7 +773,7 @@ class Runner:
                 loss = (
                         cfg.lambda_low * low_loss
                         + (1.0 - cfg.lambda_low) * enh_loss
-                        + cfg.lambda_illumination * retinex_loss
+                        + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
                 )
 
                 self.cfg.strategy.step_pre_backward(
