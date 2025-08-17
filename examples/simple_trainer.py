@@ -1270,6 +1270,54 @@ class Runner:
 
         self.writer.flush()
 
+    def eval_retinex(self):
+        cfg = self.cfg
+        device = self.device
+        world_rank = self.world_rank
+
+        valloader = torch.utils.data.DataLoader(
+            self.valset, shuffle=False, num_workers=1
+        )
+        metrics = defaultdict(list)
+        for i, data in enumerate(tqdm.tqdm(valloader, desc="Eval Retinex")):
+            pixels = data["image"].to(device) / 255.0
+            image_ids = data["image_id"].to(device)
+
+            with torch.no_grad():
+                (
+                    gt_input_for_net,
+                    gt_illumination_map,
+                    gt_reflectance_target,
+                    _, _, _
+                ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
+
+                _, reflectance_map, _, _ = self.retinex_net(
+                    gt_input_for_net
+                )
+
+                if cfg.use_hsv_color_space:
+                    illumination_map = hsv_to_rgb(illumination_map)
+
+                pixels_p = pixels.permute(0, 3, 1, 2)
+                reflectance_map_p = reflectance_map.permute(0, 3, 1, 2)
+
+                metrics["psnr"].append(self.psnr(reflectance_map_p, pixels_p))
+                metrics["ssim"].append(self.ssim(reflectance_map_p, pixels_p))
+                metrics["lpips"].append(self.lpips(reflectance_map_p, pixels_p))
+
+        if world_rank == 0:
+            stats_eval = {}
+            for k, v_list in metrics.items():
+                if v_list:
+                    if isinstance(v_list[0], torch.Tensor):
+                        stats_eval[k] = torch.stack(v_list).mean().item()
+                    else:
+                        stats_eval[k] = sum(v_list) / len(v_list)
+                else:
+                    stats_eval[k] = 0
+
+        return stats_eval["psnr"], stats_eval["ssim"], stats_eval["lpips"]
+
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     if world_size > 1 and not cfg_param.disable_viewer:
         cfg_param.disable_viewer = True
@@ -1307,47 +1355,33 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
 def objective(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 0.5)
-    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.0, 0.5)
     cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-4, 50.0, log=True)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 50.0, log=True)
     cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1e-3, 100.0, log=True)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 10, 100.0, log=True)
 
-    cfg.lambda_illum_color = trial.suggest_float("lambda_illum_color", 1e-4, 100.0, log=True)
     cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
 
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
-    cfg.lambda_bidirectional = trial.suggest_float("lambda_bidirectional", 0.0, 2.0)
 
-    cfg.use_hsv_color_space = trial.suggest_categorical("use_hsv_color_space", [True, False])
     cfg.predictive_adaptive_curve = trial.suggest_categorical("predictive_adaptive_curve", [True, False])
-    cfg.enable_dynamic_weights = trial.suggest_categorical("enable_dynamic_weights", [True, False])
     cfg.learn_spatial_contrast = trial.suggest_categorical("learn_spatial_contrast", [True, False])
     cfg.learn_local_exposure = trial.suggest_categorical("learn_local_exposure", [True, False])
     cfg.learn_global_exposure = trial.suggest_categorical("learn_global_exposure", [True, False])
     cfg.learn_edge_aware_gamma = trial.suggest_categorical("learn_edge_aware_gamma", [True, False])
-    cfg.use_illum_opt = trial.suggest_categorical("use_illum_opt", [True, False])
-    cfg.illum_opt_type = trial.suggest_categorical("illum_opt_type", ["base", "content_aware"])
 
     cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
-    cfg.illum_opt_lr = trial.suggest_float("illum_opt_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_lr = trial.suggest_float("retinex_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embed_lr = trial.suggest_float("retinex_embed_lr", 1e-5, 1e-2, log=True)
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 1500
+    cfg.pretrain_steps = 2500
 
     runner = None
     try:
         runner = Runner(0, 0, 1, cfg)
-        runner.train()
+        runner.pre_train_retinex()
 
-        with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
-            stats = json.load(f)
-
-        return stats["psnr_enh"], stats["ssim_enh"], stats["lpips_enh"]
+        return runner.eval_retinex()
 
     finally:
         if runner is not None:
