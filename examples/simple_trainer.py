@@ -445,9 +445,10 @@ class Runner:
             reflectance_v_target = torch.exp(log_reflectance_target)
 
             h_channel = pixels_hsv[:, 0:1, :, :]
-            s_channel_adjusted = torch.clamp(pixels_hsv[:, 1:2, :, :] / torch.clamp(illumination_map, min=1e-5), 0.0, 1.0)
+            s_channel = pixels_hsv[:, 1:2, :, :]
+            s_channel_adjusted = torch.clamp(s_channel / torch.clamp(illumination_map, min=1e-5), 0.0, 1.0)
             reflectance_hsv_target = torch.cat(
-                [h_channel, s_channel_adjusted, reflectance_v_target], dim=1
+                [h_channel, s_channel, reflectance_v_target], dim=1
             )
             reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
         else:
