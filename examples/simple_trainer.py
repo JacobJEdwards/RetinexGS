@@ -845,7 +845,8 @@ class Runner:
                         "w",
                 ) as f:
                     json.dump(stats_save, f)
-                data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net": self.retinex_net.module.state_dict(),
+                data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net":
+                    self.retinex_net.module.state_dict() if isinstance(self.retinex_net, DDP) else self.retinex_net.state_dict(),
                     "retinex_embeds": self.retinex_embeds.state_dict(),
                 }
                 torch.save(
