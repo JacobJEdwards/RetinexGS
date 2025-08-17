@@ -1,5 +1,5 @@
 SCENE_DIR="../../360_v2"
-RESULT_DIR="../../retinex2d/results"
+RESULT_DIR="../../retinex2d/results/benchmarks"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 RENDER_TRAJ_PATH="ellipse"
 
