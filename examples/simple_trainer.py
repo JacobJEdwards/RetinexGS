@@ -431,7 +431,10 @@ class Runner:
         else:
             loss_exposure_val = self.loss_exposure(reflectance_map)
 
-        con_degree = (0.5 / torch.mean(pixels))
+        mean_brightness = torch.mean(pixels)
+        con_degree = 0.5 / (mean_brightness + 1e-6)
+        con_degree = torch.clamp(con_degree, 1.0, 50.0)
+
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
@@ -630,6 +633,7 @@ class Runner:
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
 
 
             self.retinex_optimizer.step()
@@ -781,6 +785,7 @@ class Runner:
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
 
             desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
                           f"sh_deg={sh_degree_to_use}"]
