@@ -1192,34 +1192,20 @@ def objective(trial: optuna.Trial):
     cfg.max_steps = 1500
     cfg.eval_steps = [1500]
 
-    total_psnr = 0
-    total_ssim = 0
-    total_lpips = 0
-    num_runs = 0
+    runner = Runner(0, 0, 1, cfg)
+    runner.trial = trial
+    runner.train()
 
-    for t in ["_variance", "_contrast"]:
-        cfg.postfix = t
+    with open(f"{runner.stats_dir}/val_step{1500 - 1:04d}.json") as f:
+        stats = json.load(f)
 
-        runner = Runner(0, 0, 1, cfg)
-        runner.trial = trial
-        runner.train()
-
-        with open(f"{runner.stats_dir}/val_step{1500 - 1:04d}.json") as f:
-            stats = json.load(f)
-
-        total_psnr += stats.get("psnr_enh", 0)
-        total_ssim += stats.get("ssim_enh", 0)
-        total_lpips += stats.get("lpips_enh", 0)
-
-        num_runs += 1
-
-    avg_psnr = total_psnr / num_runs
-    avg_ssim = total_ssim / num_runs
-    avg_lpips = total_lpips / num_runs
+    total_psnr = stats.get("psnr_enh", 0)
+    total_ssim = stats.get("ssim_enh", 0)
+    total_lpips = stats.get("lpips_enh", 0)
 
     torch.cuda.empty_cache()
 
-    return avg_psnr, avg_ssim, avg_lpips
+    return total_psnr, total_ssim, total_lpips
 
 
 
