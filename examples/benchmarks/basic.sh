@@ -21,4 +21,5 @@ do
         --render_traj_path $RENDER_TRAJ_PATH \
         --data_dir $SCENE_DIR/"$SCENE"/ \
         --result_dir $RESULT_DIR/"$SCENE"/ \
+
 done
