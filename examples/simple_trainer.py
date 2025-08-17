@@ -42,8 +42,7 @@ from losses import (
     LocalExposureLoss,
     ExclusionLoss, EdgeAwareSmoothingLoss
 )
-from rendering_double import rasterization_dual
-from gsplat import export_splats
+from gsplat import export_splats, rasterization
 from gsplat.optimizers import SelectiveAdam
 from gsplat.strategy import MCMCStrategy, DefaultStrategy
 from utils import (
@@ -345,51 +344,28 @@ class Runner:
             **kwargs,
     ) -> (
             tuple[Tensor, Tensor, dict[str, Any]]
-            | tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Any]]
     ):
         means = self.splats["means"]
         quats = self.splats["quats"]
         scales = torch.exp(self.splats["scales"])
         opacities = torch.sigmoid(self.splats["opacities"])
 
-        image_ids = kwargs.pop("image_ids", None)
         colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
         rasterize_mode: Literal["antialiased", "classic"] = (
            "classic"
         )
 
-        input_images_for_illum = kwargs.pop("input_images_for_illum", None)
-
-        if self.cfg.use_illum_opt:
-            if self.cfg.illum_opt_type == "content_aware":
-                image_gain, image_gamma, _ = self.illum_module(input_images_for_illum, image_ids)
-                colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
-            elif self.cfg.illum_opt_type == "base":
-                image_adjust_k, image_adjust_b = self.illum_module(image_ids)
-                colors_low = colors * image_adjust_k + image_adjust_b
-            else:
-                raise ValueError(f"Unknown illum opt type: {self.cfg.illum_opt_type}")
-
-        else:
-            adjust_k = self.splats["adjust_k"]  # 1090, 1, 3
-            adjust_b = self.splats["adjust_b"]  # 1090, 1, 3
-
-            colors_low = colors * adjust_k + adjust_b  # least squares: x_enh=a*x+b
-
         (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
+            render_colours,
+            render_alphas,
             info,
-        ) = rasterization_dual(
+        ) = rasterization(
             means=means,
             quats=quats,
             scales=scales,
             opacities=opacities,
             colors=colors,
-            colors_low=colors_low,
             viewmats=torch.linalg.inv(camtoworlds.float()),  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=width,
@@ -405,10 +381,8 @@ class Runner:
         )
 
         return (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
+            render_colours,
+            render_alphas,
             info,
         )  # return colors and alphas
 
@@ -446,7 +420,6 @@ class Runner:
 
             h_channel = pixels_hsv[:, 0:1, :, :]
             s_channel = pixels_hsv[:, 1:2, :, :]
-            # s_channel_adjusted = torch.clamp(s_channel / torch.clamp(illumination_map, min=1e-5), 0.0, 1.0)
             reflectance_hsv_target = torch.cat(
                 [h_channel, s_channel, reflectance_v_target], dim=1
             )
@@ -790,40 +763,25 @@ class Runner:
                     input_images_for_illum=pixels.permute(0, 3, 1, 2),
                 )
 
-                if len(out) == 5:
-                    renders_enh, renders_low, alphas_enh, alphas_low, info = out
-                else:
-                    renders_low, alphas_low, info = out
-                    renders_enh, alphas_enh = renders_low, alphas_low
+                renders_enh, _, info = out
 
-                if renders_low.shape[-1] == 4:
-                    colors_low, depths_low = (
-                        renders_low[..., 0:3],
-                        renders_low[..., 3:4],
-                    )
-                    colors_enh, depths_enh = (
-                        renders_enh[..., 0:3],
-                        renders_enh[..., 3:4],
-                    )
-                else:
-                    colors_low, depths_low = renders_low, None
-                    colors_enh, depths_enh = renders_enh, None
-
-                colors_low = torch.clamp(colors_low, 0.0, 1.0)
-                colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
+                colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
                 info["means2d"].retain_grad()
 
                 with torch.no_grad():
                     (
-                        gt_input_for_net,
+                        _,
                         gt_illumination_map,
                         gt_reflectance_target,
                         _, _, _
                     ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
 
                 gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1).detach()
+
+                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1).detach()
+                colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
 
@@ -1040,11 +998,21 @@ class Runner:
                 input_images_for_illum=pixels.permute(0, 3, 1, 2),
             )
 
-            if len(out) == 5:
-                colors_enh, colors_low, alphas_enh, alphas_low, info = out
-            else:
-                colors_low, alphas_low, info = out
-                colors_enh, alphas_enh = colors_low, colors_low
+            colors_enh, alphas_enh, info = out
+            retinex_output = self.get_retinex_output(
+                images_ids=image_id, pixels=pixels
+            )
+            (
+                _,
+                illumination_map,
+                _,
+                _,
+                _,
+                _,
+            ) = retinex_output
+
+            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1).detach()
+            colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
@@ -1249,10 +1217,7 @@ class Runner:
                 render_mode="RGB+ED",
             )
 
-            if len(out) == 5:
-                renders_traj, _, _, _, _ = out
-            else:
-                renders_traj, _, _ = out
+            renders_traj, _, _ = out
 
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
