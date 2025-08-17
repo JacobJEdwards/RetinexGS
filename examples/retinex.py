@@ -99,7 +99,7 @@ class ECALayer(nn.Module):
     def __init__(self, channels, gamma=2, b=1):
         super().__init__()
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        t = int(abs((math.log(channels, 2) + b) / gamma))
+        t = int(abs((math.log(channels, 2) + b) / gamma + 1e-8))
         k = t if t % 2 else t + 1
         self.conv = nn.Conv1d(1, 1, kernel_size=k, padding=(k - 1) // 2, bias=False)
         self.sigmoid = nn.Sigmoid()
@@ -282,8 +282,11 @@ class MultiScaleRetinexNet(nn.Module):
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             base_alpha, base_beta, scale = 0.4, 0.7, 0.1
 
-            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw) * (1 + torch.exp(final_illumination).mean())
-            beta_map = base_beta + scale * torch.tanh(beta_map_raw) * (1 + torch.exp(final_illumination).mean())
+            stable_illumination = torch.clamp(final_illumination, min=-10.0, max=10.0)
+            illumination_mean_factor = (1 + torch.exp(stable_illumination).mean())
+
+            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw) * illumination_mean_factor
+            beta_map = base_beta + scale * torch.tanh(beta_map_raw) * illumination_mean_factor
         else:
             alpha_map = None
             beta_map = None
