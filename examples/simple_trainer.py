@@ -810,21 +810,10 @@ class Runner:
                             "train/render_low", colors_low.permute(0, 3, 1, 2), step
                         )
                         self.writer.add_images(
-                            "train/pixels",
-                            pixels.permute(0, 3, 1, 2),
-                            step,
-                        )
-                        self.writer.add_images(
                             "train/render_enh",
                             colors_enh.permute(0, 3, 1, 2),
                             step,
                         )
-                        self.writer.add_images(
-                            "train/illumination_map",
-                            gt_illumination_map,
-                            step,
-                        )
-
                 self.writer.flush()
 
             if step in [i - 1 for i in cfg.save_steps] or step == max_steps - 1:
