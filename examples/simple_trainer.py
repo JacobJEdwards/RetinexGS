@@ -1258,7 +1258,7 @@ def objective_train(trial: optuna.Trial):
     runner.trial = trial
     runner.train()
 
-    with open(f"{runner.stats_dir}/val_step{10_000 - 1:04d}.json") as f:
+    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
         stats = json.load(f)
 
     avg_psnr = stats.get("psnr_enh", 0)
