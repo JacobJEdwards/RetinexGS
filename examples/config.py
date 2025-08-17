@@ -89,7 +89,7 @@ class Config:
     camera_net_lr: float = 3e-4
     illumination_field_lr: float = 6e-5
 
-    learning_steps: int = 7000
+    learning_steps: int = 2800
 
 
     def adjust_steps(self, factor: float) -> None:
