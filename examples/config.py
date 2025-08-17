@@ -91,7 +91,7 @@ class Config:
 
     postfix: str = "_multiexposure"
 
-    retinex_opt_lr: float = 5e-3
+    retinex_opt_lr: float = 5e-4
     retinex_embedding_lr: float = 1e-4
 
     retinex_embedding_dim: int = 32
