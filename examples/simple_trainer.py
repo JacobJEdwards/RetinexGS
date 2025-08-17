@@ -464,7 +464,7 @@ class Runner:
             local_exposure,
         )
 
-    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int) -> Tensor:
+    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int, is_pretrain: bool = True) -> Tensor:
         cfg = self.cfg
         device = self.device
 
@@ -563,20 +563,22 @@ class Runner:
                 "histogram_loss",
             ]
 
+            title = "retinex_net" if is_pretrain else "train"
+
             for i, name in enumerate(loss_names):
                 self.writer.add_scalar(
-                    f"retinex_net/loss_{name}_unweighted", individual_losses[i].item(), step
+                    f"{title}/loss_{name}_unweighted", individual_losses[i].item(), step
                 )
 
                 self.writer.add_scalar(
-                    f"retinex_net/loss_{name}_fixed_weighted",
+                    f"{title}/loss_{name}_fixed_weighted",
                     (individual_losses[i] * base_lambdas[i]).item(),
                     step,
                 )
 
             if cfg.learn_edge_aware_gamma:
                 self.writer.add_scalar(
-                    "retinex_net/edge_aware_gamma_adjustment",
+                    f"{title}/edge_aware_gamma_adjustment",
                     self.loss_edge_aware_smooth.gamma_adjustment.item(),
                     step,
                 )
@@ -584,53 +586,53 @@ class Runner:
 
             if cfg.learn_global_exposure:
                 self.writer.add_scalar(
-                    "retinex_net/global_mean_val_param",
+                    f"{title}/global_mean_val_param",
                     self.global_mean_val_param.item(),
                     step,
                 )
             if cfg.learn_local_exposure:
                 self.writer.add_scalar(
-                    "retinex_net/local_mean_val_param",
+                    f"{title}/local_mean_val_param",
                     local_exposure_mean.mean().item(),
                     step,
                 )
 
             if cfg.learn_adaptive_curve_lambdas:
                 self.writer.add_scalar(
-                    "retinex_net/learnable_adaptive_curve_lambda1",
+                    f"{title}/learnable_adaptive_curve_lambda1",
                     self.loss_adaptive_curve.lambda1.item(),
                     step,
                 )
                 self.writer.add_scalar(
-                    "retinex_net/learnable_adaptive_curve_lambda2",
+                    f"{title}/learnable_adaptive_curve_lambda2",
                     self.loss_adaptive_curve.lambda2.item(),
                     step,
                 )
                 self.writer.add_scalar(
-                    "retinex_net/learnable_adaptive_curve_lambda3",
+                    f"{title}/learnable_adaptive_curve_lambda3",
                     self.loss_adaptive_curve.lambda3.item(),
                     step,
                 )
 
             if self.cfg.tb_save_image:
                 self.writer.add_images(
-                    "retinex_net/input_image_for_net",
+                    f"{title}/input_image_for_net",
                     input_image_for_net,
                     step,
                 )
                 self.writer.add_images(
-                    "retinex_net/pixels",
+                    f"{title}/pixels",
                     pixels.permute(0, 3, 1, 2),
                     step,
                 )
 
                 self.writer.add_images(
-                    "retinex_net/illumination_map",
+                    f"{title}/illumination_map",
                     illumination_map,
                     step,
                 )
                 self.writer.add_images(
-                    "retinex_net/target_reflectance",
+                    f"{title}/target_reflectance",
                     reflectance_map,
                     step,
                 )
@@ -838,7 +840,8 @@ class Runner:
                 )
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step)
+                retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step,
+                                                       is_pretrain=False)
 
                 reconstructed_from_components = colors_enh.permute(0, 3, 1, 2) * gt_illumination_map.detach()
                 loss_bidirectional = F.l1_loss(reconstructed_from_components, pixels.permute(0, 3, 1, 2))
