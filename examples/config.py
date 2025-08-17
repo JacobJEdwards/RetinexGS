@@ -89,7 +89,7 @@ class Config:
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
 
-    postfix: str = "_variance"
+    postfix: str = "_multiexposure"
 
     retinex_opt_lr: float = 1e-3
     retinex_embedding_lr: float = 3e-4
