@@ -72,7 +72,7 @@ class Config:
     lambda_illum_exclusion: float = 0.70
     lambda_white_preservation: float = 4.35
     lambda_histogram: float = 0.02
-    
+
     lambda_illum_color: float = 1.0
     lambda_illum_exposure_local: float = 0.04
 

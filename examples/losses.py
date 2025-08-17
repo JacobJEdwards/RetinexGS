@@ -522,7 +522,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
         else:
             effective_gamma = self.initial_gamma
 
-        effective_gamma = torch.clamp(effective_gamma, min=1e-6)
+        effective_gamma.clamp_(min=1e-3, max=1)
 
         weights_x = torch.exp(-torch.abs(dx_guide) / effective_gamma)
         weights_y = torch.exp(-torch.abs(dy_guide) / effective_gamma)
