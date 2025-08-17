@@ -77,7 +77,7 @@ class Config:
     lambda_illum_exposure_local: float = 0.04
 
     pretrain_retinex: bool = True
-    pretrain_steps: int = 100
+    pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
 
