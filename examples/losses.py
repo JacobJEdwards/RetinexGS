@@ -703,7 +703,7 @@ class HistogramLoss(nn.Module):
 
         target_cdf = torch.cumsum(target_dist, dim=0)
 
-        target_quantiles = F.interpolate(
+        target_quantiles = torch.interp(
             reflectance_cdf,
             target_cdf,
             torch.linspace(0.0, 1.0, steps=len(target_dist))
