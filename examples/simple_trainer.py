@@ -1254,18 +1254,19 @@ def objective_train(trial: optuna.Trial):
     cfg.eval_steps = [10000]
     cfg.pretrain_retinex = False
 
-    runner = None
-    try:
-        runner = Runner(0, 0, 1, cfg)
-        runner.train()
+    runner = Runner(0, 0, 1, cfg)
+    runner.train()
 
-        with open():
-    finally:
-        if runner is not None:
-            del runner
+    with open(f"{runner.stats_dir}/val_step{10_000 - 1:04d}.json") as f:
+        stats = json.load(f)
 
-        gc.collect()
+        avg_psnr = stats.get("psnr_enh", 0)
+        avg_ssim = stats.get("ssim_enh", 0)
+        avg_lpips = stats.get("lpips_enh", 0)
+
         torch.cuda.empty_cache()
+
+        return avg_psnr, avg_ssim, avg_lpips
 
 def objective(trial: optuna.Trial):
     cfg = Config()
