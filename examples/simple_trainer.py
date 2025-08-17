@@ -1255,18 +1255,19 @@ def objective_train(trial: optuna.Trial):
     cfg.pretrain_retinex = False
 
     runner = Runner(0, 0, 1, cfg)
+    runner.trial = trial
     runner.train()
 
     with open(f"{runner.stats_dir}/val_step{10_000 - 1:04d}.json") as f:
         stats = json.load(f)
 
-        avg_psnr = stats.get("psnr_enh", 0)
-        avg_ssim = stats.get("ssim_enh", 0)
-        avg_lpips = stats.get("lpips_enh", 0)
+    avg_psnr = stats.get("psnr_enh", 0)
+    avg_ssim = stats.get("ssim_enh", 0)
+    avg_lpips = stats.get("lpips_enh", 0)
 
-        torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
 
-        return avg_psnr, avg_ssim, avg_lpips
+    return avg_psnr, avg_ssim, avg_lpips
 
 def objective(trial: optuna.Trial):
     cfg = Config()
@@ -1341,7 +1342,7 @@ if __name__ == "__main__":
 
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    study.optimize(objective_lr, n_trials=50)
+    study.optimize(objective_train, n_trials=30)
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
