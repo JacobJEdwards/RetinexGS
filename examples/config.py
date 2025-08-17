@@ -62,8 +62,8 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    lambda_low: float = 0.2
-    lambda_illumination: float = 0.1
+    lambda_low: float = 0.5
+    lambda_illumination: float = 0.5
 
     lambda_reflect: float = 4.4
     lambda_illum_curve: float = 5.5
@@ -76,7 +76,7 @@ class Config:
     lambda_illum_color: float = 1.0
     lambda_illum_exposure_local: float = 0.04
 
-    pretrain_retinex: bool = True
+    pretrain_retinex: bool = False
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
@@ -96,7 +96,7 @@ class Config:
 
     retinex_embedding_dim: int = 64
 
-    freeze_steps: int = 2500
+    freeze_steps: int = 10_000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
