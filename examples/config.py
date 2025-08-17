@@ -89,7 +89,7 @@ class Config:
     learn_adaptive_curve_lambdas: bool = True
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = True
+    learn_edge_aware_gamma: bool = False
 
     postfix: str = "_variance"
 
