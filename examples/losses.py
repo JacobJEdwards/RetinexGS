@@ -712,14 +712,14 @@ class HistogramLoss(nn.Module):
         reflectance_flat = reflectance_map.mean(dim=1, keepdim=True).view(-1)
 
         reflectance_sorted, _ = torch.sort(reflectance_flat)
-        reflectance_cdf = torch.linspace(0.0, 1.0, steps=len(reflectance_sorted))
+        reflectance_cdf = torch.linspace(0.0, 1.0, steps=len(reflectance_sorted), device=reflectance_map.device)
 
         target_cdf = torch.cumsum(target_dist, dim=0)
 
         target_quantiles = interp(
             reflectance_cdf,
             target_cdf,
-            torch.linspace(0.0, 1.0, steps=len(target_dist))
+            torch.linspace(0.0, 1.0, steps=len(target_dist), device=reflectance_map.device)
         )
 
         loss = torch.abs(reflectance_sorted - target_quantiles).mean()
