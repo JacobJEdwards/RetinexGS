@@ -657,30 +657,29 @@ class Runner:
         max_steps = cfg.max_steps
         init_step = 0
 
+        if cfg.pretrain_retinex:
+            self.pre_train_retinex()
+
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
 
-        initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
         schedulers.append(
             CosineAnnealingLR(
                 self.retinex_optimizer,
                 T_max=max_steps,
-                eta_min=initial_retinex_lr * 0.01,
+                eta_min=0,
             )
         )
 
-        initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
         schedulers.append(
             CosineAnnealingLR(
                 self.retinex_embed_optimizer,
                 T_max=max_steps,
-                eta_min=initial_embed_lr * 0.01,
+                eta_min=0,
             )
         )
 
-        if cfg.pretrain_retinex:
-            self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
