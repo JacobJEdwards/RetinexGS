@@ -1171,10 +1171,10 @@ def objective_lr(trial: optuna.Trial):
 def objective(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 0, 100, log=True)
+    cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 1e-3, 100, log=True)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0, 1.0)
     cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0, 1.0)
-    cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 0, 5000, log=True)
+    cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 1e-3, 5000, log=True)
 
     cfg.max_steps = 1500
     cfg.eval_steps = [1500]
