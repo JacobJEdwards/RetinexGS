@@ -70,7 +70,7 @@ class Config:
     lambda_illum_exposure: float = 1.5
     lambda_edge_aware_smooth: float = 20.0
     lambda_illum_exclusion: float = 0.0
-    lambda_white_preservation: float = 0.01
+    lambda_white_preservation: float = 0.00
     lambda_histogram: float = 1.0
     
     lambda_illum_color: float = 1.0
@@ -89,7 +89,7 @@ class Config:
     learn_adaptive_curve_lambdas: bool = True
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = False
+    learn_edge_aware_gamma: bool = True
 
     postfix: str = "_variance"
 
