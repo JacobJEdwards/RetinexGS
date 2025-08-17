@@ -76,7 +76,7 @@ class Config:
     lambda_illum_color: float = 1.0
     lambda_illum_exposure_local: float = 0.04
 
-    pretrain_retinex: bool = True
+    pretrain_retinex: bool = False
     pretrain_steps: int = 5000
 
     use_hsv_color_space: bool = True
@@ -96,7 +96,7 @@ class Config:
 
     retinex_embedding_dim: int = 64
 
-    freeze_step: int = 2800
+    freeze_step: int = 10000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
