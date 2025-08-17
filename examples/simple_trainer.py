@@ -655,6 +655,7 @@ class Runner:
         device = self.device
         world_rank = self.world_rank
         world_size = self.world_size
+        torch.autograd.detect_anomaly()
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
