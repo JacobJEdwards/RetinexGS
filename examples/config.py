@@ -65,16 +65,16 @@ class Config:
     lambda_low: float = 0.2
     lambda_illumination: float = 0.1
 
-    lambda_reflect: float = 1.0
-    lambda_illum_curve: float = 5.0
-    lambda_illum_exposure: float = 1.5
-    lambda_edge_aware_smooth: float = 20.0
-    lambda_illum_exclusion: float = 0.0
-    lambda_white_preservation: float = 0.01
-    lambda_histogram: float = 0.8
+    lambda_reflect: float = 4.4
+    lambda_illum_curve: float = 5.5
+    lambda_illum_exposure: float = 3.6
+    lambda_edge_aware_smooth: float = 65.6
+    lambda_illum_exclusion: float = 0.70
+    lambda_white_preservation: float = 4.35
+    lambda_histogram: float = 0.02
     
     lambda_illum_color: float = 1.0
-    lambda_illum_exposure_local: float = 0.1
+    lambda_illum_exposure_local: float = 0.04
 
     lambda_bidirectional: float = 0.5
 
@@ -83,13 +83,13 @@ class Config:
 
     use_hsv_color_space: bool = True
 
-    predictive_adaptive_curve: bool = True
+    predictive_adaptive_curve: bool = False
 
-    learn_spatial_contrast: bool = True
+    learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = True
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = False
+    learn_edge_aware_gamma: bool = True
 
     postfix: str = "_variance"
 
