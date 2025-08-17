@@ -1,16 +1,7 @@
 SCENE_DIR="../../360_v2"
-RESULT_DIR="../../results/benchmark/results2"
+RESULT_DIR="../../retinex2d/results"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 RENDER_TRAJ_PATH="ellipse"
-
-CONFIG_OPTIONS=(
-    "--learn_edge_aware_gamma"                  # example config 1
-    "--no-learn_spatial_contrast --no-learn_adaptive_curve_lambdas --no-learn_local_exposure --no-learn_global_exposure"
-    "--use_dynamic_weights"
-    "--predictive_adaptive_curve"
-    "--illum_opt_type base"
-    "--no-use_illum_opt"
-)
 
 for SCENE in $SCENE_LIST;
 do
@@ -30,9 +21,4 @@ do
         --render_traj_path $RENDER_TRAJ_PATH \
         --data_dir $SCENE_DIR/"$SCENE"/ \
         --result_dir $RESULT_DIR/"$SCENE"/ \
-        --no_learn_spatial_contrast \
-         --no-learn_adaptive_curve_lambdas \
-         --no-learn_local_exposure \
-         --no-learn_global_exposure
-
 done

@@ -89,12 +89,8 @@ class Config:
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
 
-    postfix: str = "_multiexposure"
+    postfix: str = "_variance"
 
-    use_illum_opt: bool = True
-    illum_opt_type: Literal["base", "content_aware"] = "content_aware"
-
-    illum_opt_lr: float = 1e-4
     retinex_opt_lr: float = 1e-3
     retinex_embedding_lr: float = 3e-4
 
