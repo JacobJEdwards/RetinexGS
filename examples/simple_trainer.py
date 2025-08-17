@@ -705,13 +705,12 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            if step == cfg.freeze_steps:
+            if step == cfg.freeze_step:
                 for param in self.retinex_net.parameters():
                     param.requires_grad = False
 
                 for param in self.retinex_embeds.parameters():
                     param.requires_grad = False
-
 
             with (torch.autocast(enabled=False, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
