@@ -632,8 +632,7 @@ class Runner:
                     images_ids=images_ids, pixels=pixels, step=step
                 )[0]
 
-            if not loss.isnan():
-                loss.backward()
+            loss.backward()
 
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
@@ -651,7 +650,6 @@ class Runner:
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
-        world_size = self.world_size
         torch.autograd.detect_anomaly()
 
         if world_rank == 0:
@@ -783,8 +781,7 @@ class Runner:
                             * torch.abs(torch.exp(self.splats["scales"])).mean()
                     )
 
-            if not loss.isnan():
-                loss.backward()
+            loss.backward()
 
             desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
                           f"sh_deg={sh_degree_to_use}"]
