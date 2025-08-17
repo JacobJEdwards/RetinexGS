@@ -789,6 +789,7 @@ class Runner:
                     )
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
 
             desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
                           f"sh_deg={sh_degree_to_use}"]
