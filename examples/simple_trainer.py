@@ -628,6 +628,9 @@ class Runner:
                     images_ids=images_ids, pixels=pixels, step=step
                 )[0]
 
+            if loss.isnan():
+                raise RuntimeError("Loss is NaN")
+
             loss.backward()
 
             self.retinex_optimizer.step()
