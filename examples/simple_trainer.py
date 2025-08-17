@@ -318,7 +318,7 @@ class Runner:
         colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
         rasterize_mode: Literal["antialiased", "classic"] = (
-           "classic"
+            "classic"
         )
 
         (
@@ -361,11 +361,11 @@ class Runner:
             pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
             v_channel = pixels_hsv[:, 2:3, :, :]
             input_image_for_net = v_channel
-            log_input_image = torch.log(input_image_for_net.clamp(min=epsilon))
+            log_input_image = torch.log(input_image_for_net + epsilon)
         else:
             pixels_hsv = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net.clamp(min=epsilon))
+            log_input_image = torch.log(input_image_for_net + epsilon)
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
@@ -431,8 +431,7 @@ class Runner:
         else:
             loss_exposure_val = self.loss_exposure(reflectance_map)
 
-        mean_brightness = torch.mean(pixels)
-        con_degree = 0.5 / (mean_brightness + 1e-6)
+        con_degree = (0.5 / torch.mean(pixels))
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
@@ -647,6 +646,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
+        world_size = self.world_size
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
@@ -655,19 +655,30 @@ class Runner:
         max_steps = cfg.max_steps
         init_step = 0
 
-        if cfg.pretrain_retinex:
-            self.pre_train_retinex()
-
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
-            ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)), CosineAnnealingLR(
+            ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
+        ]
+
+        initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
+        schedulers.append(
+            CosineAnnealingLR(
                 self.retinex_optimizer,
                 T_max=max_steps,
-                eta_min=0,
-            ), CosineAnnealingLR(
+                eta_min=initial_retinex_lr * 0.01,
+            )
+        )
+
+        initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
+        schedulers.append(
+            CosineAnnealingLR(
                 self.retinex_embed_optimizer,
                 T_max=max_steps,
-                eta_min=0,
-            )]
+                eta_min=initial_embed_lr * 0.01,
+            )
+        )
+
+        if cfg.pretrain_retinex:
+            self.pre_train_retinex()
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -819,8 +830,8 @@ class Runner:
                     json.dump(stats_save, f)
                 data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net":
                     self.retinex_net.module.state_dict() if isinstance(self.retinex_net, DDP) else self.retinex_net.state_dict(),
-                    "retinex_embeds": self.retinex_embeds.state_dict(),
-                }
+                             "retinex_embeds": self.retinex_embeds.state_dict(),
+                             }
                 torch.save(
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
                 )
@@ -1147,7 +1158,7 @@ class Runner:
             canvas_traj = torch.cat(canvas_traj_list, dim=2).squeeze(0).cpu().numpy()
             canvas_traj_uint8 = (canvas_traj * 255).astype(np.uint8)
             video_writer.append_data(canvas_traj_uint8)
-            
+
         video_writer.close()
         print(f"Video saved to {video_path}")
 
@@ -1309,6 +1320,3 @@ if __name__ == "__main__":
     #     for key, value in trial.params.items():
     #         print(f"      {key}: {value}")
     #
-
-
-

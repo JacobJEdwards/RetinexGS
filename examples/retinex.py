@@ -13,7 +13,7 @@ class ChannelAttention(nn.Module):
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.fc = nn.Sequential(
             nn.Conv2d(channel, channel // reduction, 1, bias=False),
-            nn.SiLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Conv2d(channel // reduction, channel, 1, bias=False)
         )
         self.sigmoid = nn.Sigmoid()
@@ -74,7 +74,7 @@ class RetinexBlock(nn.Module):
         super().__init__()
         self.conv = DepthwiseSeparableConv(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
         self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
-        self.act = nn.SiLU()
+        self.act = nn.LeakyReLU()
 
     def forward(self, x: Tensor) -> Tensor:
         return self.act(self.norm(self.conv(x)))
@@ -99,7 +99,7 @@ class ECALayer(nn.Module):
     def __init__(self, channels, gamma=2, b=1):
         super().__init__()
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        t = int(abs((math.log(channels, 2) + b) / gamma + 1e-8))
+        t = int(abs((math.log(channels, 2) + b) / gamma))
         k = t if t % 2 else t + 1
         self.conv = nn.Conv1d(1, 1, kernel_size=k, padding=(k - 1) // 2, bias=False)
         self.sigmoid = nn.Sigmoid()
@@ -117,7 +117,7 @@ class SEBlock(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            nn.SiLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
         )
@@ -134,7 +134,7 @@ class SpatiallyFiLMLayer(nn.Module):
         conditioning_channels = feature_channels + embed_dim
         self.param_predictor = nn.Sequential(
             DepthwiseSeparableConv(conditioning_channels, feature_channels, kernel_size=3, padding=1),
-            nn.SiLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
         )
         nn.init.zeros_(self.param_predictor[-1].weight)
@@ -204,7 +204,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.predictive_adaptive_curve:
             self.adaptive_curve_head = nn.Sequential(
                 DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-                nn.SiLU(inplace=True),
+                nn.LeakyReLU(inplace=True),
                 nn.Conv2d(8, 2, kernel_size=1)
             )
             nn.init.zeros_(self.adaptive_curve_head[-1].weight)
@@ -213,14 +213,14 @@ class MultiScaleRetinexNet(nn.Module):
         if self.learn_local_exposure:
             self.predicted_local_mean_head = nn.Sequential(
                 DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-                nn.SiLU(inplace=True),
+                nn.LeakyReLU(inplace=True),
                 nn.Conv2d(8, 1, kernel_size=1),
                 nn.Sigmoid()
             )
 
         self.gate_mlp = nn.Sequential(
             nn.Linear(self.embed_dim + 1, 32),
-            nn.SiLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(32, 1),
             nn.Sigmoid()
         )
@@ -282,11 +282,8 @@ class MultiScaleRetinexNet(nn.Module):
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             base_alpha, base_beta, scale = 0.4, 0.7, 0.1
 
-            stable_illumination = torch.clamp(final_illumination, min=-10.0, max=10.0)
-            illumination_mean_factor = (1 + torch.exp(stable_illumination).mean())
-
-            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw) * illumination_mean_factor
-            beta_map = base_beta + scale * torch.tanh(beta_map_raw) * illumination_mean_factor
+            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw) * (1 + torch.exp(final_illumination).mean())
+            beta_map = base_beta + scale * torch.tanh(beta_map_raw) * (1 + torch.exp(final_illumination).mean())
         else:
             alpha_map = None
             beta_map = None
