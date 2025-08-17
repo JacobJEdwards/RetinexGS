@@ -824,11 +824,6 @@ class Runner:
                             gt_illumination_map,
                             step,
                         )
-                        self.writer.add_images(
-                            "train/reflectance_target",
-                            gt_reflectance_target,
-                            step,
-                        )
 
                 self.writer.flush()
 
