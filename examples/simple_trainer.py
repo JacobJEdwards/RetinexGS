@@ -1308,43 +1308,43 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    # configs = {
-    #     "default": (
-    #         "Gaussian splatting training using densification heuristics from the original paper.",
-    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-    #     ),
-    #     "mcmc": (
-    #         "Gaussian splatting training using MCMC.",
-    #         Config(
-    #             init_opa=0.5,
-    #             init_scale=0.1,
-    #             opacity_reg=0.01,
-    #             scale_reg=0.01,
-    #             strategy=MCMCStrategy(verbose=True),
-    #         ),
-    #     ),
-    # }
-    # # config = tyro.extras.overridable_config_cli(configs)
-    # config = tyro.cli(
-    #     Config,
-    # )
+    configs = {
+        "default": (
+            "Gaussian splatting training using densification heuristics from the original paper.",
+            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+        ),
+        "mcmc": (
+            "Gaussian splatting training using MCMC.",
+            Config(
+                init_opa=0.5,
+                init_scale=0.1,
+                opacity_reg=0.01,
+                scale_reg=0.01,
+                strategy=MCMCStrategy(verbose=True),
+            ),
+        ),
+    }
+    # config = tyro.extras.overridable_config_cli(configs)
+    config = tyro.cli(
+        Config,
+    )
+
+    config.adjust_steps(config.steps_scaler)
+    torch.set_float32_matmul_precision("high")
+
+    cli(main, config, verbose=True)
+
+    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
     #
-    # config.adjust_steps(config.steps_scaler)
-    # torch.set_float32_matmul_precision("high")
+    # study.optimize(objective, n_trials=30, catch=(RuntimeError,))
     #
-    # cli(main, config, verbose=True)
-
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-
-    study.optimize(objective, n_trials=30, catch=(RuntimeError,))
-
-    print("Study statistics: ")
-    print(f"  Number of finished trials: {len(study.trials)}")
-
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f"  Trial {i}:")
-        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print("    Params: ")
-        for key, value in trial.params.items():
-            print(f"      {key}: {value}")
+    # print("Study statistics: ")
+    # print(f"  Number of finished trials: {len(study.trials)}")
+    #
+    # print("Best trials (Pareto front):")
+    # for i, trial in enumerate(study.best_trials):
+    #     print(f"  Trial {i}:")
+    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+    #     print("    Params: ")
+    #     for key, value in trial.params.items():
+    #         print(f"      {key}: {value}")
