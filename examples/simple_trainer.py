@@ -1292,7 +1292,7 @@ class Runner:
                 ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
 
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                gt_reflectance_target = gt_reflectance_target.permute(0, 2, 3, 1)
+                gt_reflectance_target = gt_reflectance_target
 
                 metrics["psnr"].append(self.psnr(gt_reflectance_target, pixels_p))
                 metrics["ssim"].append(self.ssim(gt_reflectance_target, pixels_p))
