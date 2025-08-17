@@ -76,8 +76,6 @@ class Config:
     lambda_illum_color: float = 1.0
     lambda_illum_exposure_local: float = 0.04
 
-    lambda_bidirectional: float = 0.5
-
     pretrain_retinex: bool = True
     pretrain_steps: int = 5000
 

@@ -33,7 +33,6 @@ from datasets.traj import (
 from config import Config
 from losses import white_preservation_loss, HistogramLoss
 from gsplat.distributed import cli
-from utils import ContentAwareIlluminationOptModule, IlluminationOptModule
 from losses import (
     ColourConsistencyLoss,
     ExposureLoss,
@@ -118,17 +117,6 @@ def create_splats_with_optimizers(
         colors = torch.logit(rgbs)
         params.append(("colors", torch.nn.Parameter(colors), sh0_lr))
 
-    # lumincance
-    adjust_k = torch.nn.Parameter(
-        torch.ones_like(colors[:, :1, :]), requires_grad=True
-    )  # enhance, for multiply
-    adjust_b = torch.nn.Parameter(
-        torch.zeros_like(colors[:, :1, :]), requires_grad=True
-    )  # bias, for add,
-
-    params.append(("adjust_k", adjust_k, sh0_lr))
-    params.append(("adjust_b", adjust_b, sh0_lr))
-
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
 
     BS = batch_size * world_size
@@ -191,29 +179,6 @@ class Runner:
         self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
-
-        if cfg.use_illum_opt:
-            if cfg.illum_opt_type == "base":
-                self.illum_module = IlluminationOptModule(num_images=len(self.trainset)).to(self.device)
-            elif cfg.illum_opt_type == "content_aware":
-                self.illum_module = ContentAwareIlluminationOptModule(
-                    num_images=len(self.trainset),
-                ).to(self.device)
-
-            if world_size > 1:
-                self.illum_module = DDP(self.illum_module, device_ids=[local_rank])
-
-
-            initial_lr = cfg.illum_opt_lr * math.sqrt(cfg.batch_size)
-
-            self.illum_optimizers = [
-                torch.optim.AdamW(
-                    self.illum_module.parameters(),
-                    lr=initial_lr,
-                    weight_decay=1e-4,
-                    fused=True
-                )
-            ]
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
@@ -760,7 +725,6 @@ class Runner:
                     image_ids=image_ids,
                     render_mode="RGB",
                     masks=masks,
-                    input_images_for_illum=pixels.permute(0, 3, 1, 2),
                 )
 
                 renders_enh, _, info = out
@@ -791,7 +755,6 @@ class Runner:
                 )
                 low_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-
                 loss_reconstruct_enh = F.l1_loss(colors_enh, gt_reflectance_target_permuted)
                 ssim_loss_enh = 1.0 - self.ssim(
                     colors_enh.permute(0, 3, 1, 2),
@@ -802,14 +765,10 @@ class Runner:
                 retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step,
                                                        is_pretrain=False)
 
-                reconstructed_from_components = colors_enh.permute(0, 3, 1, 2) * gt_illumination_map.detach()
-                loss_bidirectional = F.l1_loss(reconstructed_from_components, pixels.permute(0, 3, 1, 2))
-
                 loss = (
                         cfg.lambda_low * low_loss
                         + (1.0 - cfg.lambda_low) * enh_loss
                         + cfg.lambda_illumination * retinex_loss
-                        + cfg.lambda_bidirectional * loss_bidirectional
                 )
 
                 self.cfg.strategy.step_pre_backward(
@@ -846,7 +805,6 @@ class Runner:
                 self.writer.add_scalar("train/ssim_enh", ssim_loss_enh.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
-                self.writer.add_scalar("train/loss_bidirectional", loss_bidirectional.item(), step)
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(
@@ -888,12 +846,8 @@ class Runner:
                         "w",
                 ) as f:
                     json.dump(stats_save, f)
-                data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net": (
-                    self.retinex_net.module.state_dict()
-                    if world_size > 1
-                    else self.retinex_net.state_dict()),
+                data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net": self.retinex_net.module.state_dict(),
                     "retinex_embeds": self.retinex_embeds.state_dict(),
-                             "illum_module": self.illum_module.state_dict() if self.cfg.use_illum_opt else None,
                 }
                 torch.save(
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
@@ -918,12 +872,6 @@ class Runner:
             for optimizer in self.optimizers.values():
                 optimizer.step()
                 optimizer.zero_grad()
-
-            if self.cfg.use_illum_opt:
-                for optimizer in self.illum_optimizers:
-                    # scaler.step(optimizer)
-                    optimizer.step()
-                    optimizer.zero_grad()
 
             # scaler.step(self.retinex_optimizer)
             self.retinex_optimizer.step()
@@ -994,8 +942,6 @@ class Runner:
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
                 masks=masks,
-                image_ids=image_id,
-                input_images_for_illum=pixels.permute(0, 3, 1, 2),
             )
 
             colors_enh, alphas_enh, info = out
@@ -1298,11 +1244,6 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         runner.retinex_embeds.load_state_dict(
             {k: torch.cat([ckpt["retinex_embeds"][k] for ckpt in ckpts]) for k in runner.retinex_embeds.state_dict().keys()}
         )
-
-        if runner.cfg.use_illum_opt:
-            runner.illum_module.load_state_dict(
-                {k: torch.cat([ckpt["illum_module"][k] for ckpt in ckpts]) for k in runner.illum_module.state_dict().keys()}
-            )
 
         step = ckpts[0]["step"]
         runner.eval(step=step)
