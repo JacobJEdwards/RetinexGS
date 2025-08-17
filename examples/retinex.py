@@ -219,7 +219,7 @@ class MultiScaleRetinexNet(nn.Module):
             )
 
         self.gate_mlp = nn.Sequential(
-            nn.Linear(self.embed_dim + 1, 32),
+            nn.Linear(self.embed_dim + 2, 32),
             nn.LeakyReLU(inplace=True),
             nn.Linear(32, 1),
             nn.Sigmoid()
@@ -242,8 +242,9 @@ class MultiScaleRetinexNet(nn.Module):
 
         with torch.no_grad():
             mean_brightness = x.mean(dim=[1, 2, 3], keepdim=True).squeeze(-1).squeeze(-1) # Shape: [B, 1]
+            overexposure_score = (x > 0.98).float().mean(dim=[1, 2, 3], keepdim=True).squeeze(-1).squeeze(-1) # Shape: [B, 1]
 
-        gate_input = torch.cat([embedding, mean_brightness], dim=1)
+        gate_input = torch.cat([embedding, mean_brightness, overexposure_score], dim=1)
 
         enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
 
