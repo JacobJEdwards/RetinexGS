@@ -31,7 +31,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.losses import white_preservation_loss, HistogramLoss
+from losses import white_preservation_loss, HistogramLoss
 from gsplat.distributed import cli
 from utils import ContentAwareIlluminationOptModule, IlluminationOptModule
 from losses import (
