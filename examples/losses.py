@@ -690,6 +690,19 @@ def white_preservation_loss(input_image: Tensor, illumination_map: Tensor, thres
     loss = torch.mean(torch.abs(illumination_map - 1.0) * bright_mask)
     return loss
 
+def interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
+    right_indices = torch.searchsorted(xp, x, right=True)
+
+    right_indices = torch.clamp(right_indices, 1, len(xp) - 1)
+    left_indices = right_indices - 1
+
+    xp_left, xp_right = xp[left_indices], xp[right_indices]
+    fp_left, fp_right = fp[left_indices], fp[right_indices]
+
+    t = (x - xp_left) / (xp_right - xp_left + 1e-8)
+
+    return fp_left + t * (fp_right - fp_left)
+
 class HistogramLoss(nn.Module):
     def __init__(self):
         super(HistogramLoss, self).__init__()
@@ -703,7 +716,7 @@ class HistogramLoss(nn.Module):
 
         target_cdf = torch.cumsum(target_dist, dim=0)
 
-        target_quantiles = torch.interp(
+        target_quantiles = interp(
             reflectance_cdf,
             target_cdf,
             torch.linspace(0.0, 1.0, steps=len(target_dist))
