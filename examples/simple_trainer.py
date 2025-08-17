@@ -376,7 +376,10 @@ class Runner:
             use_reentrant=False,
         )
         illumination_map = torch.exp(log_illumination_map)
-        illumination_map = torch.clamp(illumination_map, min=1e-5)
+        illumination_map = torch.clamp(illumination_map, min=1e-5, max=1.0)
+        if torch.isnan(illumination_map).any():
+            print("Warning: NaN detected in illumination map. Setting to 1.0")
+            illumination_map = torch.ones_like(illumination_map)
 
         log_reflectance_target = log_input_image - log_illumination_map
 
