@@ -285,7 +285,8 @@ class SpatialLoss(nn.Module):
             self.register_buffer("learnable_contrast", torch.tensor([initial_contrast], dtype=torch.float32))
 
 
-    def forward_per_pixel(self, org: Tensor, enhance: Tensor, contrast: int = 8, image_id: Tensor | None = None):
+    def forward_per_pixel(self, org: Tensor, enhance: Tensor, contrast: int | Tensor = 8, image_id: Tensor | None =
+    None):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
 

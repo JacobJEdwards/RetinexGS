@@ -403,7 +403,8 @@ class Runner:
             local_exposure,
         )
 
-    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int, is_pretrain: bool = True) -> Tensor:
+    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int, is_pretrain: bool = True) -> tuple[
+        Tensor, Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
         cfg = self.cfg
         device = self.device
 
@@ -430,7 +431,7 @@ class Runner:
         else:
             loss_exposure_val = self.loss_exposure(reflectance_map)
 
-        con_degree = (0.5 / torch.mean(pixels)).item()
+        con_degree = (0.5 / torch.mean(pixels))
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
@@ -577,7 +578,8 @@ class Runner:
                 )
 
 
-        return total_loss
+        return total_loss, input_image_for_net, illumination_map, reflectance_map, alpha, beta, local_exposure_mean
+
 
     def pre_train_retinex(self) -> None:
         cfg = self.cfg
@@ -624,7 +626,7 @@ class Runner:
 
                 loss = self.retinex_train_step(
                     images_ids=images_ids, pixels=pixels, step=step
-                )
+                )[0]
 
             loss.backward()
 
@@ -703,7 +705,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with torch.autocast(enabled=False, device_type=device):
+            with (torch.autocast(enabled=False, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
 
@@ -733,13 +735,12 @@ class Runner:
 
                 info["means2d"].retain_grad()
 
-                with torch.no_grad():
-                    (
-                        _,
-                        gt_illumination_map,
-                        gt_reflectance_target,
-                        _, _, _
-                    ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
+                retinex_loss, _, gt_illumination_map, gt_reflectance_target, _, _, _ = self.retinex_train_step(
+                    images_ids=image_ids,
+                    pixels=pixels,
+                    step=step,
+                    is_pretrain=False
+                )
 
                 gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1).detach()
 
@@ -761,8 +762,6 @@ class Runner:
                 )
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step,
-                                                       is_pretrain=False)
 
                 loss = (
                         cfg.lambda_low * low_loss
