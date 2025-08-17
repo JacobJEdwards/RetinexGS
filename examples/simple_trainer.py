@@ -1359,8 +1359,9 @@ def objective(trial: optuna.Trial):
     cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 50.0, log=True)
     cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
     cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 10, 100.0, log=True)
-
     cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
+    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
+    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
 
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
 
