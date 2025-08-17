@@ -659,8 +659,7 @@ class Runner:
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss_shn_reg = self.splats["shN"].pow(2).mean()
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_shn_reg * loss_shn_reg
+                    loss += cfg.lambda_shn_reg * loss_shn_reg
 
                 if cfg.lambda_gray_world > 0.0:
                     reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
