@@ -375,6 +375,7 @@ class Runner:
             retinex_embedding,
             use_reentrant=False,
         )
+        log_illumination_map = log_illumination_map.clamp(-10, 10)
         illumination_map = torch.exp(log_illumination_map)
         illumination_map = torch.clamp(illumination_map, min=1e-5)
 
