@@ -632,7 +632,8 @@ class Runner:
                     images_ids=images_ids, pixels=pixels, step=step
                 )[0]
 
-            loss.backward()
+            if not loss.isnan():
+                loss.backward()
             torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
             torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
 
@@ -784,7 +785,8 @@ class Runner:
                             * torch.abs(torch.exp(self.splats["scales"])).mean()
                     )
 
-            loss.backward()
+            if not loss.isnan():
+                loss.backward()
             torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
             torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
 
