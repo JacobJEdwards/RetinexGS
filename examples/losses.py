@@ -96,9 +96,6 @@ class AdaptiveCurveLoss(nn.Module):
     lambda2: Tensor
     lambda3: Tensor
 
-    low_thresh: Tensor
-    high_thresh: Tensor
-
     def __init__(
             self,
             alpha: float = 0.3,
@@ -525,7 +522,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
         else:
             effective_gamma = self.initial_gamma
 
-        effective_gamma.clamp_(min=1e-5, max=1)
+        effective_gamma += 1e-8
 
         weights_x = torch.exp(-torch.abs(dx_guide) / effective_gamma)
         weights_y = torch.exp(-torch.abs(dy_guide) / effective_gamma)
