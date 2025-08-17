@@ -361,11 +361,11 @@ class Runner:
             pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
             v_channel = pixels_hsv[:, 2:3, :, :]
             input_image_for_net = v_channel
-            log_input_image = torch.log(input_image_for_net + epsilon)
+            log_input_image = torch.log(input_image_for_net.clamp(min=epsilon))
         else:
             pixels_hsv = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net + epsilon)
+            log_input_image = torch.log(input_image_for_net.clamp(min=epsilon))
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
@@ -375,9 +375,8 @@ class Runner:
             retinex_embedding,
             use_reentrant=False,
         )
-        log_illumination_map = log_illumination_map.clamp(-10, 10)
         illumination_map = torch.exp(log_illumination_map)
-        illumination_map = torch.clamp(illumination_map, min=1e-5, max=100.0)
+        illumination_map = torch.clamp(illumination_map, min=1e-5)
 
         log_reflectance_target = log_input_image - log_illumination_map
 
@@ -434,8 +433,6 @@ class Runner:
 
         mean_brightness = torch.mean(pixels)
         con_degree = 0.5 / (mean_brightness + 1e-6)
-        con_degree = torch.clamp(con_degree, 1.0, 50.0)
-
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
@@ -650,7 +647,6 @@ class Runner:
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
-        torch.autograd.detect_anomaly()
 
         if world_rank == 0:
             with open(f"{cfg.result_dir}/cfg.yml", "w") as f:
