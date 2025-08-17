@@ -579,7 +579,10 @@ class Runner:
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
                 if cfg.use_yuv_colourspace:
+                    reflectance_map_yuv = kornia.color.rgb_to_yuv(reflectance_map.permute(0, 3, 1, 2))
                     illum_map_yuv = kornia.color.rgb_to_yuv(illum_map.permute(0, 3, 1, 2))
+
+                    reflectance_lum = reflectance_map_yuv[:, 0:1, :, :] # Shape: [B, 1, H, W]
                     illum_lum = illum_map_yuv[:, 0:1, :, :]
 
                 if cfg.lambda_illum_smoothness > 0:
@@ -620,8 +623,7 @@ class Runner:
                         loss_b_smooth = (color_b - color_b_perturbed).norm(dim=-1).mean()
                         loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
 
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
@@ -632,8 +634,7 @@ class Runner:
 
                     reflectance_reg_loss += torch.mean(torch.pow(torch.clamp(-reflectance_map, min=0.0), 2))
 
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_reflectance_reg * reflectance_reg_loss
+                    loss += cfg.lambda_reflectance_reg * reflectance_reg_loss
 
                 if cfg.lambda_illum_reg > 0.0:
                     identity = torch.eye(3, device=illum_A.device).expand_as(illum_A)
@@ -643,30 +644,25 @@ class Runner:
                     loss_b_reg = torch.mean(illum_b ** 2)
 
                     loss_illum_reg = loss_A_reg + loss_b_reg
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_illum_reg * loss_illum_reg
+                    loss += cfg.lambda_illum_reg * loss_illum_reg
 
                 if cfg.lambda_exclusion > 0.0:
                     if reflectance_map_for_loss.shape[2] > 3 and reflectance_map_for_loss.shape[3] > 3:
                         loss_exclusion = self.loss_exclusion(reflectance_map_for_loss, illum_map_for_loss)
-                        if step < cfg.learning_steps:
-                            loss += cfg.lambda_exclusion * loss_exclusion
+                        loss += cfg.lambda_exclusion * loss_exclusion
 
                 if cfg.lambda_tv_loss > 0.0:
                     loss_illum_tv = self.loss_tv(illum_map_for_loss)
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_tv_loss * loss_illum_tv
+                    loss += cfg.lambda_tv_loss * loss_illum_tv
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss_shn_reg = self.splats["shN"].pow(2).mean()
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_shn_reg * loss_shn_reg
+                    loss += cfg.lambda_shn_reg * loss_shn_reg
 
                 if cfg.lambda_gray_world > 0.0:
                     reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"]) # [N, 3]
                     loss_gray_world = (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_gray_world * loss_gray_world
+                    loss += cfg.lambda_gray_world * loss_gray_world
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
@@ -680,10 +676,9 @@ class Runner:
                     )
 
                 if cfg.use_camera_response_network and cfg.lambda_camera_reg > 0.0:
-                    if step < cfg.learning_steps:
-                        loss += cfg.lambda_camera_reg * (
-                                (c - 1).pow(2).mean() + d.pow(2).mean()
-                        )
+                    loss += cfg.lambda_camera_reg * (
+                            (c - 1).pow(2).mean() + d.pow(2).mean()
+                    )
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
