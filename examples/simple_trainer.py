@@ -1368,7 +1368,7 @@ def objective(trial: optuna.Trial):
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 100
+    cfg.pretrain_steps = 2500
 
     runner = None
     try:
