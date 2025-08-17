@@ -375,8 +375,8 @@ class Runner:
             retinex_embedding,
             use_reentrant=False,
         )
-        illumination_map = torch.exp(log_illumination_map.clamp(-10, 10))
-        illumination_map = torch.clamp(illumination_map, min=1e-5, max=1.0)
+        illumination_map = torch.exp(log_illumination_map)
+        illumination_map = torch.clamp(illumination_map, min=1e-5)
 
         log_reflectance_target = log_input_image - log_illumination_map
 
