@@ -1291,16 +1291,12 @@ class Runner:
                     _, _, _
                 ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
 
-                _, reflectance_map, _, _ = self.retinex_net(
-                    gt_input_for_net
-                )
-
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                reflectance_map_p = reflectance_map.permute(0, 3, 1, 2)
+                gt_reflectance_target = gt_reflectance_target.permute(0, 2, 3, 1)
 
-                metrics["psnr"].append(self.psnr(reflectance_map_p, pixels_p))
-                metrics["ssim"].append(self.ssim(reflectance_map_p, pixels_p))
-                metrics["lpips"].append(self.lpips(reflectance_map_p, pixels_p))
+                metrics["psnr"].append(self.psnr(gt_reflectance_target, pixels_p))
+                metrics["ssim"].append(self.ssim(gt_reflectance_target, pixels_p))
+                metrics["lpips"].append(self.lpips(gt_reflectance_target, pixels_p))
 
         if world_rank == 0:
             stats_eval = {}
