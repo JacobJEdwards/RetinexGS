@@ -1244,14 +1244,14 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
 def objective_train(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.freeze_step = trial.suggest_categorical("freeze_step", [3000, 7000, 10000])
     cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 1.0)
     cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.0, 5.0)
     cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
     cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
 
-    cfg.max_steps = 10_000
-    cfg.eval_steps = [10000]
+    cfg.freeze_step = 3000
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
     cfg.pretrain_retinex = False
 
     runner = Runner(0, 0, 1, cfg)
