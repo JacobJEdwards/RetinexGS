@@ -687,7 +687,7 @@ class PatchConsistencyLoss(nn.Module):
 
 def white_preservation_loss(input_image: Tensor, illumination_map: Tensor, threshold: float = 0.95) -> Tensor:
     bright_mask = (torch.max(input_image, dim=3, keepdim=True)[0] > threshold).float()
-    loss = torch.mean(torch.abs(illumination_map - 1.0) * bright_mask)
+    loss = torch.mean(torch.pow(illumination_map - 1.0, 2) * bright_mask)
     return loss
 
 def interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
