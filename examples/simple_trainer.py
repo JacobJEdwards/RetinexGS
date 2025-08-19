@@ -1284,6 +1284,9 @@ def objective(trial: optuna.Trial):
     cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
 
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
+
     cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
         "learn_adaptive_curve_lambdas", [True, False]
     )
