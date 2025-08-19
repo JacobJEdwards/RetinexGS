@@ -4,6 +4,7 @@ import math
 import os
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import imageio
@@ -1347,6 +1348,63 @@ def objective_train(trial: optuna.Trial):
 
     return avg_psnr, avg_ssim, avg_lpips
 
+def objective1(trial: optuna.Trial):
+    cfg = Config()
+
+    cfg.data_dir = Path("../../360_v2/room")
+
+    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 100.0, log=True)
+    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 100.0, log=True)
+    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 5.0)
+    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
+    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
+    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
+
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
+
+    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
+        "learn_adaptive_curve_lambdas", [True, False]
+    )
+    cfg.learn_spatial_contrast = trial.suggest_categorical(
+        "learn_spatial_contrast", [True, False]
+    )
+    cfg.learn_global_exposure = trial.suggest_categorical(
+        "learn_global_exposure", [True, False]
+    )
+    cfg.learn_local_exposure = trial.suggest_categorical(
+        "learn_local_exposure", [True, False]
+    )
+    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
+        "learn_edge_aware_gamma", [True, False]
+    )
+    cfg.predictive_adaptive_curve = trial.suggest_categorical(
+        "predictive_adaptive_curve", [True, False]
+    )
+    cfg.use_enhancement_gate = trial.suggest_categorical(
+        "use_enhancement_gate", [True, False]
+    )
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+    cfg.pretrain_steps = 2000
+
+    runner = None
+    try:
+        runner = Runner(0, 0, 1, cfg)
+        runner.pre_train_retinex()
+
+        return runner.eval_retinex()
+    finally:
+        if runner is not None:
+            del runner
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
 def objective(trial: optuna.Trial):
     cfg = Config()
 
@@ -1437,6 +1495,27 @@ if __name__ == "__main__":
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
     study.optimize(objective, n_trials=250, catch=(RuntimeError,))
+
+    print("Study statistics: ")
+    print(f"  Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")
+
+    # save the top results to a file
+    with open("optuna_results_stump.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+
+    print("Results saved to optuna_results.json")
+
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+
+    study.optimize(objective1, n_trials=250, catch=(RuntimeError,))
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
