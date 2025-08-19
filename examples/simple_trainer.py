@@ -1351,10 +1351,10 @@ def objective(trial: optuna.Trial):
     cfg = Config()
 
     cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 50.0, log=True)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 100.0, log=True)
     cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 10, 100.0, log=True)
-    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 100.0, log=True)
+    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 5.0)
     cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
     cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
     cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
@@ -1436,7 +1436,7 @@ if __name__ == "__main__":
     #
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    study.optimize(objective, n_trials=30, catch=(RuntimeError,))
+    study.optimize(objective, n_trials=250, catch=(RuntimeError,))
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
@@ -1448,3 +1448,12 @@ if __name__ == "__main__":
         print("    Params: ")
         for key, value in trial.params.items():
             print(f"      {key}: {value}")
+
+    # save the top results to a file
+    with open("optuna_results.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+
+    print("Results saved to optuna_results.json")
+
+
+        
