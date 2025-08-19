@@ -1529,7 +1529,7 @@ if __name__ == "__main__":
             print(f"      {key}: {value}")
 
     # save the top results to a file
-    with open("optuna_results.json", "w") as f:
+    with open("optuna_results_garden.json", "w") as f:
         json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
 
     print("Results saved to optuna_results.json")
