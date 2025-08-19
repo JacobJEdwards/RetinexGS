@@ -1219,7 +1219,7 @@ class Runner:
         trainloader_groundtruth = torch.utils.data.DataLoader(
             train_dataset_groundtruth,
             batch_size=self.cfg.batch_size,
-            shuffle=False, # Must be False to correctly pair images
+            shuffle=False,
             num_workers=1,
             persistent_workers=False,
             pin_memory=True,
@@ -1227,7 +1227,6 @@ class Runner:
 
         metrics = defaultdict(list)
 
-        # 4. Zip the dataloaders to iterate over image pairs
         progress_bar = tqdm.tqdm(
             zip(trainloader_multiexposure, trainloader_groundtruth),
             desc="Evaluating Sophisticated Retinex",
@@ -1235,29 +1234,23 @@ class Runner:
         )
 
         for i, (data_multiexposure, data_groundtruth) in enumerate(progress_bar):
-            # Input image with exposure issues (B, H, W, C)
             pixels_multiexposure = data_multiexposure["image"].to(device) / 255.0
             image_ids = data_multiexposure["image_id"].to(device)
 
-            # Ground truth clean image (B, H, W, C)
             pixels_groundtruth = data_groundtruth["image"].to(device) / 255.0
 
-            # 5. Apply retinex to the multi-exposure image to get the enhanced reflectance
             (
                 _, # input_image_for_net
                 _, # illumination_map
-                reflectance_output, # This is the enhanced image in (B, C, H, W) format
+                reflectance_output,
                 _, _, _
             ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels_multiexposure)
 
-            # Permute ground truth from (B, H, W, C) to (B, C, H, W) for metrics
             pixels_groundtruth_chw = pixels_groundtruth.permute(0, 3, 1, 2)
 
-            # Clamp outputs for stable metric calculation
             reflectance_output = torch.clamp(reflectance_output, 0.0, 1.0)
             pixels_groundtruth_chw = torch.clamp(pixels_groundtruth_chw, 0.0, 1.0)
 
-            # Optional: Log images to TensorBoard for visual inspection
             if self.cfg.tb_save_image and world_rank == 0 and i % 20 == 0:
                 self.writer.add_images(
                     "retinex_net_eval/01_Input_MultiExposure",
@@ -1275,12 +1268,10 @@ class Runner:
                     i
                 )
 
-            # 6. Compare the retinex output (reflectance) with the ground truth image
             metrics["psnr"].append(self.psnr(reflectance_output, pixels_groundtruth_chw))
             metrics["ssim"].append(self.ssim(reflectance_output, pixels_groundtruth_chw))
             metrics["lpips"].append(self.lpips(reflectance_output, pixels_groundtruth_chw))
 
-        # 7. Aggregate and report the final metrics
         if world_rank == 0:
             stats_eval = {}
             for k, v_list in metrics.items():
@@ -1289,9 +1280,10 @@ class Runner:
                 else:
                     stats_eval[k] = 0
 
-            print(f"Sophisticated Retinex Eval Results: PSNR={stats_eval.get('psnr', 0):.4f}, SSIM={stats_eval.get('ssim', 0):.4f}, LPIPS={stats_eval.get('lpips', 0):.4f}")
+            print(f"Retinex Eval Results: PSNR={stats_eval.get('psnr', 0):.4f}, SSIM={stats_eval.get('ssim', 0):.4f}, LPIPS={stats_eval.get('lpips', 0):.4f}")
 
         return stats_eval.get("psnr", 0), stats_eval.get("ssim", 0), stats_eval.get("lpips", 0)
+
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     if world_size > 1 and not cfg_param.disable_viewer:
         cfg_param.disable_viewer = True
@@ -1382,6 +1374,9 @@ def objective(trial: optuna.Trial):
     )
     cfg.predictive_adaptive_curve = trial.suggest_categorical(
         "predictive_adaptive_curve", [True, False]
+    )
+    cfg.use_enhancement_gate = trial.suggest_categorical(
+        "use_enhancement_gate", [True, False]
     )
 
     cfg.max_steps = 3000
