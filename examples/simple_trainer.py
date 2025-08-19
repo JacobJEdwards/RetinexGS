@@ -210,7 +210,8 @@ class Runner:
             out_channels=retinex_out_channels,
             predictive_adaptive_curve=cfg.predictive_adaptive_curve,
             learn_local_exposure=cfg.learn_local_exposure,
-            embed_dim=cfg.retinex_embedding_dim
+            embed_dim=cfg.retinex_embedding_dim,
+            use_enhancement_gate=cfg.use_enhancement_gate,
         ).to(self.device)
 
         if world_size > 1:
@@ -1178,15 +1179,20 @@ class Runner:
         self.writer.flush()
 
     def eval_retinex(self):
-        cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
 
-        valloader = torch.utils.data.DataLoader(
-            self.valset, shuffle=False, num_workers=1
+        trainloader = torch.utils.data.DataLoader(
+            self.valset,
+            batch_size=self.cfg.batch_size,
+            shuffle=False,
+            num_workers=1,
+            persistent_workers=True,
+            pin_memory=True,
         )
+
         metrics = defaultdict(list)
-        for i, data in enumerate(tqdm.tqdm(valloader, desc="Eval Retinex")):
+        for i, data in enumerate(tqdm.tqdm(trainloader, desc="Eval Retinex")):
             pixels = data["image"].to(device) / 255.0
             image_ids = data["image_id"].to(device)
 
@@ -1200,6 +1206,24 @@ class Runner:
 
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 gt_reflectance_target = gt_reflectance_target
+
+                # log to tb
+                if self.cfg.tb_save_image and world_rank == 0:
+                    self.writer.add_images(
+                        "retinex_net_eval/input_image_for_net",
+                        gt_input_for_net,
+                        i,
+                    )
+                    self.writer.add_images(
+                        "retinex_net_eval/gt_illumination_map",
+                        gt_illumination_map,
+                        i,
+                    )
+                    self.writer.add_images(
+                        "retinex_net_eval/gt_reflectance_target",
+                        gt_reflectance_target,
+                        i,
+                    )
 
                 metrics["psnr"].append(self.psnr(gt_reflectance_target, pixels_p))
                 metrics["ssim"].append(self.ssim(gt_reflectance_target, pixels_p))
@@ -1285,10 +1309,11 @@ def objective(trial: optuna.Trial):
     cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
     cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
     cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
-    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
+    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
 
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
 
     cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
         "learn_adaptive_curve_lambdas", [True, False]
@@ -1332,43 +1357,43 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    configs = {
-        "default": (
-            "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-        ),
-        "mcmc": (
-            "Gaussian splatting training using MCMC.",
-            Config(
-                init_opa=0.5,
-                init_scale=0.1,
-                opacity_reg=0.01,
-                scale_reg=0.01,
-                strategy=MCMCStrategy(verbose=True),
-            ),
-        ),
-    }
-    # config = tyro.extras.overridable_config_cli(configs)
-    config = tyro.cli(
-        Config,
-    )
+    # configs = {
+    #     "default": (
+    #         "Gaussian splatting training using densification heuristics from the original paper.",
+    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+    #     ),
+    #     "mcmc": (
+    #         "Gaussian splatting training using MCMC.",
+    #         Config(
+    #             init_opa=0.5,
+    #             init_scale=0.1,
+    #             opacity_reg=0.01,
+    #             scale_reg=0.01,
+    #             strategy=MCMCStrategy(verbose=True),
+    #         ),
+    #     ),
+    # }
+    # # config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.cli(
+    #     Config,
+    # )
+    #
+    # config.adjust_steps(config.steps_scaler)
+    # torch.set_float32_matmul_precision("high")
+    #
+    # cli(main, config, verbose=True)
+    #
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    config.adjust_steps(config.steps_scaler)
-    torch.set_float32_matmul_precision("high")
+    study.optimize(objective, n_trials=50, catch=(RuntimeError,))
 
-    cli(main, config, verbose=True)
-    #
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-    #
-    # study.optimize(objective, n_trials=50, catch=(RuntimeError,))
-    #
-    # print("Study statistics: ")
-    # print(f"  Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f"  Trial {i}:")
-    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print("    Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f"      {key}: {value}")
+    print("Study statistics: ")
+    print(f"  Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")

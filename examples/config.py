@@ -72,7 +72,7 @@ class Config:
     lambda_illum_exposure_local: float = 0.8440406331135882
     lambda_white_preservation: float = 0.0741204042683988
     lambda_histogram: float = 1.689585477271085
-    lambda_illum_exclusion: float = 1.31032926430792
+    lambda_illum_exclusion: float = 1.56
 
     lambda_illum_color: float = 1.31032926430792
 
@@ -88,6 +88,7 @@ class Config:
     learn_local_exposure: bool = False
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
+    use_enhancement_gate: bool = True
 
     postfix: str = "_multiexposure"
 

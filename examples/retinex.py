@@ -170,9 +170,11 @@ class MultiScaleRetinexNet(nn.Module):
             embed_dim: int = 64,
             predictive_adaptive_curve: bool = False,
             learn_local_exposure: bool = False,
+            use_enhancement_gate: bool = True
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
         self.embed_dim = embed_dim
+        self.use_enhancement_gate = use_enhancement_gate
 
         self.in_conv = RetinexBlock(in_channels, 16)
 
@@ -218,12 +220,13 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Sigmoid()
             )
 
-        self.gate_mlp = nn.Sequential(
-            nn.Linear(self.embed_dim + 2, 32),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
+        if self.use_enhancement_gate:
+            self.gate_mlp = nn.Sequential(
+                nn.Linear(self.embed_dim + 2, 32),
+                nn.LeakyReLU(inplace=True),
+                nn.Linear(32, 1),
+                nn.Sigmoid()
+            )
 
         self.apply(self._init_weights)
 
@@ -246,7 +249,8 @@ class MultiScaleRetinexNet(nn.Module):
 
         gate_input = torch.cat([embedding, mean_brightness, overexposure_score], dim=1)
 
-        enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
+        if self.use_enhancement_gate:
+            enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
 
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
@@ -277,8 +281,9 @@ class MultiScaleRetinexNet(nn.Module):
         final_illumination = self.out_conv(d1_nested)
         final_illumination = torch.tanh(final_illumination) * 4.0
 
-        identity_map = torch.zeros_like(final_illumination)
-        final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
+        if self.use_enhancement_gate:
+            identity_map = torch.zeros_like(final_illumination)
+            final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
 
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
