@@ -77,7 +77,7 @@ class Config:
     lambda_illum_exposure_local: float = 0.04
 
     pretrain_retinex: bool = True
-    pretrain_steps: int = 3000
+    pretrain_steps: int = 2500
 
     use_hsv_color_space: bool = True
 
@@ -89,14 +89,14 @@ class Config:
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
 
-    postfix: str = "_multiexposure2"
+    postfix: str = "_multiexposure"
 
     retinex_opt_lr: float = 5e-4
     retinex_embedding_lr: float = 1e-4
 
     retinex_embedding_dim: int = 32
 
-    freeze_step: int = 2500
+    freeze_step: int = 500
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
