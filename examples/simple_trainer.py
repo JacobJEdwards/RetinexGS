@@ -1301,7 +1301,11 @@ def objective(trial: optuna.Trial):
         runner.pre_train_retinex()
 
         return runner.eval_retinex()
-
+    except RuntimeError as e:
+        print(f"Error during training: {e}")
+        if runner is not None:
+            # If the runner exists, we can still return some default values
+            return runner.eval_retinex()
     finally:
         if runner is not None:
             del runner
