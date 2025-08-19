@@ -355,17 +355,18 @@ class Runner:
             self, images_ids: Tensor, pixels: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
         epsilon = torch.finfo(pixels.dtype).eps
+        pixels = torch.clamp(pixels, min=1e-5)
 
         if self.cfg.use_hsv_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
             pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
             v_channel = pixels_hsv[:, 2:3, :, :]
             input_image_for_net = v_channel
-            log_input_image = torch.log(input_image_for_net + epsilon)
+            log_input_image = torch.log(input_image_for_net)
         else:
             pixels_hsv = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net + epsilon)
+            log_input_image = torch.log(input_image_for_net)
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
@@ -431,7 +432,7 @@ class Runner:
         else:
             loss_exposure_val = self.loss_exposure(reflectance_map)
 
-        con_degree = (0.5 / torch.mean(pixels))
+        con_degree = (0.5 / torch.mean(pixels).clamp(min=1e-5))
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
@@ -1293,7 +1294,7 @@ def objective(trial: optuna.Trial):
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 2500
+    cfg.pretrain_steps = 1000
 
     runner = None
     try:
