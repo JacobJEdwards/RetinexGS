@@ -1284,6 +1284,10 @@ def objective(trial: optuna.Trial):
     cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
 
+    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
+        "learn_adaptive_curve_lambdas", [True, False]
+    )
+
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
     cfg.pretrain_steps = 2500
