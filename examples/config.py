@@ -65,16 +65,16 @@ class Config:
     lambda_low: float = 0.2
     lambda_illumination: float = 0.1
 
-    lambda_reflect: float = 4.4
-    lambda_illum_curve: float = 5.5
-    lambda_illum_exposure: float = 3.6
-    lambda_edge_aware_smooth: float = 65.6
-    lambda_illum_exclusion: float = 0.70
-    lambda_white_preservation: float = 4.35
-    lambda_histogram: float = 0.02
+    lambda_reflect: float = 0.14
+    lambda_illum_curve: float = 5.4
+    lambda_illum_exposure: float = 0.26
+    lambda_edge_aware_smooth: float = 96.7
+    lambda_illum_exclusion: float = 1.56
+    lambda_white_preservation: float = 1.80
+    lambda_histogram: float = 0.03
 
     lambda_illum_color: float = 1.0
-    lambda_illum_exposure_local: float = 0.04
+    lambda_illum_exposure_local: float = 0.53
 
     pretrain_retinex: bool = True
     pretrain_steps: int = 2500
@@ -96,7 +96,7 @@ class Config:
 
     retinex_embedding_dim: int = 32
 
-    freeze_step: int = 500
+    freeze_step: int = 1
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
