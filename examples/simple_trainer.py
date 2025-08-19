@@ -1178,75 +1178,120 @@ class Runner:
 
         self.writer.flush()
 
+    @torch.no_grad()
     def eval_retinex(self):
+        """
+        Performs a sophisticated evaluation of the Retinex model.
+
+        This method loads pairs of images from the training set: the multi-exposure
+        input and its corresponding ground truth. It applies the Retinex model to the
+        multi-exposure image to obtain the reflectance map (the enhanced image) and
+        then computes PSNR, SSIM, and LPIPS metrics by comparing this output
+        against the ground truth image.
+        """
         device = self.device
         world_rank = self.world_rank
 
-        self.trainset.is_val = True
+        # 1. Create a dataset for loading the multi-exposure training images
+        train_dataset_multiexposure = Dataset(
+            self.parser, split="train"
+        )
+        # Ensure it loads images with the postfix (e.g., image_001_multiexposure.png)
+        train_dataset_multiexposure.is_val = False
 
-        trainloader = torch.utils.data.DataLoader(
-            self.trainset,
+        # 2. Create a dataset for loading the corresponding ground truth images
+        train_dataset_groundtruth = Dataset(
+            self.parser, split="train"
+        )
+        # This flag makes the loader replace the postfix, loading the clean image
+        train_dataset_groundtruth.is_val = True
+
+        # 3. Create DataLoaders for both datasets
+        trainloader_multiexposure = torch.utils.data.DataLoader(
+            train_dataset_multiexposure,
             batch_size=self.cfg.batch_size,
-            shuffle=False,
+            shuffle=False, # Must be False to correctly pair images
             num_workers=1,
-            persistent_workers=True,
+            persistent_workers=False,
             pin_memory=True,
         )
 
+        trainloader_groundtruth = torch.utils.data.DataLoader(
+            train_dataset_groundtruth,
+            batch_size=self.cfg.batch_size,
+            shuffle=False, # Must be False to correctly pair images
+            num_workers=1,
+            persistent_workers=False,
+            pin_memory=True,
+        )
 
         metrics = defaultdict(list)
-        for i, data in enumerate(tqdm.tqdm(trainloader, desc="Eval Retinex")):
-            pixels = data["image"].to(device) / 255.0
-            image_ids = data["image_id"].to(device)
 
-            with torch.no_grad():
-                (
-                    gt_input_for_net,
-                    gt_illumination_map,
-                    gt_reflectance_target,
-                    _, _, _
-                ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
+        # 4. Zip the dataloaders to iterate over image pairs
+        progress_bar = tqdm.tqdm(
+            zip(trainloader_multiexposure, trainloader_groundtruth),
+            desc="Evaluating Sophisticated Retinex",
+            total=len(trainloader_multiexposure)
+        )
 
-                pixels_p = pixels.permute(0, 3, 1, 2)
-                gt_reflectance_target = gt_reflectance_target
+        for i, (data_multiexposure, data_groundtruth) in enumerate(progress_bar):
+            # Input image with exposure issues (B, H, W, C)
+            pixels_multiexposure = data_multiexposure["image"].to(device) / 255.0
+            image_ids = data_multiexposure["image_id"].to(device)
 
-                # log to tb
-                if self.cfg.tb_save_image and world_rank == 0:
-                    self.writer.add_images(
-                        "retinex_net_eval/input_image_for_net",
-                        gt_input_for_net,
-                        i,
-                    )
-                    self.writer.add_images(
-                        "retinex_net_eval/gt_illumination_map",
-                        gt_illumination_map,
-                        i,
-                    )
-                    self.writer.add_images(
-                        "retinex_net_eval/gt_reflectance_target",
-                        gt_reflectance_target,
-                        i,
-                    )
+            # Ground truth clean image (B, H, W, C)
+            pixels_groundtruth = data_groundtruth["image"].to(device) / 255.0
 
-                metrics["psnr"].append(self.psnr(gt_reflectance_target, pixels_p))
-                metrics["ssim"].append(self.ssim(gt_reflectance_target, pixels_p))
-                metrics["lpips"].append(self.lpips(gt_reflectance_target, pixels_p))
+            # 5. Apply retinex to the multi-exposure image to get the enhanced reflectance
+            (
+                _, # input_image_for_net
+                _, # illumination_map
+                reflectance_output, # This is the enhanced image in (B, C, H, W) format
+                _, _, _
+            ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels_multiexposure)
 
+            # Permute ground truth from (B, H, W, C) to (B, C, H, W) for metrics
+            pixels_groundtruth_chw = pixels_groundtruth.permute(0, 3, 1, 2)
+
+            # Clamp outputs for stable metric calculation
+            reflectance_output = torch.clamp(reflectance_output, 0.0, 1.0)
+            pixels_groundtruth_chw = torch.clamp(pixels_groundtruth_chw, 0.0, 1.0)
+
+            # Optional: Log images to TensorBoard for visual inspection
+            if self.cfg.tb_save_image and world_rank == 0 and i % 20 == 0:
+                self.writer.add_images(
+                    "retinex_net_eval/01_Input_MultiExposure",
+                    pixels_multiexposure.permute(0, 3, 1, 2),
+                    i,
+                )
+                self.writer.add_images(
+                    "retinex_net_eval/02_Output_Reflectance",
+                    reflectance_output,
+                    i,
+                )
+                self.writer.add_images(
+                    "retinex_net_eval/03_Ground_Truth",
+                    pixels_groundtruth_chw,
+                    i
+                )
+
+            # 6. Compare the retinex output (reflectance) with the ground truth image
+            metrics["psnr"].append(self.psnr(reflectance_output, pixels_groundtruth_chw))
+            metrics["ssim"].append(self.ssim(reflectance_output, pixels_groundtruth_chw))
+            metrics["lpips"].append(self.lpips(reflectance_output, pixels_groundtruth_chw))
+
+        # 7. Aggregate and report the final metrics
         if world_rank == 0:
             stats_eval = {}
             for k, v_list in metrics.items():
                 if v_list:
-                    if isinstance(v_list[0], torch.Tensor):
-                        stats_eval[k] = torch.stack(v_list).mean().item()
-                    else:
-                        stats_eval[k] = sum(v_list) / len(v_list)
+                    stats_eval[k] = torch.stack(v_list).mean().item()
                 else:
                     stats_eval[k] = 0
 
-        self.trainset.is_val = False
+            print(f"Sophisticated Retinex Eval Results: PSNR={stats_eval.get('psnr', 0):.4f}, SSIM={stats_eval.get('ssim', 0):.4f}, LPIPS={stats_eval.get('lpips', 0):.4f}")
 
-        return stats_eval["psnr"], stats_eval["ssim"], stats_eval["lpips"]
-
+        return stats_eval.get("psnr", 0), stats_eval.get("ssim", 0), stats_eval.get("lpips", 0)
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     if world_size > 1 and not cfg_param.disable_viewer:
         cfg_param.disable_viewer = True
