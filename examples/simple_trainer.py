@@ -1291,6 +1291,21 @@ def objective(trial: optuna.Trial):
     cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
         "learn_adaptive_curve_lambdas", [True, False]
     )
+    cfg.learn_spatial_contrast = trial.suggest_categorical(
+        "learn_spatial_contrast", [True, False]
+    )
+    cfg.learn_global_exposure = trial.suggest_categorical(
+        "learn_global_exposure", [True, False]
+    )
+    cfg.learn_local_exposure = trial.suggest_categorical(
+        "learn_local_exposure", [True, False]
+    )
+    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
+        "learn_edge_aware_gamma", [True, False]
+    )
+    cfg.predictive_adaptive_curve = trial.suggest_categorical(
+        "predictive_adaptive_curve", [True, False]
+    )
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
