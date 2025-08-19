@@ -683,6 +683,8 @@ class Runner:
 
         if cfg.pretrain_retinex:
             self.pre_train_retinex()
+            psnr, ssim, lpips = self.eval_retinex()
+            print(f"Pre-trained RetinexNet: PSNR={psnr:.4f}, SSIM={ssim:.4f}, LPIPS={lpips:.4f}")
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
