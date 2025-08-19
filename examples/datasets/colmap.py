@@ -375,13 +375,15 @@ class Dataset:
         else:
             self.indices = indices[indices % self.parser.test_every == 0]
 
+        self.is_val = False
+
     def __len__(self):
         return len(self.indices)
 
     def __getitem__(self, item: int) -> Dict[str, Any]:
         index = self.indices[item]
 
-        if self.split == 'val':
+        if self.split == 'val' or self.is_val:
             image = imageio.imread(self.parser.image_paths[index].replace(self.postfix,''))[..., :3]
         else:
             image = imageio.imread(self.parser.image_paths[index])[..., :3]

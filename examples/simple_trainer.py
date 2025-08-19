@@ -1182,14 +1182,17 @@ class Runner:
         device = self.device
         world_rank = self.world_rank
 
+        self.trainset.is_val = True
+
         trainloader = torch.utils.data.DataLoader(
-            self.valset,
+            self.trainset,
             batch_size=self.cfg.batch_size,
             shuffle=False,
             num_workers=1,
             persistent_workers=True,
             pin_memory=True,
         )
+
 
         metrics = defaultdict(list)
         for i, data in enumerate(tqdm.tqdm(trainloader, desc="Eval Retinex")):
@@ -1239,6 +1242,8 @@ class Runner:
                         stats_eval[k] = sum(v_list) / len(v_list)
                 else:
                     stats_eval[k] = 0
+
+        self.trainset.is_val = False
 
         return stats_eval["psnr"], stats_eval["ssim"], stats_eval["lpips"]
 
