@@ -1387,7 +1387,7 @@ def objective(trial: optuna.Trial):
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 1000
+    cfg.pretrain_steps = 2000
 
     runner = None
     try:
@@ -1436,7 +1436,7 @@ if __name__ == "__main__":
     #
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    study.optimize(objective, n_trials=250, catch=(RuntimeError,))
+    study.optimize(objective, n_trials=200, catch=(RuntimeError,))
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
