@@ -65,34 +65,34 @@ class Config:
     lambda_low: float = 0.2
     lambda_illumination: float = 0.1
 
-    lambda_reflect: float = 0.14
-    lambda_illum_curve: float = 5.4
-    lambda_illum_exposure: float = 0.26
-    lambda_edge_aware_smooth: float = 96.7
-    lambda_illum_exclusion: float = 1.56
-    lambda_white_preservation: float = 1.80
-    lambda_histogram: float = 0.03
+    lambda_reflect: float = 4.1
+    lambda_illum_curve: float = 14.2
+    lambda_illum_exposure: float = 0.51
+    lambda_edge_aware_smooth: float = 60.9
+    lambda_illum_exclusion: float = 1.31
+    lambda_white_preservation: float = 0.07
+    lambda_histogram: float = 1.7
 
     lambda_illum_color: float = 1.0
-    lambda_illum_exposure_local: float = 0.53
+    lambda_illum_exposure_local: float = 0.84
 
     pretrain_retinex: bool = True
-    pretrain_steps: int = 2500
+    pretrain_steps: int = 1000
 
     use_hsv_color_space: bool = True
 
-    predictive_adaptive_curve: bool = False
+    predictive_adaptive_curve: bool = True
 
-    learn_spatial_contrast: bool = False
-    learn_adaptive_curve_lambdas: bool = True
-    learn_local_exposure: bool = True
+    learn_spatial_contrast: bool = True
+    learn_adaptive_curve_lambdas: bool = False
+    learn_local_exposure: bool = False
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
 
     postfix: str = "_multiexposure"
 
-    retinex_opt_lr: float = 5e-4
-    retinex_embedding_lr: float = 1e-4
+    retinex_opt_lr: float = 3e-3
+    retinex_embedding_lr: float = 4e-3
 
     retinex_embedding_dim: int = 32
 
