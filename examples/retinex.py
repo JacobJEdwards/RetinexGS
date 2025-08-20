@@ -239,13 +239,14 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.use_enhancement_gate = use_enhancement_gate
         if self.use_enhancement_gate:
-            self.gate_mlp = nn.Sequential(
-                nn.Linear(self.embed_dim + 1, 32),
+            gate_input_channels = 16 + self.embed_dim
+            self.gate_conv_head = nn.Sequential(
+                DepthwiseSeparableConv(gate_input_channels, 16, kernel_size=3, padding=1),
                 nn.LeakyReLU(inplace=True),
-                nn.Linear(32, 1),
+                nn.Conv2d(16, 1, kernel_size=1),
                 nn.Sigmoid()
             )
-
+            init.constant_(self.gate_conv_head[-2].bias, 2.0)
         self.apply(self._init_weights)
 
     @staticmethod
@@ -260,14 +261,6 @@ class MultiScaleRetinexNet(nn.Module):
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
         b, _ = embedding.shape
-
-        if self.use_enhancement_gate:
-            with torch.no_grad():
-                mean_brightness = x.mean(dim=[1, 2, 3], keepdim=True).squeeze(-1).squeeze(-1) # Shape: [B, 1]
-
-            gate_input = torch.cat([embedding, mean_brightness], dim=1)
-
-            enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
 
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
@@ -293,13 +286,21 @@ class MultiScaleRetinexNet(nn.Module):
         d1 = self.dec1_conv(d1)
         d1 = self.dec1_attn(d1)
 
+        if self.use_enhancement_gate:
+            b_d1, _, h_d1, w_d1 = d1.shape
+            tiled_embedding = embedding.view(b_d1, -1, 1, 1).expand(b_d1, -1, h_d1, w_d1)
+
+            gate_head_input = torch.cat([d1.detach(), tiled_embedding], dim=1) # Use .detach() on d1
+
+            enhancement_gate_map = self.gate_conv_head(gate_head_input)
+
         d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
 
         final_illumination = self.out_conv(d1_nested)
-        final_illumination = torch.tanh(final_illumination).clamp(-2.0, 2.0)
+
         if self.use_enhancement_gate:
             identity_map = torch.zeros_like(final_illumination)
-            final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
+            final_illumination = enhancement_gate_map * final_illumination + (1 - enhancement_gate_map) * identity_map
 
 
         if self.predictive_adaptive_curve:
