@@ -644,6 +644,26 @@ class Runner:
 
             loss.backward()
 
+            torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
+
+            if self.loss_edge_aware_smooth.parameters():
+                torch.nn.utils.clip_grad_norm_(self.loss_edge_aware_smooth.parameters(), max_norm=1.0)
+            if self.loss_adaptive_curve.parameters():
+                torch.nn.utils.clip_grad_norm_(self.loss_adaptive_curve.parameters(), max_norm=1.0)
+            if self.loss_spatial.parameters():
+                torch.nn.utils.clip_grad_norm_(self.loss_spatial.parameters(), max_norm=1.0)
+            if self.global_mean_val_param.requires_grad:
+                torch.nn.utils.clip_grad_norm_(
+                    [self.global_mean_val_param], max_norm=1.0
+                )
+            if self.target_histogram_dist.requires_grad:
+                torch.nn.utils.clip_grad_norm_(
+                    [self.target_histogram_dist], max_norm=1.0
+                )
+            if self.retinex_embeds.parameters():
+                torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
+
+
             self.retinex_optimizer.step()
             self.retinex_embed_optimizer.step()
 
