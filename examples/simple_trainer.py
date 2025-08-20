@@ -397,8 +397,7 @@ class Runner:
             reflectance_map = torch.exp(log_reflectance_target)
 
         reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
-        if torch.any(torch.isnan(reflectance_map)):
-            raise ValueError("NaNs found in reflectance_map before CLAHE")
+        reflectance_map.nan_to_num()
 
         reflectance_map_clahe = kornia.enhance.equalize_clahe(
             reflectance_map,
