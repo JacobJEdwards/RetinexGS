@@ -408,7 +408,7 @@ class Runner:
         return (
             input_image_for_net,
             illumination_map,
-            reflectance_map_clahe,
+            reflectance_map,
             alpha,
             beta,
             local_exposure,
