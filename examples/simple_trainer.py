@@ -1403,21 +1403,18 @@ def objective(trial: optuna.Trial):
     cfg = Config()
 
     cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 100.0, log=True)
-    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 100.0, log=True)
-    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 5.0)
-    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-2, 10.0, log=True)
+    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 4.0)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 50.0, log=True)
+    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 2.0)
+    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 2.0, log=True)
     cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
-    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
+    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 2.0)
 
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-6, 1e-2, log=True)
-    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-2, log=True)
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
 
-    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
-        "learn_adaptive_curve_lambdas", [True, False]
-    )
     cfg.learn_spatial_contrast = trial.suggest_categorical(
         "learn_spatial_contrast", [True, False]
     )
@@ -1486,9 +1483,8 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     cli(main, config, verbose=True)
-
-    # study = optuna.create_study(direction="maximize", pruner=SuccessiveHalvingPruner())
     #
+    # study = optuna.create_study(directions=["maximize", "maximize", "minimise"])
     #
     # study.optimize(objective, n_trials=60, catch=(RuntimeError,))
     #
@@ -1502,7 +1498,4 @@ if __name__ == "__main__":
     # # save the best result
     # with open("best_trial.json", "w") as f:
     #     json.dump(study.best_trial.params, f, indent=4)
-    #
-    #
-    #
     #

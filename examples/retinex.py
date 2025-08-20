@@ -237,12 +237,14 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Sigmoid()
             )
 
-        self.gate_mlp = nn.Sequential(
-            nn.Linear(self.embed_dim + 1, 32),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
+        self.use_enhancement_gate = use_enhancement_gate
+        if self.use_enhancement_gate:
+            self.gate_mlp = nn.Sequential(
+                nn.Linear(self.embed_dim + 1, 32),
+                nn.LeakyReLU(inplace=True),
+                nn.Linear(32, 1),
+                nn.Sigmoid()
+            )
 
         self.apply(self._init_weights)
 
@@ -259,12 +261,13 @@ class MultiScaleRetinexNet(nn.Module):
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
         b, _ = embedding.shape
 
-        with torch.no_grad():
-            mean_brightness = x.mean(dim=[1, 2, 3], keepdim=True).squeeze(-1).squeeze(-1) # Shape: [B, 1]
+        if self.use_enhancement_gate:
+            with torch.no_grad():
+                mean_brightness = x.mean(dim=[1, 2, 3], keepdim=True).squeeze(-1).squeeze(-1) # Shape: [B, 1]
 
-        gate_input = torch.cat([embedding, mean_brightness], dim=1)
+            gate_input = torch.cat([embedding, mean_brightness], dim=1)
 
-        enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
+            enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
 
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
@@ -293,8 +296,9 @@ class MultiScaleRetinexNet(nn.Module):
         d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
 
         final_illumination = self.out_conv(d1_nested)
-        identity_map = torch.zeros_like(final_illumination)
-        final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
+        if self.use_enhancement_gate:
+            identity_map = torch.zeros_like(final_illumination)
+            final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
 
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
