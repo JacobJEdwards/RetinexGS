@@ -150,6 +150,24 @@ class SpatiallyFiLMLayer(nn.Module):
 
         return (1 + gamma) * x + beta
 
+def spatially_film(x: Tensor, embedding: Tensor, feature_channels: int, embed_dim: int) -> Tensor:
+    b, _, h, w = x.shape
+    tiled_embedding = embedding.view(b, -1, 1, 1).expand(b, -1, h, w)
+    conditioning_input = torch.cat([x, tiled_embedding], dim=1)
+
+    param_predictor = nn.Sequential(
+        DepthwiseSeparableConv(feature_channels + embed_dim, feature_channels, kernel_size=3, padding=1),
+        nn.LeakyReLU(inplace=True),
+        nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
+    )
+
+    # functional:
+
+    mod_params = param_predictor(conditioning_input)
+    gamma, beta = torch.chunk(mod_params, 2, dim=1)
+
+    return (1 + gamma) * x + beta
+
 class FiLMLayer(nn.Module):
     def __init__(self, embed_dim: int, feature_channels: int):
         super(FiLMLayer, self).__init__()
@@ -174,7 +192,6 @@ class MultiScaleRetinexNet(nn.Module):
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
         self.embed_dim = embed_dim
-        self.use_enhancement_gate = use_enhancement_gate
 
         self.in_conv = RetinexBlock(in_channels, 16)
 
@@ -220,13 +237,12 @@ class MultiScaleRetinexNet(nn.Module):
                 nn.Sigmoid()
             )
 
-        if self.use_enhancement_gate:
-            self.gate_mlp = nn.Sequential(
-                nn.Linear(self.embed_dim + 2, 32),
-                nn.LeakyReLU(inplace=True),
-                nn.Linear(32, 1),
-                nn.Sigmoid()
-            )
+        self.gate_mlp = nn.Sequential(
+            nn.Linear(self.embed_dim + 1, 32),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
 
         self.apply(self._init_weights)
 
@@ -245,12 +261,10 @@ class MultiScaleRetinexNet(nn.Module):
 
         with torch.no_grad():
             mean_brightness = x.mean(dim=[1, 2, 3], keepdim=True).squeeze(-1).squeeze(-1) # Shape: [B, 1]
-            overexposure_score = (x > 0.98).float().mean(dim=[1, 2, 3], keepdim=True).squeeze(-1).squeeze(-1) # Shape: [B, 1]
 
-        gate_input = torch.cat([embedding, mean_brightness, overexposure_score], dim=1)
+        gate_input = torch.cat([embedding, mean_brightness], dim=1)
 
-        if self.use_enhancement_gate:
-            enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
+        enhancement_gate = self.gate_mlp(gate_input).view(b, 1, 1, 1)
 
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
@@ -279,17 +293,13 @@ class MultiScaleRetinexNet(nn.Module):
         d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
 
         final_illumination = self.out_conv(d1_nested)
-        final_illumination = torch.tanh(final_illumination) * 4.0
-
-        if self.use_enhancement_gate:
-            identity_map = torch.zeros_like(final_illumination)
-            final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
+        identity_map = torch.zeros_like(final_illumination)
+        final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
 
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             base_alpha, base_beta, scale = 0.4, 0.7, 0.1
-
             alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw) * (1 + torch.exp(final_illumination).mean())
             beta_map = base_beta + scale * torch.tanh(beta_map_raw) * (1 + torch.exp(final_illumination).mean())
         else:
