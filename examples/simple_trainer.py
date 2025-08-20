@@ -654,18 +654,6 @@ class Runner:
 
             pbar.set_postfix({"loss": loss.item()})
 
-            if self.trial is not None and (step + 1) % 200 == 0:
-                psnr, ssim, lpips = self.eval_retinex()
-
-                self.trial.report(psnr, step)
-
-                pbar.set_postfix({"loss": loss.item(), "psnr": psnr})
-
-                if self.trial.should_prune():
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    raise optuna.TrialPruned()
-
 
     def train(self):
         cfg = self.cfg
