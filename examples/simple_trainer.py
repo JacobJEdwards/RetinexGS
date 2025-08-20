@@ -1444,7 +1444,7 @@ def objective(trial: optuna.Trial):
         runner.trial = trial
         runner.pre_train_retinex()
 
-        return runner.eval_retinex()[0]
+        return runner.eval_retinex()
     finally:
         if runner is not None:
             del runner
