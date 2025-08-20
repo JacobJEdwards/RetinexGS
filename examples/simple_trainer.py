@@ -399,10 +399,9 @@ class Runner:
         gs_h = min(8, h)
         gs_w = min(8, w)
         reflectance_map = kornia.enhance.equalize_clahe(
-            reflectance_map,
+            reflectance_map.permute(0,3,1,2),
             clip_limit=2.0,
-            grid_size=(gs_h, gs_w)
-        )
+        ).permute(0, 2, 3, 1)
 
         return (
             input_image_for_net,
