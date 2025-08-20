@@ -95,7 +95,7 @@ class Config:
     retinex_opt_lr: float = 1e-3
     retinex_embedding_lr: float = 3e-4
 
-    retinex_embedding_dim: int = 64
+    retinex_embedding_dim: int = 32
 
     freeze_step: int = 1
 
