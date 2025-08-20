@@ -300,12 +300,18 @@ class MultiScaleRetinexNet(nn.Module):
             identity_map = torch.zeros_like(final_illumination)
             final_illumination = enhancement_gate * final_illumination + (1 - enhancement_gate) * identity_map
 
+        final_illumination = torch.tanh(final_illumination).clamp(-2.0, 2.0)
+
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             base_alpha, base_beta, scale = 0.4, 0.7, 0.1
-            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw) * (1 + torch.exp(final_illumination).mean())
-            beta_map = base_beta + scale * torch.tanh(beta_map_raw) * (1 + torch.exp(final_illumination).mean())
+            illum_level = torch.sigmoid(final_illumination.detach()).mean(dim=[1,2,3], keepdim=True)
+            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
+            alpha_map *= 1.0 - 0.5 * illum_level
+
+            beta_map  = base_beta  + scale * torch.tanh(beta_map_raw)
+            beta_map *= 1.0 - 0.5 * illum_level
         else:
             alpha_map = None
             beta_map = None
