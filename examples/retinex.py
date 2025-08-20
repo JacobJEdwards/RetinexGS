@@ -247,7 +247,6 @@ class MultiScaleRetinexNet(nn.Module):
             )
 
         self.apply(self._init_weights)
-        nn.init.constant_(self.out_conv.pointwise.bias, 0.5)
 
     @staticmethod
     def _init_weights(m: nn.Module) -> None:
