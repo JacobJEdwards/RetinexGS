@@ -198,13 +198,13 @@ class Runner:
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.histogram_loss = HistogramLoss().to(self.device)
 
-        self.target_histogram_dist = nn.Parameter(torch.randn(256).to(self.device).softmax(dim=0))
+        self.target_histogram_dist = nn.Parameter(torch.ones(256).to(self.device) / 256)
 
         retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
         retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
 
         self.global_mean_val_param = nn.Parameter(
-            torch.tensor([0.5], dtype=torch.float32).to(self.device)
+            torch.tensor([-0.5], dtype=torch.float32).to(self.device)
         )
 
         self.retinex_net = MultiScaleRetinexNet(
@@ -396,6 +396,7 @@ class Runner:
             reflectance_map = torch.exp(log_reflectance_target)
 
         reflectance_map = torch.clamp(reflectance_map, 0, 1)
+        reflectance_map = kornia.enhance.equalize_clahe(reflectance_map.permute(0, 3, 1, 2), clip_limit=2.0).permute(0, 2, 3, 1)
 
         return (
             input_image_for_net,
