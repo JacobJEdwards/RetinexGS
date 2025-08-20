@@ -4,6 +4,7 @@ import math
 import os
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import imageio
@@ -15,6 +16,7 @@ import torch.nn.functional as F
 import tqdm
 import tyro
 import yaml
+from optuna.pruners import HyperbandPruner, SuccessiveHalvingPruner
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
@@ -33,7 +35,6 @@ from datasets.traj import (
 from config import Config
 from losses import white_preservation_loss, HistogramLoss
 from gsplat.distributed import cli
-from utils import ContentAwareIlluminationOptModule, IlluminationOptModule
 from losses import (
     ColourConsistencyLoss,
     ExposureLoss,
@@ -42,8 +43,7 @@ from losses import (
     LocalExposureLoss,
     ExclusionLoss, EdgeAwareSmoothingLoss
 )
-from rendering_double import rasterization_dual
-from gsplat import export_splats
+from gsplat import export_splats, rasterization
 from gsplat.optimizers import SelectiveAdam
 from gsplat.strategy import MCMCStrategy, DefaultStrategy
 from utils import (
@@ -119,17 +119,6 @@ def create_splats_with_optimizers(
         colors = torch.logit(rgbs)
         params.append(("colors", torch.nn.Parameter(colors), sh0_lr))
 
-    # lumincance
-    adjust_k = torch.nn.Parameter(
-        torch.ones_like(colors[:, :1, :]), requires_grad=True
-    )  # enhance, for multiply
-    adjust_b = torch.nn.Parameter(
-        torch.zeros_like(colors[:, :1, :]), requires_grad=True
-    )  # bias, for add,
-
-    params.append(("adjust_k", adjust_k, sh0_lr))
-    params.append(("adjust_b", adjust_b, sh0_lr))
-
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
 
     BS = batch_size * world_size
@@ -193,29 +182,6 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        if cfg.use_illum_opt:
-            if cfg.illum_opt_type == "base":
-                self.illum_module = IlluminationOptModule(num_images=len(self.trainset)).to(self.device)
-            elif cfg.illum_opt_type == "content_aware":
-                self.illum_module = ContentAwareIlluminationOptModule(
-                    num_images=len(self.trainset),
-                ).to(self.device)
-
-            if world_size > 1:
-                self.illum_module = DDP(self.illum_module, device_ids=[local_rank])
-
-
-            initial_lr = cfg.illum_opt_lr * math.sqrt(cfg.batch_size)
-
-            self.illum_optimizers = [
-                torch.optim.AdamW(
-                    self.illum_module.parameters(),
-                    lr=initial_lr,
-                    weight_decay=1e-4,
-                    fused=True
-                )
-            ]
-
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
         self.loss_spatial = SpatialLoss(
@@ -246,7 +212,8 @@ class Runner:
             out_channels=retinex_out_channels,
             predictive_adaptive_curve=cfg.predictive_adaptive_curve,
             learn_local_exposure=cfg.learn_local_exposure,
-            embed_dim=cfg.retinex_embedding_dim
+            embed_dim=cfg.retinex_embedding_dim,
+            use_enhancement_gate=cfg.use_enhancement_gate,
         ).to(self.device)
 
         if world_size > 1:
@@ -345,51 +312,28 @@ class Runner:
             **kwargs,
     ) -> (
             tuple[Tensor, Tensor, dict[str, Any]]
-            | tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Any]]
     ):
         means = self.splats["means"]
         quats = self.splats["quats"]
         scales = torch.exp(self.splats["scales"])
         opacities = torch.sigmoid(self.splats["opacities"])
 
-        image_ids = kwargs.pop("image_ids", None)
         colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
 
         rasterize_mode: Literal["antialiased", "classic"] = (
             "classic"
         )
 
-        input_images_for_illum = kwargs.pop("input_images_for_illum", None)
-
-        if self.cfg.use_illum_opt:
-            if self.cfg.illum_opt_type == "content_aware":
-                image_gain, image_gamma, _ = self.illum_module(input_images_for_illum, image_ids)
-                colors_low = image_gain * (torch.clamp(colors, 1e-6, 1.0) ** image_gamma)
-            elif self.cfg.illum_opt_type == "base":
-                image_adjust_k, image_adjust_b = self.illum_module(image_ids)
-                colors_low = colors * image_adjust_k + image_adjust_b
-            else:
-                raise ValueError(f"Unknown illum opt type: {self.cfg.illum_opt_type}")
-
-        else:
-            adjust_k = self.splats["adjust_k"]  # 1090, 1, 3
-            adjust_b = self.splats["adjust_b"]  # 1090, 1, 3
-
-            colors_low = colors * adjust_k + adjust_b  # least squares: x_enh=a*x+b
-
         (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
+            render_colours,
+            render_alphas,
             info,
-        ) = rasterization_dual(
+        ) = rasterization(
             means=means,
             quats=quats,
             scales=scales,
             opacities=opacities,
             colors=colors,
-            colors_low=colors_low,
             viewmats=torch.linalg.inv(camtoworlds.float()),  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=width,
@@ -405,10 +349,8 @@ class Runner:
         )
 
         return (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
+            render_colours,
+            render_alphas,
             info,
         )  # return colors and alphas
 
@@ -446,7 +388,6 @@ class Runner:
 
             h_channel = pixels_hsv[:, 0:1, :, :]
             s_channel = pixels_hsv[:, 1:2, :, :]
-            # s_channel_adjusted = torch.clamp(s_channel / torch.clamp(illumination_map, min=1e-5), 0.0, 1.0)
             reflectance_hsv_target = torch.cat(
                 [h_channel, s_channel, reflectance_v_target], dim=1
             )
@@ -465,7 +406,8 @@ class Runner:
             local_exposure,
         )
 
-    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int, is_pretrain: bool = True) -> Tensor:
+    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int, is_pretrain: bool = True) -> tuple[
+        Tensor, Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
         cfg = self.cfg
         device = self.device
 
@@ -492,7 +434,7 @@ class Runner:
         else:
             loss_exposure_val = self.loss_exposure(reflectance_map)
 
-        con_degree = (0.5 / torch.mean(pixels)).item()
+        con_degree = (0.5 / torch.mean(pixels))
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
@@ -639,7 +581,8 @@ class Runner:
                 )
 
 
-        return total_loss
+        return total_loss, input_image_for_net, illumination_map, reflectance_map, alpha, beta, local_exposure_mean
+
 
     def pre_train_retinex(self) -> None:
         cfg = self.cfg
@@ -686,7 +629,10 @@ class Runner:
 
                 loss = self.retinex_train_step(
                     images_ids=images_ids, pixels=pixels, step=step
-                )
+                )[0]
+
+            if loss.isnan():
+                raise RuntimeError("Loss is NaN")
 
             loss.backward()
 
@@ -739,6 +685,8 @@ class Runner:
 
         if cfg.pretrain_retinex:
             self.pre_train_retinex()
+            psnr, ssim, lpips = self.eval_retinex()
+            print(f"Pre-trained RetinexNet: PSNR={psnr:.4f}, SSIM={ssim:.4f}, LPIPS={lpips:.4f}")
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -765,7 +713,14 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            with torch.autocast(enabled=False, device_type=device):
+            if step == cfg.freeze_step:
+                for param in self.retinex_net.parameters():
+                    param.requires_grad = False
+
+                for param in self.retinex_embeds.parameters():
+                    param.requires_grad = False
+
+            with (torch.autocast(enabled=False, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
 
@@ -784,46 +739,28 @@ class Runner:
                     sh_degree=sh_degree_to_use,
                     near_plane=cfg.near_plane,
                     far_plane=cfg.far_plane,
-                    image_ids=image_ids,
                     render_mode="RGB",
                     masks=masks,
-                    input_images_for_illum=pixels.permute(0, 3, 1, 2),
                 )
 
-                if len(out) == 5:
-                    renders_enh, renders_low, alphas_enh, alphas_low, info = out
-                else:
-                    renders_low, alphas_low, info = out
-                    renders_enh, alphas_enh = renders_low, alphas_low
+                renders_enh, _, info = out
 
-                if renders_low.shape[-1] == 4:
-                    colors_low, depths_low = (
-                        renders_low[..., 0:3],
-                        renders_low[..., 3:4],
-                    )
-                    colors_enh, depths_enh = (
-                        renders_enh[..., 0:3],
-                        renders_enh[..., 3:4],
-                    )
-                else:
-                    colors_low, depths_low = renders_low, None
-                    colors_enh, depths_enh = renders_enh, None
-
-                colors_low = torch.clamp(colors_low, 0.0, 1.0)
-                colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
+                colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
                 info["means2d"].retain_grad()
 
-                with torch.no_grad():
-                    (
-                        gt_input_for_net,
-                        gt_illumination_map,
-                        gt_reflectance_target,
-                        _, _, _
-                    ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels)
+                retinex_loss, _, gt_illumination_map, gt_reflectance_target, _, _, _ = self.retinex_train_step(
+                    images_ids=image_ids,
+                    pixels=pixels,
+                    step=step,
+                    is_pretrain=False
+                )
 
                 gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1).detach()
+
+                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1).detach()
+                colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
 
@@ -833,7 +770,6 @@ class Runner:
                 )
                 low_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-
                 loss_reconstruct_enh = F.l1_loss(colors_enh, gt_reflectance_target_permuted)
                 ssim_loss_enh = 1.0 - self.ssim(
                     colors_enh.permute(0, 3, 1, 2),
@@ -841,17 +777,11 @@ class Runner:
                 )
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                retinex_loss = self.retinex_train_step(images_ids=image_ids, pixels=pixels, step=step,
-                                                       is_pretrain=False)
-
-                reconstructed_from_components = colors_enh.permute(0, 3, 1, 2) * gt_illumination_map.detach()
-                loss_bidirectional = F.l1_loss(reconstructed_from_components, pixels.permute(0, 3, 1, 2))
 
                 loss = (
                         cfg.lambda_low * low_loss
                         + (1.0 - cfg.lambda_low) * enh_loss
-                        + cfg.lambda_illumination * retinex_loss
-                        + cfg.lambda_bidirectional * loss_bidirectional
+                        + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
                 )
 
                 self.cfg.strategy.step_pre_backward(
@@ -888,33 +818,16 @@ class Runner:
                 self.writer.add_scalar("train/ssim_enh", ssim_loss_enh.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
-                self.writer.add_scalar("train/loss_bidirectional", loss_bidirectional.item(), step)
                 if cfg.tb_save_image:
                     with torch.no_grad():
                         self.writer.add_images(
                             "train/render_low", colors_low.permute(0, 3, 1, 2), step
                         )
                         self.writer.add_images(
-                            "train/pixels",
-                            pixels.permute(0, 3, 1, 2),
-                            step,
-                        )
-                        self.writer.add_images(
                             "train/render_enh",
                             colors_enh.permute(0, 3, 1, 2),
                             step,
                         )
-                        self.writer.add_images(
-                            "train/illumination_map",
-                            gt_illumination_map,
-                            step,
-                        )
-                        self.writer.add_images(
-                            "train/reflectance_target",
-                            gt_reflectance_target,
-                            step,
-                        )
-
                 self.writer.flush()
 
             if step in [i - 1 for i in cfg.save_steps] or step == max_steps - 1:
@@ -930,12 +843,9 @@ class Runner:
                         "w",
                 ) as f:
                     json.dump(stats_save, f)
-                data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net": (
-                    self.retinex_net.module.state_dict()
-                    if world_size > 1
-                    else self.retinex_net.state_dict()),
+                data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net":
+                    self.retinex_net.module.state_dict() if isinstance(self.retinex_net, DDP) else self.retinex_net.state_dict(),
                              "retinex_embeds": self.retinex_embeds.state_dict(),
-                             "illum_module": self.illum_module.state_dict() if self.cfg.use_illum_opt else None,
                              }
                 torch.save(
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
@@ -960,12 +870,6 @@ class Runner:
             for optimizer in self.optimizers.values():
                 optimizer.step()
                 optimizer.zero_grad()
-
-            if self.cfg.use_illum_opt:
-                for optimizer in self.illum_optimizers:
-                    # scaler.step(optimizer)
-                    optimizer.step()
-                    optimizer.zero_grad()
 
             # scaler.step(self.retinex_optimizer)
             self.retinex_optimizer.step()
@@ -1036,15 +940,23 @@ class Runner:
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
                 masks=masks,
-                image_ids=image_id,
-                input_images_for_illum=pixels.permute(0, 3, 1, 2),
             )
 
-            if len(out) == 5:
-                colors_enh, colors_low, alphas_enh, alphas_low, info = out
-            else:
-                colors_low, alphas_low, info = out
-                colors_enh, alphas_enh = colors_low, colors_low
+            colors_enh, alphas_enh, info = out
+            retinex_output = self.get_retinex_output(
+                images_ids=image_id, pixels=pixels
+            )
+            (
+                _,
+                illumination_map,
+                _,
+                _,
+                _,
+                _,
+            ) = retinex_output
+
+            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1).detach()
+            colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
@@ -1249,10 +1161,7 @@ class Runner:
                 render_mode="RGB+ED",
             )
 
-            if len(out) == 5:
-                renders_traj, _, _, _, _ = out
-            else:
-                renders_traj, _, _ = out
+            renders_traj, _, _ = out
 
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
@@ -1269,6 +1178,112 @@ class Runner:
         print(f"Video saved to {video_path}")
 
         self.writer.flush()
+
+    @torch.no_grad()
+    def eval_retinex(self):
+        """
+        Performs a sophisticated evaluation of the Retinex model.
+
+        This method loads pairs of images from the training set: the multi-exposure
+        input and its corresponding ground truth. It applies the Retinex model to the
+        multi-exposure image to obtain the reflectance map (the enhanced image) and
+        then computes PSNR, SSIM, and LPIPS metrics by comparing this output
+        against the ground truth image.
+        """
+        device = self.device
+        world_rank = self.world_rank
+
+        # 1. Create a dataset for loading the multi-exposure training images
+        train_dataset_multiexposure = Dataset(
+            self.parser, split="train"
+        )
+        # Ensure it loads images with the postfix (e.g., image_001_multiexposure.png)
+        train_dataset_multiexposure.is_val = False
+
+        # 2. Create a dataset for loading the corresponding ground truth images
+        train_dataset_groundtruth = Dataset(
+            self.parser, split="train"
+        )
+        # This flag makes the loader replace the postfix, loading the clean image
+        train_dataset_groundtruth.is_val = True
+
+        # 3. Create DataLoaders for both datasets
+        trainloader_multiexposure = torch.utils.data.DataLoader(
+            train_dataset_multiexposure,
+            batch_size=self.cfg.batch_size,
+            shuffle=False, # Must be False to correctly pair images
+            num_workers=1,
+            persistent_workers=False,
+            pin_memory=True,
+        )
+
+        trainloader_groundtruth = torch.utils.data.DataLoader(
+            train_dataset_groundtruth,
+            batch_size=self.cfg.batch_size,
+            shuffle=False,
+            num_workers=1,
+            persistent_workers=False,
+            pin_memory=True,
+        )
+
+        metrics = defaultdict(list)
+
+        progress_bar = tqdm.tqdm(
+            zip(trainloader_multiexposure, trainloader_groundtruth),
+            desc="Evaluating Sophisticated Retinex",
+            total=len(trainloader_multiexposure)
+        )
+
+        for i, (data_multiexposure, data_groundtruth) in enumerate(progress_bar):
+            pixels_multiexposure = data_multiexposure["image"].to(device) / 255.0
+            image_ids = data_multiexposure["image_id"].to(device)
+
+            pixels_groundtruth = data_groundtruth["image"].to(device) / 255.0
+
+            (
+                _, # input_image_for_net
+                _, # illumination_map
+                reflectance_output,
+                _, _, _
+            ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels_multiexposure)
+
+            pixels_groundtruth_chw = pixels_groundtruth.permute(0, 3, 1, 2)
+
+            reflectance_output = torch.clamp(reflectance_output, 0.0, 1.0)
+            pixels_groundtruth_chw = torch.clamp(pixels_groundtruth_chw, 0.0, 1.0)
+
+            if self.cfg.tb_save_image and world_rank == 0 and i % 20 == 0:
+                self.writer.add_images(
+                    "retinex_net_eval/01_Input_MultiExposure",
+                    pixels_multiexposure.permute(0, 3, 1, 2),
+                    i,
+                )
+                self.writer.add_images(
+                    "retinex_net_eval/02_Output_Reflectance",
+                    reflectance_output,
+                    i,
+                )
+                self.writer.add_images(
+                    "retinex_net_eval/03_Ground_Truth",
+                    pixels_groundtruth_chw,
+                    i
+                )
+
+            metrics["psnr"].append(self.psnr(reflectance_output, pixels_groundtruth_chw))
+            metrics["ssim"].append(self.ssim(reflectance_output, pixels_groundtruth_chw))
+            metrics["lpips"].append(self.lpips(reflectance_output, pixels_groundtruth_chw))
+
+        if world_rank == 0:
+            stats_eval = {}
+            for k, v_list in metrics.items():
+                if v_list:
+                    stats_eval[k] = torch.stack(v_list).mean().item()
+                else:
+                    stats_eval[k] = 0
+
+            print(f"Retinex Eval Results: PSNR={stats_eval.get('psnr', 0):.4f}, SSIM={stats_eval.get('ssim', 0):.4f}, LPIPS={stats_eval.get('lpips', 0):.4f}")
+
+        return stats_eval.get("psnr", 0), stats_eval.get("ssim", 0), stats_eval.get("lpips", 0)
 
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     if world_size > 1 and not cfg_param.disable_viewer:
@@ -1293,62 +1308,146 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
             {k: torch.cat([ckpt["retinex_embeds"][k] for ckpt in ckpts]) for k in runner.retinex_embeds.state_dict().keys()}
         )
 
-        if runner.cfg.use_illum_opt:
-            runner.illum_module.load_state_dict(
-                {k: torch.cat([ckpt["illum_module"][k] for ckpt in ckpts]) for k in runner.illum_module.state_dict().keys()}
-            )
-
         step = ckpts[0]["step"]
         runner.eval(step=step)
         runner.render_traj(step=step)
     else:
         runner.train()
 
-def objective(trial: optuna.Trial):
+def objective_train(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 0.5)
-    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.0, 0.5)
+    cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 1.0)
+    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.0, 5.0)
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
+
+    cfg.freeze_step = 3000
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+    cfg.pretrain_retinex = False
+
+    runner = Runner(0, 0, 1, cfg)
+    runner.trial = trial
+    runner.train()
+
+    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+        stats = json.load(f)
+
+    avg_psnr = stats.get("psnr_enh", 0)
+    avg_ssim = stats.get("ssim_enh", 0)
+    avg_lpips = stats.get("lpips_enh", 0)
+
+    torch.cuda.empty_cache()
+
+    return avg_psnr, avg_ssim, avg_lpips
+
+def objective1(trial: optuna.Trial):
+    cfg = Config()
+
+    cfg.data_dir = Path("../../360_v2/room")
+
     cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-4, 50.0, log=True)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 100.0, log=True)
     cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1e-3, 100.0, log=True)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 100.0, log=True)
+    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 5.0)
+    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
+    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
+    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
 
-    cfg.lambda_illum_color = trial.suggest_float("lambda_illum_color", 1e-4, 100.0, log=True)
-    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
 
-    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 2.0)
-    cfg.lambda_bidirectional = trial.suggest_float("lambda_bidirectional", 0.0, 2.0)
-
-    cfg.use_hsv_color_space = trial.suggest_categorical("use_hsv_color_space", [True, False])
-    cfg.predictive_adaptive_curve = trial.suggest_categorical("predictive_adaptive_curve", [True, False])
-    cfg.enable_dynamic_weights = trial.suggest_categorical("enable_dynamic_weights", [True, False])
-    cfg.learn_spatial_contrast = trial.suggest_categorical("learn_spatial_contrast", [True, False])
-    cfg.learn_local_exposure = trial.suggest_categorical("learn_local_exposure", [True, False])
-    cfg.learn_global_exposure = trial.suggest_categorical("learn_global_exposure", [True, False])
-    cfg.learn_edge_aware_gamma = trial.suggest_categorical("learn_edge_aware_gamma", [True, False])
-    cfg.use_illum_opt = trial.suggest_categorical("use_illum_opt", [True, False])
-    cfg.illum_opt_type = trial.suggest_categorical("illum_opt_type", ["base", "content_aware"])
-
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
-    cfg.illum_opt_lr = trial.suggest_float("illum_opt_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_lr = trial.suggest_float("retinex_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embed_lr = trial.suggest_float("retinex_embed_lr", 1e-5, 1e-2, log=True)
+    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
+        "learn_adaptive_curve_lambdas", [True, False]
+    )
+    cfg.learn_spatial_contrast = trial.suggest_categorical(
+        "learn_spatial_contrast", [True, False]
+    )
+    cfg.learn_global_exposure = trial.suggest_categorical(
+        "learn_global_exposure", [True, False]
+    )
+    cfg.learn_local_exposure = trial.suggest_categorical(
+        "learn_local_exposure", [True, False]
+    )
+    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
+        "learn_edge_aware_gamma", [True, False]
+    )
+    cfg.predictive_adaptive_curve = trial.suggest_categorical(
+        "predictive_adaptive_curve", [True, False]
+    )
+    cfg.use_enhancement_gate = trial.suggest_categorical(
+        "use_enhancement_gate", [True, False]
+    )
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 1500
+    cfg.pretrain_steps = 2000
 
     runner = None
     try:
         runner = Runner(0, 0, 1, cfg)
-        runner.train()
+        runner.pre_train_retinex()
 
-        with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
-            stats = json.load(f)
+        return runner.eval_retinex()
+    finally:
+        if runner is not None:
+            del runner
 
-        return stats["psnr_enh"], stats["ssim_enh"], stats["lpips_enh"]
+        gc.collect()
+        torch.cuda.empty_cache()
 
+def objective(trial: optuna.Trial):
+    cfg = Config()
+
+    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 100.0, log=True)
+    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 100.0, log=True)
+    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 5.0)
+    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
+    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
+    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
+
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
+
+    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
+        "learn_adaptive_curve_lambdas", [True, False]
+    )
+    cfg.learn_spatial_contrast = trial.suggest_categorical(
+        "learn_spatial_contrast", [True, False]
+    )
+    cfg.learn_global_exposure = trial.suggest_categorical(
+        "learn_global_exposure", [True, False]
+    )
+    cfg.learn_local_exposure = trial.suggest_categorical(
+        "learn_local_exposure", [True, False]
+    )
+    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
+        "learn_edge_aware_gamma", [True, False]
+    )
+    cfg.predictive_adaptive_curve = trial.suggest_categorical(
+        "predictive_adaptive_curve", [True, False]
+    )
+    cfg.use_enhancement_gate = trial.suggest_categorical(
+        "use_enhancement_gate", [True, False]
+    )
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+    cfg.pretrain_steps = 2000
+
+    runner = None
+    try:
+        runner = Runner(0, 0, 1, cfg)
+        runner.trial = trial
+        runner.pre_train_retinex()
+
+        return runner.eval_retinex()[0]
     finally:
         if runner is not None:
             del runner
@@ -1388,17 +1487,22 @@ if __name__ == "__main__":
 
     cli(main, config, verbose=True)
 
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    # study = optuna.create_study(direction="maximize", pruner=SuccessiveHalvingPruner())
     #
-    # study.optimize(objective, n_trials=50)
+    #
+    # study.optimize(objective, n_trials=60, catch=(RuntimeError,))
     #
     # print("Study statistics: ")
     # print(f"  Number of finished trials: {len(study.trials)}")
     #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f"  Trial {i}:")
-    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print("    Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f"      {key}: {value}")
+    # print(f"  Best trial: {study.best_trial.number}")
+    # print(f"    Value: {study.best_trial.value}")
+    # print(f"    Params: {study.best_trial.params}")
+    #
+    # # save the best result
+    # with open("best_trial.json", "w") as f:
+    #     json.dump(study.best_trial.params, f, indent=4)
+    #
+    #
+    #
+    #
