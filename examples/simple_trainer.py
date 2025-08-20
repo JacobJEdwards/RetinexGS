@@ -395,8 +395,14 @@ class Runner:
         else:
             reflectance_map = torch.exp(log_reflectance_target)
 
-        reflectance_map = torch.clamp(reflectance_map, 0, 1)
-        reflectance_map = kornia.enhance.equalize_clahe(reflectance_map.permute(0, 3, 1, 2), clip_limit=2.0).permute(0, 2, 3, 1)
+        h, w = reflectance_map.shape[1:3]
+        gs_h = min(8, h)
+        gs_w = min(8, w)
+        reflectance_map = kornia.enhance.equalize_clahe(
+            reflectance_map.permute(0, 3, 1, 2),
+            clip_limit=2.0,
+            grid_size=(gs_h, gs_w)
+        ).permute(0, 2, 3, 1)
 
         return (
             input_image_for_net,
