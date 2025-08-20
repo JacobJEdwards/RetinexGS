@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import tqdm
 import tyro
 import yaml
+from optuna.pruners import HyperbandPruner
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
@@ -652,6 +653,18 @@ class Runner:
                 scheduler.step()
 
             pbar.set_postfix({"loss": loss.item()})
+
+            if self.trial is not None and (step + 1) % 200 == 0:
+                psnr, ssim, lpips = self.eval_retinex()
+
+                self.trial.report(psnr, step)
+
+                pbar.set_postfix({"loss": loss.item(), "psnr": psnr})
+
+                if self.trial.should_prune():
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    raise optuna.TrialPruned()
 
 
     def train(self):
@@ -1452,7 +1465,7 @@ def objective(trial: optuna.Trial):
         runner = Runner(0, 0, 1, cfg)
         runner.pre_train_retinex()
 
-        return runner.eval_retinex()
+        return runner.eval_retinex()[0]
     finally:
         if runner is not None:
             del runner
@@ -1492,47 +1505,22 @@ if __name__ == "__main__":
     #
     # cli(main, config, verbose=True)
     #
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    study = optuna.create_study(direction="maximize", pruner=HyperbandPruner())
+
 
     study.optimize(objective, n_trials=60, catch=(RuntimeError,))
 
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
 
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f"  Trial {i}:")
-        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print("    Params: ")
-        for key, value in trial.params.items():
-            print(f"      {key}: {value}")
+    print(f"  Best trial: {study.best_trial.number}")
+    print(f"    Value: {study.best_trial.value}")
+    print(f"    Params: {study.best_trial.params}")
 
-    # save the top results to a file
-    with open("optuna_results_stump.json", "w") as f:
-        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    # save the best result
+    with open("best_trial.json", "w") as f:
+        json.dump(study.best_trial.params, f, indent=4)
 
-    print("Results saved to optuna_results.json")
-
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-
-    study.optimize(objective1, n_trials=60, catch=(RuntimeError,))
-
-    print("Study statistics: ")
-    print(f"  Number of finished trials: {len(study.trials)}")
-
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f"  Trial {i}:")
-        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print("    Params: ")
-        for key, value in trial.params.items():
-            print(f"      {key}: {value}")
-
-    # save the top results to a file
-    with open("optuna_results_garden.json", "w") as f:
-        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
-
-    print("Results saved to optuna_results.json")
 
 
         
