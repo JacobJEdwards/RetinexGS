@@ -357,18 +357,18 @@ class Runner:
     def get_retinex_output(
             self, images_ids: Tensor, pixels: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
-        pixels = torch.clamp(pixels, min=1e-5, max=1.0)
+        epsilon = torch.finfo(pixels.dtype).eps
 
         if self.cfg.use_hsv_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
             pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
             v_channel = pixels_hsv[:, 2:3, :, :]
             input_image_for_net = v_channel
-            log_input_image = torch.log(input_image_for_net)
+            log_input_image = torch.log(input_image_for_net + epsilon)
         else:
             pixels_hsv = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net)
+            log_input_image = torch.log(input_image_for_net + epsilon)
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
@@ -378,12 +378,10 @@ class Runner:
             retinex_embedding,
             use_reentrant=False,
         )
-        log_illumination_map = torch.clamp(log_illumination_map, min=-10.0, max=10.0)
         illumination_map = torch.exp(log_illumination_map)
         illumination_map = torch.clamp(illumination_map, min=1e-5)
 
         log_reflectance_target = log_input_image - log_illumination_map
-        log_reflectance_target = torch.clamp(log_reflectance_target, min=-10.0, max=10.0)
 
         if self.cfg.use_hsv_color_space:
             reflectance_v_target = torch.exp(log_reflectance_target)
@@ -437,8 +435,6 @@ class Runner:
             loss_exposure_val = self.loss_exposure(reflectance_map)
 
         con_degree = (0.5 / torch.mean(pixels))
-        con_degree.clamp(1e-5, 100)
-
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
@@ -494,9 +490,6 @@ class Runner:
         )
 
         total_loss = (base_lambdas * individual_losses).sum()
-
-        torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
-        torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)

@@ -285,8 +285,7 @@ class SpatialLoss(nn.Module):
             self.register_buffer("learnable_contrast", torch.tensor([initial_contrast], dtype=torch.float32))
 
 
-    def forward_per_pixel(self, org: Tensor, enhance: Tensor, contrast: int | Tensor = 8, image_id: Tensor | None =
-    None):
+    def forward_per_pixel(self, org: Tensor, enhance: Tensor, contrast: int = 8, image_id: Tensor | None = None):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
 
@@ -313,7 +312,6 @@ class SpatialLoss(nn.Module):
         else:
             current_contrast = contrast if contrast is not None else self.learnable_contrast
 
-        current_contrast = torch.clamp(current_contrast, min=1.0, max=100.0)
 
         D_left = torch.pow(D_org_letf * current_contrast - D_enhance_letf, 2)
         D_right = torch.pow(D_org_right * current_contrast - D_enhance_right, 2)
@@ -618,8 +616,7 @@ class ExclusionLoss(nn.Module):
         v = []
         for i in range(C2):
             for j in range(C1):
-                mean_val = torch.mean((grad1_s[:, j, :, :] ** 2) * (grad2_s[:, i, :, :] ** 2))
-                v.append((mean_val + 1e-8) ** 0.25)
+                v.append(torch.mean((grad1_s[:, j, :, :] ** 2) * (grad2_s[:, i, :, :] ** 2)) ** 0.25)
         return v
 
     def forward(self, img1, img2):
