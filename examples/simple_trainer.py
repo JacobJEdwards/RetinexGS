@@ -1463,6 +1463,7 @@ def objective(trial: optuna.Trial):
     runner = None
     try:
         runner = Runner(0, 0, 1, cfg)
+        runner.trial = trial
         runner.pre_train_retinex()
 
         return runner.eval_retinex()[0]
