@@ -16,7 +16,7 @@ import torch.nn.functional as F
 import tqdm
 import tyro
 import yaml
-from optuna.pruners import HyperbandPruner
+from optuna.pruners import HyperbandPruner, SuccessiveHalvingPruner
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
@@ -1506,7 +1506,7 @@ if __name__ == "__main__":
     #
     # cli(main, config, verbose=True)
     #
-    study = optuna.create_study(direction="maximize", pruner=HyperbandPruner())
+    study = optuna.create_study(direction="maximize", pruner=SuccessiveHalvingPruner())
 
 
     study.optimize(objective, n_trials=60, catch=(RuntimeError,))

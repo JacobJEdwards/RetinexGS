@@ -65,35 +65,35 @@ class Config:
     lambda_low: float = 0.2
     lambda_illumination: float = 0.1
 
-    lambda_reflect: float = 4.094346026920074
-    lambda_illum_curve: float = 14.225089060324889
-    lambda_illum_exposure: float = 0.5135511318729757
-    lambda_edge_aware_smooth: float = 60.94547633540053
-    lambda_illum_exposure_local: float = 0.8440406331135882
-    lambda_white_preservation: float = 0.0741204042683988
-    lambda_histogram: float = 1.689585477271085
-    lambda_illum_exclusion: float = 1.56
+    lambda_reflect: float = 4.0
+    lambda_illum_curve: float = 5.0
+    lambda_illum_exposure: float = 1.0
+    lambda_edge_aware_smooth: float = 60
+    lambda_illum_exposure_local: float = 0.1
+    lambda_white_preservation: float = 0.01
+    lambda_histogram: float = 1.0
+    lambda_illum_exclusion: float = 1.0
 
-    lambda_illum_color: float = 1.31032926430792
+    lambda_illum_color: float = 1.
 
     pretrain_retinex: bool = True
     pretrain_steps: int = 1000
 
     use_hsv_color_space: bool = True
 
-    predictive_adaptive_curve: bool = True
+    predictive_adaptive_curve: bool = False
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = False
     learn_local_exposure: bool = False
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = True
-    use_enhancement_gate: bool = True
+    learn_edge_aware_gamma: bool = False
+    use_enhancement_gate: bool = False
 
     postfix: str = "_multiexposure"
 
-    retinex_opt_lr: float = 0.003086634533946221
-    retinex_embedding_lr: float = 0.0046991105348962855
+    retinex_opt_lr: float = 3e-3
+    retinex_embedding_lr: float = 1e-4
 
     retinex_embedding_dim: int = 32
 
