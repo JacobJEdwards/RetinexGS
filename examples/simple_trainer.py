@@ -1491,11 +1491,19 @@ if __name__ == "__main__":
     print("Study statistics: ")
     print(f"  Number of finished trials: {len(study.trials)}")
 
-    print(f"  Best trial: {study.best_trial.number}")
-    print(f"    Value: {study.best_trial.value}")
-    print(f"    Params: {study.best_trial.params}")
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")
 
-    # save the best result
-    with open("best_trial.json", "w") as f:
-        json.dump(study.best_trial.params, f, indent=4)
+    # save the top results to a file
+    with open("optuna_results_stump.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+
+
+
+
 
