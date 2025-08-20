@@ -1484,7 +1484,7 @@ if __name__ == "__main__":
     #
     # cli(main, config, verbose=True)
 
-    study = optuna.create_study(directions=["maximize", "maximize", "minimise"])
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
     study.optimize(objective, n_trials=60, catch=(RuntimeError,))
 
