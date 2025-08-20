@@ -402,7 +402,7 @@ class Runner:
         #     reflectance_map.permute(0,3,1,2),
         #     clip_limit=2.0,
         # ).permute(0, 2, 3, 1)
-        h, w = reflectance_map.shape[2:4]  # Corrected to get spatial dimensions H and W
+        h, w = reflectance_map.shape[2:4]
         gs_h = min(8, h)
         gs_w = min(8, w)
         if gs_h > 0 and gs_w > 0:
