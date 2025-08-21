@@ -303,7 +303,6 @@ class MultiScaleRetinexNet(nn.Module):
             identity_map = torch.zeros_like(final_illumination)
             final_illumination = enhancement_gate_map * final_illumination + (1 - enhancement_gate_map) * identity_map
 
-
         if self.predictive_adaptive_curve:
             adaptive_params = self.adaptive_curve_head(d1)
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
