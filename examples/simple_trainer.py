@@ -475,10 +475,11 @@ class Runner:
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
 
         loss_white_preservation = white_preservation_loss(
-            input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1)
+            input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
+            luminance_threshold=cfg.luminance_threshold,
+            chroma_tolerance=cfg.chroma_tolerance,
+            gain=cfg.gain,
         )
-
-
 
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
 
