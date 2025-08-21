@@ -1439,9 +1439,9 @@ def objective(trial: optuna.Trial):
     cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
     cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 2.0)
 
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
+    # cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
+    # cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
+    # cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
 
     cfg.learn_spatial_contrast = trial.suggest_categorical(
         "learn_spatial_contrast", [True, False]
@@ -1486,47 +1486,47 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    configs = {
-        "default": (
-            "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-        ),
-        "mcmc": (
-            "Gaussian splatting training using MCMC.",
-            Config(
-                init_opa=0.5,
-                init_scale=0.1,
-                opacity_reg=0.01,
-                scale_reg=0.01,
-                strategy=MCMCStrategy(verbose=True),
-            ),
-        ),
-    }
-    # config = tyro.extras.overridable_config_cli(configs)
-    config = tyro.cli(
-        Config,
-    )
+    # configs = {
+    #     "default": (
+    #         "Gaussian splatting training using densification heuristics from the original paper.",
+    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+    #     ),
+    #     "mcmc": (
+    #         "Gaussian splatting training using MCMC.",
+    #         Config(
+    #             init_opa=0.5,
+    #             init_scale=0.1,
+    #             opacity_reg=0.01,
+    #             scale_reg=0.01,
+    #             strategy=MCMCStrategy(verbose=True),
+    #         ),
+    #     ),
+    # }
+    # # config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.cli(
+    #     Config,
+    # )
+    #
+    # config.adjust_steps(config.steps_scaler)
+    # torch.set_float32_matmul_precision("high")
+    #
+    # cli(main, config, verbose=True)
 
-    config.adjust_steps(config.steps_scaler)
-    torch.set_float32_matmul_precision("high")
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    cli(main, config, verbose=True)
+    study.optimize(objective, n_trials=60, catch=(RuntimeError,))
 
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-    #
-    # study.optimize(objective, n_trials=60, catch=(RuntimeError,))
-    #
-    # print("Study statistics: ")
-    # print(f"  Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f"  Trial {i}:")
-    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print("    Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f"      {key}: {value}")
-    #
-    # # save the top results to a file
-    # with open("optuna_results_stump.json", "w") as f:
-    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    print("Study statistics: ")
+    print(f"  Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")
+
+    # save the top results to a file
+    with open("optuna_results_stump.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
