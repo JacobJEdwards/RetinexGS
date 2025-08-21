@@ -12,9 +12,9 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("../../360_v2/bicycle")
+    data_dir: Path = Path("/workspace/360_v2/bicycle")
     data_factor: int = 1
-    result_dir: Path = Path("../../result")
+    result_dir: Path = Path("/workspace/result")
     test_every: int = 8
     patch_size: int | None = None
     global_scale: float = 1.0

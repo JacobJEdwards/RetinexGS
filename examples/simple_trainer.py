@@ -1389,7 +1389,7 @@ def objective_train(trial: optuna.Trial):
 def objective1(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.data_dir = Path("../../360_v2/room")
+    cfg.data_dir = Path("/workspace/360_v2/room")
 
     cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
     cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 100.0, log=True)
@@ -1473,7 +1473,7 @@ def objective_ray(config: dict):
     average_ssim = 0.0
     average_lpips = 0.0
 
-    datasets_to_run = [Path("../../360_v2/bicycle")] #, Path("../../360_v2/kitchen")]
+    datasets_to_run = [Path("/workspace/360_v2/bicycle")] #, Path("../../360_v2/kitchen")]
 
     for dataset in datasets_to_run:
         cfg.data_dir = dataset
@@ -1543,7 +1543,7 @@ def objective(trial: optuna.Trial):
     average_ssim = 0.0
     average_lpips = 0.0
 
-    for dataset in [Path("../../360_v2/bicycle"), Path("../../360_v2/kitchen")]:
+    for dataset in [Path("/workspace/360_v2/bicycle"), Path("/workspace/360_v2/kitchen")]:
         cfg.data_dir = dataset
         runner = None
         try:
