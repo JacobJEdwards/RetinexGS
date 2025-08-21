@@ -379,7 +379,7 @@ class Runner:
             use_reentrant=False,
         )
         illumination_map = torch.exp(log_illumination_map)
-        illumination_map = illumination_map.clone() * 1.5
+        # illumination_map = illumination_map.clone() * 1.5
         illumination_map = torch.clamp(illumination_map, min=1e-5)
 
         log_reflectance_target = log_input_image - log_illumination_map
@@ -395,6 +395,17 @@ class Runner:
             reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
         else:
             reflectance_map = torch.exp(log_reflectance_target)
+
+        dim_factor = 0.7
+        non_white_mask = ~torch.all(reflectance_map >= 0.95, dim=1, keepdim=True)
+
+        dimmed_reflectance = reflectance_map * dim_factor
+
+        reflectance_map = torch.where(
+            non_white_mask,
+            dimmed_reflectance,
+            reflectance_map
+        )
 
         # reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
         # reflectance_map.nan_to_num()
