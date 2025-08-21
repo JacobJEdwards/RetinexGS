@@ -63,7 +63,7 @@ class Config:
     lpips_net: Literal["vgg", "alex"] = "alex"
 
     lambda_low: float = 0.2
-    lambda_illumination: float = 10.0
+    lambda_illumination: float = 1.0
 
     lambda_reflect: float = 4.5
     lambda_illum_curve: float = 9
@@ -92,7 +92,7 @@ class Config:
 
     postfix: str = "_multiexposure"
 
-    retinex_opt_lr: float = 1e-4
+    retinex_opt_lr: float = 1e-3
     retinex_embedding_lr: float = 1e-4
 
     retinex_embedding_dim: int = 32

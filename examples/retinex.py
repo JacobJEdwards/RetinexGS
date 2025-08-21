@@ -249,6 +249,9 @@ class MultiScaleRetinexNet(nn.Module):
             init.constant_(self.gate_conv_head[-2].bias, 2.0)
         self.apply(self._init_weights)
 
+        with torch.no_grad():
+            self.out_conv.pointwise.bias.fill_(-1.0)
+
     @staticmethod
     def _init_weights(m: nn.Module) -> None:
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
