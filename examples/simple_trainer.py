@@ -397,7 +397,7 @@ class Runner:
             reflectance_map = torch.exp(log_reflectance_target)
 
         dim_factor = 0.9
-        non_white_mask = ~torch.all(reflectance_map >= 0.80, dim=1, keepdim=True)
+        non_white_mask = ~torch.all(reflectance_map <= 0.80, dim=1, keepdim=True)
 
         dimmed_reflectance = reflectance_map * dim_factor
 
