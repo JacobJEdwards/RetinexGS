@@ -792,7 +792,7 @@ class Runner:
                 colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
                 colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
-                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
+                loss_reconstruct_low = F.mse_loss(colors_low, pixels)
 
                 ssim_loss_low = 1.0 - self.ssim(
                     colors_low.permute(0, 3, 1, 2),
