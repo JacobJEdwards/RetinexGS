@@ -784,9 +784,9 @@ class Runner:
                     is_pretrain=False
                 )
 
-                gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1).detach()
+                gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1)
 
-                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1).detach()
+                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
                 colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
@@ -982,7 +982,7 @@ class Runner:
                 _,
             ) = retinex_output
 
-            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1).detach()
+            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1)
             colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
             torch.cuda.synchronize()
