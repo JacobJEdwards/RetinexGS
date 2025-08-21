@@ -1631,8 +1631,6 @@ if __name__ == "__main__":
             search_alg=algo,
             scheduler=scheduler,
             num_samples=1,
-            metric="psnr",
-            mode="max",
         ),
         # run_config=ray.air.RunConfig(
         #     name="retinex_hyperparam_tuning",
