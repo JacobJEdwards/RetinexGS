@@ -92,12 +92,12 @@ class Config:
 
     postfix: str = "_multiexposure"
 
-    retinex_opt_lr: float = 1e-3
+    retinex_opt_lr: float = 1e-4
     retinex_embedding_lr: float = 1e-4
 
     retinex_embedding_dim: int = 32
 
-    freeze_step: int = 200
+    freeze_step: int = 3000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
