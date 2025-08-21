@@ -379,7 +379,6 @@ class Runner:
             use_reentrant=False,
         )
         illumination_map = torch.exp(log_illumination_map)
-        illumination_map = illumination_map.clone() * 1.5
         illumination_map = torch.clamp(illumination_map, min=1e-5)
 
         log_reflectance_target = log_input_image - log_illumination_map
