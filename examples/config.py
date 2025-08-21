@@ -68,7 +68,7 @@ class Config:
     lambda_reflect: float = 4.5
     lambda_illum_curve: float = 9
     lambda_illum_exposure: float = 1.5
-    lambda_edge_aware_smooth: float = 40
+    lambda_edge_aware_smooth: float = 50
     lambda_illum_exposure_local: float = 0.01
     lambda_white_preservation: float = 0.01
     lambda_histogram: float = 0.2
@@ -88,7 +88,7 @@ class Config:
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
-    use_enhancement_gate: bool = False
+    use_enhancement_gate: bool = True
 
     postfix: str = "_multiexposure"
 
