@@ -1441,7 +1441,7 @@ def objective(trial: optuna.Trial):
 
     # cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
     # cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
-    # cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
 
     cfg.learn_spatial_contrast = trial.suggest_categorical(
         "learn_spatial_contrast", [True, False]
