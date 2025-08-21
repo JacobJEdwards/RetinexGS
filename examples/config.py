@@ -62,7 +62,7 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    lambda_low: float = 0.75
+    lambda_low: float = 0.2
     lambda_illumination: float = 1.0
 
     lambda_reflect: float = 4.5
@@ -81,14 +81,14 @@ class Config:
 
     use_hsv_color_space: bool = True
 
-    predictive_adaptive_curve: bool = True
+    predictive_adaptive_curve: bool = False
 
-    learn_spatial_contrast: bool = True
+    learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = True
-    learn_local_exposure: bool = True
-    learn_global_exposure: bool = True
+    learn_local_exposure: bool = False
+    learn_global_exposure: bool = False
     learn_edge_aware_gamma: bool = True
-    use_enhancement_gate: bool = True
+    use_enhancement_gate: bool = False
 
     postfix: str = "_multiexposure"
 
