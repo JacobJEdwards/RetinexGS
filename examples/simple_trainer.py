@@ -17,7 +17,7 @@ import tqdm
 import tyro
 import yaml
 from optuna.pruners import HyperbandPruner, SuccessiveHalvingPruner
-from scipy.stats import stats
+from scipy import stats
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
