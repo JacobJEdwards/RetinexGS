@@ -17,6 +17,7 @@ import tqdm
 import tyro
 import yaml
 from optuna.pruners import HyperbandPruner, SuccessiveHalvingPruner
+from scipy.stats import stats
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
@@ -198,7 +199,13 @@ class Runner:
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.histogram_loss = HistogramLoss().to(self.device)
 
-        self.target_histogram_dist = nn.Parameter(torch.ones(256).to(self.device) / 256)
+        mean_val = 128
+        std_dev = 40
+        x = np.arange(256)
+        pdf = stats.norm.pdf(x, mean_val, std_dev)
+        target_hist = torch.from_numpy(pdf / pdf.sum()).float().to(self.device)
+
+        self.target_histogram_dist = nn.Parameter(target_hist)
 
         retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
         retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
@@ -464,6 +471,8 @@ class Runner:
         loss_white_preservation = white_preservation_loss(
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1)
         )
+
+
 
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
 

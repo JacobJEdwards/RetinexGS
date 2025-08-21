@@ -291,7 +291,7 @@ class MultiScaleRetinexNet(nn.Module):
             b_d1, _, h_d1, w_d1 = d1.shape
             tiled_embedding = embedding.view(b_d1, -1, 1, 1).expand(b_d1, -1, h_d1, w_d1)
 
-            gate_head_input = torch.cat([d1.detach(), tiled_embedding], dim=1) # Use .detach() on d1
+            gate_head_input = torch.cat([d1, tiled_embedding], dim=1)
 
             enhancement_gate_map = self.gate_conv_head(gate_head_input)
 
