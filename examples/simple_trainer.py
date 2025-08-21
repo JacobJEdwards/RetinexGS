@@ -403,8 +403,6 @@ class Runner:
         else:
             reflectance_map = torch.exp(log_reflectance_target)
 
-        gamma = 1.2
-        reflectance_map = torch.pow(reflectance_map, gamma)
         reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
         reflectance_map = reflectance_map.nan_to_num()
 
