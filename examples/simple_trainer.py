@@ -1617,8 +1617,8 @@ if __name__ == "__main__":
     #
     algo = OptunaSearch()
     scheduler = ASHAScheduler(
-        metric="psnr",
-        mode="max",
+        # metric="psnr",
+        # mode="max",
         max_t=3000,
         grace_period=1000,
         reduction_factor=2,
@@ -1630,7 +1630,9 @@ if __name__ == "__main__":
         tune_config=tune.TuneConfig(
             search_alg=algo,
             scheduler=scheduler,
-            num_samples=1,
+            num_samples=100,
+            metric="psnr",
+            mode="max",
         ),
         # run_config=ray.air.RunConfig(
         #     name="retinex_hyperparam_tuning",
