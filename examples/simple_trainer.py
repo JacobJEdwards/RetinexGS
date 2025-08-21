@@ -1630,7 +1630,7 @@ if __name__ == "__main__":
         tune_config=tune.TuneConfig(
             search_alg=algo,
             scheduler=scheduler,
-            num_samples=100,
+            num_samples=1,
             metric="psnr",
             mode="max",
         ),
