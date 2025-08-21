@@ -1,11 +1,17 @@
 import gc
 import json
+import pandas as pd
 import math
 import os
 import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+import ray
+from ray import tune
+from ray.tune import TuneConfig, Checkpoint, report
+from ray.tune.schedulers import ASHAScheduler
+from ray.tune.search.optuna import OptunaSearch
 
 import imageio
 import kornia.color
@@ -1436,6 +1442,59 @@ def objective1(trial: optuna.Trial):
         gc.collect()
         torch.cuda.empty_cache()
 
+def objective_ray(config: dict):
+    cfg = Config()
+
+    cfg.lambda_reflect = config["lambda_reflect"]
+    cfg.lambda_illum_curve = config["lambda_illum_curve"]
+    cfg.lambda_illum_exposure = config["lambda_illum_exposure"]
+    cfg.lambda_edge_aware_smooth = config["lambda_edge_aware_smooth"]
+    cfg.lambda_illum_exposure_local = config["lambda_illum_exposure_local"]
+    cfg.lambda_white_preservation = config["lambda_white_preservation"]
+    cfg.lambda_histogram = config["lambda_histogram"]
+    cfg.lambda_illum_exclusion = config["lambda_illum_exclusion"]
+    cfg.retinex_embedding_dim = config["retinex_embedding_dim"]
+    cfg.learn_spatial_contrast = config["learn_spatial_contrast"]
+    cfg.learn_global_exposure = config["learn_global_exposure"]
+    cfg.learn_local_exposure = config["learn_local_exposure"]
+    cfg.learn_edge_aware_gamma = config["learn_edge_aware_gamma"]
+    cfg.predictive_adaptive_curve = config["predictive_adaptive_curve"]
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+    cfg.pretrain_steps = 2000
+
+    average_psnr = 0.0
+    average_ssim = 0.0
+    average_lpips = 0.0
+
+    datasets_to_run = [Path("../../360_v2/bicycle"), Path("../../360_v2/kitchen")]
+
+    for dataset in datasets_to_run:
+        cfg.data_dir = dataset
+        runner = None
+        try:
+            runner = Runner(0, 0, 1, cfg)
+            runner.pre_train_retinex()
+
+            psnr, ssim, lpips = runner.eval_retinex()
+            average_psnr += psnr
+            average_ssim += ssim
+            average_lpips += lpips
+        finally:
+            if runner is not None:
+                del runner
+
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    num_datasets = float(len(datasets_to_run))
+    tune.report(
+        psnr=(average_psnr / num_datasets),
+        ssim=(average_ssim / num_datasets),
+        lpips=(average_lpips / num_datasets),
+    )
+
 def objective(trial: optuna.Trial):
     cfg = Config()
 
@@ -1495,11 +1554,14 @@ def objective(trial: optuna.Trial):
             gc.collect()
             torch.cuda.empty_cache()
 
-    return (
-        average_psnr / 2.0,
-        average_ssim / 2.0,
-        average_lpips / 2.0,
-    )
+    metrics = {
+        "psnr": average_psnr / 2,
+        "ssim": average_ssim / 2,
+        "lpips": average_lpips / 2,
+    }
+
+    checkpoint = Checkpoint.from_dict({"step": cfg.max_steps})
+    report(metrics, checkpoint=checkpoint)
 
 BilateralGrid = None
 color_correct = None
@@ -1533,21 +1595,71 @@ if __name__ == "__main__":
     #
     # cli(main, config, verbose=True)
     #
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    search_space = {
+        "lambda_reflect": tune.uniform(0.0, 5.0),
+        "lambda_illum_curve": tune.loguniform(1e-2, 10.0),
+        "lambda_illum_exposure": tune.uniform(0.0, 4.0),
+        "lambda_edge_aware_smooth": tune.loguniform(1, 50.0),
+        "lambda_illum_exposure_local": tune.uniform(0.0, 2.0),
+        "lambda_white_preservation": tune.loguniform(1e-2, 10.0),
+        "lambda_histogram": tune.loguniform(1e-2, 10.0),
+        "lambda_illum_exclusion": tune.uniform(0.0, 2.0),
+        "retinex_embedding_dim": tune.choice([32, 64]),
+        "learn_spatial_contrast": tune.choice([True, False]),
+        "learn_global_exposure": tune.choice([True, False]),
+        "learn_local_exposure": tune.choice([True, False]),
+        "learn_edge_aware_gamma": tune.choice([True, False]),
+        "predictive_adaptive_curve": tune.choice([True, False]),
+    }
 
-    study.optimize(objective, n_trials=60, catch=(RuntimeError,))
+    algo = OptunaSearch()
+    scheduler = ASHAScheduler(
+        metric="psnr",
+        mode="max",
+        max_t=3000,
+        grace_period=1000,
+        reduction_factor=2,
+    )
 
-    print("Study statistics: ")
-    print(f"  Number of finished trials: {len(study.trials)}")
+    tuner = tune.Tuner(
+        tune.with_resources(objective_ray_trainable, {"gpu": 1}),
+        param_space=search_space,
+        tune_config=tune.TuneConfig(
+            search_alg=algo,
+            scheduler=scheduler,
+            num_samples=100,
+            metric="psnr",
+            mode="max",
+        ),
+        run_config=ray.air.RunConfig(
+            name="retinex_hyperparam_tuning",
+            progress_reporter=tune.CLIReporter(
+                metric_columns=["psnr", "ssim", "lpips", "training_iteration"]
+            ),
+            local_dir="./ray_results",
+        ),
+    )
+    results = tuner.fit()
 
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f"  Trial {i}:")
-        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print("    Params: ")
-        for key, value in trial.params.items():
-            print(f"      {key}: {value}")
+    print("✨ Hyperparameter tuning finished. ✨")
 
-    # save the top results to a file
-    with open("optuna_results_stump.json", "w") as f:
-        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    best_psnr_trial = results.get_best_result(metric="psnr", mode="max")
+    print("\n🏆 Best Trial by PSNR:")
+    print(f"  - PSNR:  {best_psnr_trial.metrics['psnr']:.4f}")
+    print(f"  - SSIM:  {best_psnr_trial.metrics['ssim']:.4f}")
+    print(f"  - LPIPS: {best_psnr_trial.metrics['lpips']:.4f}")
+    print("  - Config:")
+    for key, value in best_psnr_trial.config.items():
+        print(f"    - {key}: {value}")
+
+    best_ssim_trial = results.get_best_result(metric="ssim", mode="max")
+    print("\n🏆 Best Trial by SSIM:")
+    print(f"  - SSIM: {best_ssim_trial.metrics['ssim']:.4f}")
+
+    best_lpips_trial = results.get_best_result(metric="lpips", mode="min")
+    print("\n🏆 Best Trial by LPIPS:")
+    print(f"  - LPIPS: {best_lpips_trial.metrics['lpips']:.4f}")
+
+    df = results.get_dataframe()
+    df.to_csv("raytune_results_sophisticated.csv")
+    print("\nFull results dataframe saved to 'raytune_results_sophisticated.csv'")
