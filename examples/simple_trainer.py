@@ -1634,13 +1634,13 @@ if __name__ == "__main__":
             metric="psnr",
             mode="max",
         ),
-        run_config=ray.air.RunConfig(
-            name="retinex_hyperparam_tuning",
-            progress_reporter=tune.CLIReporter(
-                metric_columns=["psnr", "ssim", "lpips", "training_iteration"]
-            ),
-            local_dir="./ray_results",
-        ),
+        # run_config=ray.air.RunConfig(
+        #     name="retinex_hyperparam_tuning",
+        #     progress_reporter=tune.CLIReporter(
+        #         metric_columns=["psnr", "ssim", "lpips", "training_iteration"]
+        #     ),
+        #     local_dir="./ray_results",
+        # ),
     )
     results = tuner.fit()
 
