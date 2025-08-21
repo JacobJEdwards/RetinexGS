@@ -1569,97 +1569,97 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    # configs = {
-    #     "default": (
-    #         "Gaussian splatting training using densification heuristics from the original paper.",
-    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-    #     ),
-    #     "mcmc": (
-    #         "Gaussian splatting training using MCMC.",
-    #         Config(
-    #             init_opa=0.5,
-    #             init_scale=0.1,
-    #             opacity_reg=0.01,
-    #             scale_reg=0.01,
-    #             strategy=MCMCStrategy(verbose=True),
-    #         ),
-    #     ),
+    configs = {
+        "default": (
+            "Gaussian splatting training using densification heuristics from the original paper.",
+            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+        ),
+        "mcmc": (
+            "Gaussian splatting training using MCMC.",
+            Config(
+                init_opa=0.5,
+                init_scale=0.1,
+                opacity_reg=0.01,
+                scale_reg=0.01,
+                strategy=MCMCStrategy(verbose=True),
+            ),
+        ),
+    }
+    # config = tyro.extras.overridable_config_cli(configs)
+    config = tyro.cli(
+        Config,
+    )
+
+    config.adjust_steps(config.steps_scaler)
+    torch.set_float32_matmul_precision("high")
+
+    cli(main, config, verbose=True)
+    # #
+    # search_space = {
+    #     "lambda_reflect": tune.uniform(0.0, 5.0),
+    #     "lambda_illum_curve": tune.loguniform(1e-2, 10.0),
+    #     "lambda_illum_exposure": tune.uniform(0.0, 4.0),
+    #     "lambda_edge_aware_smooth": tune.loguniform(1, 50.0),
+    #     "lambda_illum_exposure_local": tune.uniform(0.0, 2.0),
+    #     "lambda_white_preservation": tune.loguniform(1e-2, 10.0),
+    #     "lambda_histogram": tune.loguniform(1e-2, 10.0),
+    #     "lambda_illum_exclusion": tune.uniform(0.0, 2.0),
+    #     "retinex_embedding_dim": tune.choice([32, 64]),
+    #     "learn_spatial_contrast": tune.choice([True, False]),
+    #     "learn_global_exposure": tune.choice([True, False]),
+    #     "learn_local_exposure": tune.choice([True, False]),
+    #     "learn_edge_aware_gamma": tune.choice([True, False]),
+    #     "predictive_adaptive_curve": tune.choice([True, False]),
     # }
-    # # config = tyro.extras.overridable_config_cli(configs)
-    # config = tyro.cli(
-    #     Config,
+    #
+    # algo = OptunaSearch()
+    # scheduler = ASHAScheduler(
+    #     metric="psnr",
+    #     mode="max",
+    #     max_t=3000,
+    #     grace_period=1000,
+    #     reduction_factor=2,
     # )
     #
-    # config.adjust_steps(config.steps_scaler)
-    # torch.set_float32_matmul_precision("high")
+    # tuner = tune.Tuner(
+    #     tune.with_resources(objective_ray_trainable, {"gpu": 1}),
+    #     param_space=search_space,
+    #     tune_config=tune.TuneConfig(
+    #         search_alg=algo,
+    #         scheduler=scheduler,
+    #         num_samples=100,
+    #         metric="psnr",
+    #         mode="max",
+    #     ),
+    #     run_config=ray.air.RunConfig(
+    #         name="retinex_hyperparam_tuning",
+    #         progress_reporter=tune.CLIReporter(
+    #             metric_columns=["psnr", "ssim", "lpips", "training_iteration"]
+    #         ),
+    #         local_dir="./ray_results",
+    #     ),
+    # )
+    # results = tuner.fit()
     #
-    # cli(main, config, verbose=True)
+    # print("✨ Hyperparameter tuning finished. ✨")
     #
-    search_space = {
-        "lambda_reflect": tune.uniform(0.0, 5.0),
-        "lambda_illum_curve": tune.loguniform(1e-2, 10.0),
-        "lambda_illum_exposure": tune.uniform(0.0, 4.0),
-        "lambda_edge_aware_smooth": tune.loguniform(1, 50.0),
-        "lambda_illum_exposure_local": tune.uniform(0.0, 2.0),
-        "lambda_white_preservation": tune.loguniform(1e-2, 10.0),
-        "lambda_histogram": tune.loguniform(1e-2, 10.0),
-        "lambda_illum_exclusion": tune.uniform(0.0, 2.0),
-        "retinex_embedding_dim": tune.choice([32, 64]),
-        "learn_spatial_contrast": tune.choice([True, False]),
-        "learn_global_exposure": tune.choice([True, False]),
-        "learn_local_exposure": tune.choice([True, False]),
-        "learn_edge_aware_gamma": tune.choice([True, False]),
-        "predictive_adaptive_curve": tune.choice([True, False]),
-    }
-
-    algo = OptunaSearch()
-    scheduler = ASHAScheduler(
-        metric="psnr",
-        mode="max",
-        max_t=3000,
-        grace_period=1000,
-        reduction_factor=2,
-    )
-
-    tuner = tune.Tuner(
-        tune.with_resources(objective_ray_trainable, {"gpu": 1}),
-        param_space=search_space,
-        tune_config=tune.TuneConfig(
-            search_alg=algo,
-            scheduler=scheduler,
-            num_samples=100,
-            metric="psnr",
-            mode="max",
-        ),
-        run_config=ray.air.RunConfig(
-            name="retinex_hyperparam_tuning",
-            progress_reporter=tune.CLIReporter(
-                metric_columns=["psnr", "ssim", "lpips", "training_iteration"]
-            ),
-            local_dir="./ray_results",
-        ),
-    )
-    results = tuner.fit()
-
-    print("✨ Hyperparameter tuning finished. ✨")
-
-    best_psnr_trial = results.get_best_result(metric="psnr", mode="max")
-    print("\n🏆 Best Trial by PSNR:")
-    print(f"  - PSNR:  {best_psnr_trial.metrics['psnr']:.4f}")
-    print(f"  - SSIM:  {best_psnr_trial.metrics['ssim']:.4f}")
-    print(f"  - LPIPS: {best_psnr_trial.metrics['lpips']:.4f}")
-    print("  - Config:")
-    for key, value in best_psnr_trial.config.items():
-        print(f"    - {key}: {value}")
-
-    best_ssim_trial = results.get_best_result(metric="ssim", mode="max")
-    print("\n🏆 Best Trial by SSIM:")
-    print(f"  - SSIM: {best_ssim_trial.metrics['ssim']:.4f}")
-
-    best_lpips_trial = results.get_best_result(metric="lpips", mode="min")
-    print("\n🏆 Best Trial by LPIPS:")
-    print(f"  - LPIPS: {best_lpips_trial.metrics['lpips']:.4f}")
-
-    df = results.get_dataframe()
-    df.to_csv("raytune_results_sophisticated.csv")
-    print("\nFull results dataframe saved to 'raytune_results_sophisticated.csv'")
+    # best_psnr_trial = results.get_best_result(metric="psnr", mode="max")
+    # print("\n🏆 Best Trial by PSNR:")
+    # print(f"  - PSNR:  {best_psnr_trial.metrics['psnr']:.4f}")
+    # print(f"  - SSIM:  {best_psnr_trial.metrics['ssim']:.4f}")
+    # print(f"  - LPIPS: {best_psnr_trial.metrics['lpips']:.4f}")
+    # print("  - Config:")
+    # for key, value in best_psnr_trial.config.items():
+    #     print(f"    - {key}: {value}")
+    #
+    # best_ssim_trial = results.get_best_result(metric="ssim", mode="max")
+    # print("\n🏆 Best Trial by SSIM:")
+    # print(f"  - SSIM: {best_ssim_trial.metrics['ssim']:.4f}")
+    #
+    # best_lpips_trial = results.get_best_result(metric="lpips", mode="min")
+    # print("\n🏆 Best Trial by LPIPS:")
+    # print(f"  - LPIPS: {best_lpips_trial.metrics['lpips']:.4f}")
+    #
+    # df = results.get_dataframe()
+    # df.to_csv("raytune_results_sophisticated.csv")
+    # print("\nFull results dataframe saved to 'raytune_results_sophisticated.csv'")
