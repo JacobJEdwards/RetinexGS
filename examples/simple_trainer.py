@@ -1458,9 +1458,6 @@ def objective(trial: optuna.Trial):
     cfg.predictive_adaptive_curve = trial.suggest_categorical(
         "predictive_adaptive_curve", [True, False]
     )
-    cfg.use_enhancement_gate = trial.suggest_categorical(
-        "use_enhancement_gate", [True, False]
-    )
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
