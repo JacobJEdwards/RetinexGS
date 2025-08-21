@@ -1506,34 +1506,44 @@ def objective_ray(config: dict):
 def objective(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-2, 10.0, log=True)
-    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 4.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 50.0, log=True)
-    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 2.0)
+    # cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
+    # cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-2, 10.0, log=True)
+    # cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 4.0)
+    # cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 50.0, log=True)
+    # cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 2.0)
     cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-2, 10.0, log=True)
-    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-2, 10.0, log=True)
-    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 2.0)
+    # cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-2, 10.0, log=True)
+    # cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 2.0)
 
     # cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
     # cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
+    # cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
 
-    cfg.learn_spatial_contrast = trial.suggest_categorical(
-        "learn_spatial_contrast", [True, False]
+    # cfg.learn_spatial_contrast = trial.suggest_categorical(
+    #     "learn_spatial_contrast", [True, False]
+    # )
+    # cfg.learn_global_exposure = trial.suggest_categorical(
+    #     "learn_global_exposure", [True, False]
+    # )
+    # cfg.learn_local_exposure = trial.suggest_categorical(
+    #     "learn_local_exposure", [True, False]
+    # )
+    # cfg.learn_edge_aware_gamma = trial.suggest_categorical(
+    #     "learn_edge_aware_gamma", [True, False]
+    # )
+    # cfg.predictive_adaptive_curve = trial.suggest_categorical(
+    #     "predictive_adaptive_curve", [True, False]
+    # )
+
+    cfg.luminance_threshold = trial.suggest_float(
+        "luminance_threshold", 75, 100
     )
-    cfg.learn_global_exposure = trial.suggest_categorical(
-        "learn_global_exposure", [True, False]
+    cfg.chroma_tolerance = trial.suggest_float(
+        "chroma_tolerance", 0.01, 20, log=True
     )
-    cfg.learn_local_exposure = trial.suggest_categorical(
-        "learn_local_exposure", [True, False]
-    )
-    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
-        "learn_edge_aware_gamma", [True, False]
-    )
-    cfg.predictive_adaptive_curve = trial.suggest_categorical(
-        "predictive_adaptive_curve", [True, False]
-    )
+    cfg.gain = trial.suggest_float("gain", 0.5, 30.0, log=True)
+
+
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
@@ -1543,7 +1553,9 @@ def objective(trial: optuna.Trial):
     average_ssim = 0.0
     average_lpips = 0.0
 
-    for dataset in [Path("/workspace/360_v2/bicycle"), Path("/workspace/360_v2/kitchen")]:
+    datasets_to_run = [Path("/workspace/360_v2/bicycle")]
+
+    for dataset in datasets_to_run:
         cfg.data_dir = dataset
         runner = None
         try:
@@ -1561,6 +1573,10 @@ def objective(trial: optuna.Trial):
 
             gc.collect()
             torch.cuda.empty_cache()
+
+    num_datasets = len(datasets_to_run)
+
+    return average_psnr / num_datasets, average_ssim / num_datasets, average_lpips / num_datasets
 
 
 BilateralGrid = None
@@ -1594,75 +1610,22 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     # cli(main, config, verbose=True)
-    # #
-    search_space = {
-        # "lambda_reflect": tune.uniform(0.0, 5.0),
-        # "lambda_illum_curve": tune.loguniform(1e-2, 10.0),
-        # "lambda_illum_exposure": tune.uniform(0.0, 4.0),
-        # "lambda_edge_aware_smooth": tune.loguniform(1, 50.0),
-        # "lambda_illum_exposure_local": tune.uniform(0.0, 2.0),
-        "lambda_white_preservation": tune.loguniform(1e-2, 10.0),
-        # "lambda_histogram": tune.loguniform(1e-2, 10.0),
-        # "lambda_illum_exclusion": tune.uniform(0.0, 2.0),
-        # "retinex_embedding_dim": tune.choice([32, 64]),
-        # "learn_spatial_contrast": tune.choice([True, False]),
-        # "learn_global_exposure": tune.choice([True, False]),
-        # "learn_local_exposure": tune.choice([True, False]),
-        # "learn_edge_aware_gamma": tune.choice([True, False]),
-        # "predictive_adaptive_curve": tune.choice([True, False]),
-        "luminance_threshold": tune.uniform(80, 100),
-        "chroma_tolerance": tune.loguniform(1e-2, 10.0),
-        "gain": tune.uniform(1e-2, 50.0),
-    }
-    #
-    algo = OptunaSearch()
-    scheduler = ASHAScheduler(
-        # metric="psnr",
-        # mode="max",
-        max_t=3000,
-        grace_period=1000,
-        reduction_factor=2,
-    )
 
-    tuner = tune.Tuner(
-        tune.with_resources(objective_ray, {"gpu": 1}),
-        param_space=search_space,
-        tune_config=tune.TuneConfig(
-            search_alg=algo,
-            scheduler=scheduler,
-            num_samples=30,
-            metric="psnr",
-            mode="max",
-        ),
-        # run_config=ray.air.RunConfig(
-        #     name="retinex_hyperparam_tuning",
-        #     progress_reporter=tune.CLIReporter(
-        #         metric_columns=["psnr", "ssim", "lpips", "training_iteration"]
-        #     ),
-        #     local_dir="./ray_results",
-        # ),
-    )
-    results = tuner.fit()
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    print("✨ Hyperparameter tuning finished. ✨")
+    study.optimize(objective, n_trials=30, catch=(RuntimeError,))
 
-    best_psnr_trial = results.get_best_result(metric="psnr", mode="max")
-    print("\n🏆 Best Trial by PSNR:")
-    print(f"  - PSNR:  {best_psnr_trial.metrics['psnr']:.4f}")
-    print(f"  - SSIM:  {best_psnr_trial.metrics['ssim']:.4f}")
-    print(f"  - LPIPS: {best_psnr_trial.metrics['lpips']:.4f}")
-    print("  - Config:")
-    for key, value in best_psnr_trial.config.items():
-        print(f"    - {key}: {value}")
+    print("Study statistics: ")
+    print(f" Number of finished trials: {len(study.trials)}")
 
-    best_ssim_trial = results.get_best_result(metric="ssim", mode="max")
-    print("\n🏆 Best Trial by SSIM:")
-    print(f"  - SSIM: {best_ssim_trial.metrics['ssim']:.4f}")
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f" Trial {i}:")
+    print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+    print(" Params: ")
+    for key, value in trial.params.items():
+        print(f" {key}: {value}")
 
-    best_lpips_trial = results.get_best_result(metric="lpips", mode="min")
-    print("\n🏆 Best Trial by LPIPS:")
-    print(f"  - LPIPS: {best_lpips_trial.metrics['lpips']:.4f}")
-
-    df = results.get_dataframe()
-    df.to_csv("raytune_results_sophisticated.csv")
-    print("\nFull results dataframe saved to 'raytune_results_sophisticated.csv'")
+    # save the top results to a file
+    with open("optuna_results_stump.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
