@@ -396,8 +396,8 @@ class Runner:
         else:
             reflectance_map = torch.exp(log_reflectance_target)
 
-        dim_factor = 0.7
-        non_white_mask = ~torch.all(reflectance_map >= 0.95, dim=1, keepdim=True)
+        dim_factor = 0.9
+        non_white_mask = ~torch.all(reflectance_map >= 0.80, dim=1, keepdim=True)
 
         dimmed_reflectance = reflectance_map * dim_factor
 
@@ -407,14 +407,14 @@ class Runner:
             reflectance_map
         )
 
-        # reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
+        reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
         # reflectance_map.nan_to_num()
-        #
-        # reflectance_map_clahe = kornia.enhance.equalize_clahe(
-        #     reflectance_map,
-        #     clip_limit=2.0,
-        #     grid_size=(8, 8)
-        # )
+
+        reflectance_map_clahe = kornia.enhance.equalize_clahe(
+            reflectance_map,
+            clip_limit=2.0,
+            grid_size=(8, 8)
+        )
 
         return (
             input_image_for_net,
