@@ -784,9 +784,9 @@ class Runner:
                     is_pretrain=False
                 )
 
-                gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1).detach()
+                gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1)
 
-                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1).detach()
+                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
                 colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
@@ -982,7 +982,7 @@ class Runner:
                 _,
             ) = retinex_output
 
-            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1).detach()
+            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1)
             colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
             torch.cuda.synchronize()
@@ -1429,19 +1429,34 @@ def objective1(trial: optuna.Trial):
 def objective(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 4.0, 10.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1, 10.0, log=True)
-    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 1.0, 4.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 20.0, 50.0, log=True)
-    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 1.0)
-    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1.0, 5.0, log=True)
-    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 0.1, 10.0, log=True)
+    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
+    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-2, 10.0, log=True)
+    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 4.0)
+    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 50.0, log=True)
+    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 2.0)
+    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 2.0, log=True)
+    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
     cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 2.0)
 
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-4, 1e-2, log=True)
-    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 3e-5, 1e-2, log=True)
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
     cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
 
+    cfg.learn_spatial_contrast = trial.suggest_categorical(
+        "learn_spatial_contrast", [True, False]
+    )
+    cfg.learn_global_exposure = trial.suggest_categorical(
+        "learn_global_exposure", [True, False]
+    )
+    cfg.learn_local_exposure = trial.suggest_categorical(
+        "learn_local_exposure", [True, False]
+    )
+    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
+        "learn_edge_aware_gamma", [True, False]
+    )
+    cfg.predictive_adaptive_curve = trial.suggest_categorical(
+        "predictive_adaptive_curve", [True, False]
+    )
     cfg.use_enhancement_gate = trial.suggest_categorical(
         "use_enhancement_gate", [True, False]
     )
@@ -1514,8 +1529,3 @@ if __name__ == "__main__":
     # # save the top results to a file
     # with open("optuna_results_stump.json", "w") as f:
     #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
-
-
-
-
-
