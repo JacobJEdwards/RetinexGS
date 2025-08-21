@@ -380,6 +380,7 @@ class Runner:
         )
         illumination_map = torch.exp(log_illumination_map)
         illumination_map = torch.clamp(illumination_map, min=1e-5)
+        illumination_map = illumination_map.nan_to_num()
 
         log_reflectance_target = log_input_image - log_illumination_map
 
