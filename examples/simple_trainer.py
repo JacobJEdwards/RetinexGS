@@ -1596,22 +1596,25 @@ if __name__ == "__main__":
 
     cli(main, config, verbose=True)
     # #
-    # search_space = {
-    #     "lambda_reflect": tune.uniform(0.0, 5.0),
-    #     "lambda_illum_curve": tune.loguniform(1e-2, 10.0),
-    #     "lambda_illum_exposure": tune.uniform(0.0, 4.0),
-    #     "lambda_edge_aware_smooth": tune.loguniform(1, 50.0),
-    #     "lambda_illum_exposure_local": tune.uniform(0.0, 2.0),
-    #     "lambda_white_preservation": tune.loguniform(1e-2, 10.0),
-    #     "lambda_histogram": tune.loguniform(1e-2, 10.0),
-    #     "lambda_illum_exclusion": tune.uniform(0.0, 2.0),
-    #     "retinex_embedding_dim": tune.choice([32, 64]),
-    #     "learn_spatial_contrast": tune.choice([True, False]),
-    #     "learn_global_exposure": tune.choice([True, False]),
-    #     "learn_local_exposure": tune.choice([True, False]),
-    #     "learn_edge_aware_gamma": tune.choice([True, False]),
-    #     "predictive_adaptive_curve": tune.choice([True, False]),
-    # }
+    search_space = {
+        "lambda_reflect": tune.uniform(0.0, 5.0),
+        "lambda_illum_curve": tune.loguniform(1e-2, 10.0),
+        "lambda_illum_exposure": tune.uniform(0.0, 4.0),
+        "lambda_edge_aware_smooth": tune.loguniform(1, 50.0),
+        "lambda_illum_exposure_local": tune.uniform(0.0, 2.0),
+        "lambda_white_preservation": tune.loguniform(1e-2, 10.0),
+        "lambda_histogram": tune.loguniform(1e-2, 10.0),
+        "lambda_illum_exclusion": tune.uniform(0.0, 2.0),
+        "retinex_embedding_dim": tune.choice([32, 64]),
+        "learn_spatial_contrast": tune.choice([True, False]),
+        "learn_global_exposure": tune.choice([True, False]),
+        "learn_local_exposure": tune.choice([True, False]),
+        "learn_edge_aware_gamma": tune.choice([True, False]),
+        "predictive_adaptive_curve": tune.choice([True, False]),
+        "luminance_threshold": tune.uniform(80, 100),
+        "chroma_tolerance": tune.loguniform(1e-2, 10.0),
+        "gain": tune.uniform(1e-2, 50.0),
+    }
     #
     # algo = OptunaSearch()
     # scheduler = ASHAScheduler(
