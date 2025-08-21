@@ -396,11 +396,9 @@ class Runner:
         else:
             reflectance_map = torch.exp(log_reflectance_target)
 
-
-
         # reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
-        # reflectance_map.nan_to_num()
-
+        reflectance_map = reflectance_map.nan_to_num()
+        #
         # reflectance_map_clahe = kornia.enhance.equalize_clahe(
         #     reflectance_map,
         #     clip_limit=2.0,
