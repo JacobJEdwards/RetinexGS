@@ -70,7 +70,7 @@ class Config:
     lambda_illum_exposure: float = 1.1
     lambda_edge_aware_smooth: float = 6.4
     lambda_illum_exposure_local: float = 1.8
-    lambda_white_preservation: float = 5
+    lambda_white_preservation: float = 0.03
     lambda_histogram: float = 1
     lambda_illum_exclusion: float = 0.15
 
