@@ -1444,8 +1444,8 @@ def objective(trial: optuna.Trial):
     cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 4.0)
     cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 50.0, log=True)
     cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 2.0)
-    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 2.0, log=True)
-    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
+    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-2, 10.0, log=True)
+    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-2, 10.0, log=True)
     cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 2.0)
 
     # cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
@@ -1472,19 +1472,34 @@ def objective(trial: optuna.Trial):
     cfg.eval_steps = [3000]
     cfg.pretrain_steps = 2000
 
-    runner = None
-    try:
-        runner = Runner(0, 0, 1, cfg)
-        runner.trial = trial
-        runner.pre_train_retinex()
+    average_psnr = 0.0
+    average_ssim = 0.0
+    average_lpips = 0.0
 
-        return runner.eval_retinex()
-    finally:
-        if runner is not None:
-            del runner
+    for dataset in [Path("../../360_v2/bicycle"), Path("../../360_v2/kitchen")]:
+        cfg.data_dir = dataset
+        runner = None
+        try:
+            runner = Runner(0, 0, 1, cfg)
+            runner.trial = trial
+            runner.pre_train_retinex()
 
-        gc.collect()
-        torch.cuda.empty_cache()
+            psnr, ssim, lpips = runner.eval_retinex()
+            average_psnr += psnr
+            average_ssim += ssim
+            average_lpips += lpips
+        finally:
+            if runner is not None:
+                del runner
+
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    return (
+        average_psnr / 2.0,
+        average_ssim / 2.0,
+        average_lpips / 2.0,
+    )
 
 BilateralGrid = None
 color_correct = None
@@ -1492,47 +1507,47 @@ slice_func = None
 total_variation_loss = None
 
 if __name__ == "__main__":
-    configs = {
-        "default": (
-            "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
-        ),
-        "mcmc": (
-            "Gaussian splatting training using MCMC.",
-            Config(
-                init_opa=0.5,
-                init_scale=0.1,
-                opacity_reg=0.01,
-                scale_reg=0.01,
-                strategy=MCMCStrategy(verbose=True),
-            ),
-        ),
-    }
-    # config = tyro.extras.overridable_config_cli(configs)
-    config = tyro.cli(
-        Config,
-    )
+    # configs = {
+    #     "default": (
+    #         "Gaussian splatting training using densification heuristics from the original paper.",
+    #         Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+    #     ),
+    #     "mcmc": (
+    #         "Gaussian splatting training using MCMC.",
+    #         Config(
+    #             init_opa=0.5,
+    #             init_scale=0.1,
+    #             opacity_reg=0.01,
+    #             scale_reg=0.01,
+    #             strategy=MCMCStrategy(verbose=True),
+    #         ),
+    #     ),
+    # }
+    # # config = tyro.extras.overridable_config_cli(configs)
+    # config = tyro.cli(
+    #     Config,
+    # )
+    #
+    # config.adjust_steps(config.steps_scaler)
+    # torch.set_float32_matmul_precision("high")
+    #
+    # cli(main, config, verbose=True)
+    #
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    config.adjust_steps(config.steps_scaler)
-    torch.set_float32_matmul_precision("high")
+    study.optimize(objective, n_trials=60, catch=(RuntimeError,))
 
-    cli(main, config, verbose=True)
-    #
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-    #
-    # study.optimize(objective, n_trials=60, catch=(RuntimeError,))
-    #
-    # print("Study statistics: ")
-    # print(f"  Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f"  Trial {i}:")
-    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print("    Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f"      {key}: {value}")
-    #
-    # # save the top results to a file
-    # with open("optuna_results_stump.json", "w") as f:
-    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    print("Study statistics: ")
+    print(f"  Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")
+
+    # save the top results to a file
+    with open("optuna_results_stump.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
