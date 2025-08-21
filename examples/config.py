@@ -70,8 +70,8 @@ class Config:
     lambda_illum_exposure: float = 3.0
     lambda_edge_aware_smooth: float = 11
     lambda_illum_exposure_local: float = 1.5
-    lambda_white_preservation: float = 5.0
-    lambda_histogram: float = 0.001
+    lambda_white_preservation: float = 0
+    lambda_histogram: float = 0
     lambda_illum_exclusion: float = 0.5
 
     lambda_illum_color: float = 1.
@@ -86,7 +86,7 @@ class Config:
     learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = True
     learn_local_exposure: bool = False
-    learn_global_exposure: bool = False
+    learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
     use_enhancement_gate: bool = True
 
