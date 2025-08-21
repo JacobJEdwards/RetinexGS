@@ -397,7 +397,7 @@ class Runner:
             reflectance_map = torch.exp(log_reflectance_target)
 
         # reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
-        reflectance_map = reflectance_map.nan_to_num()
+        # reflectance_map.nan_to_num()
         #
         # reflectance_map_clahe = kornia.enhance.equalize_clahe(
         #     reflectance_map,
@@ -1511,25 +1511,25 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     cli(main, config, verbose=True)
+
+    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
     #
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-
-    study.optimize(objective, n_trials=60, catch=(RuntimeError,))
-
-    print("Study statistics: ")
-    print(f"  Number of finished trials: {len(study.trials)}")
-
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f"  Trial {i}:")
-        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print("    Params: ")
-        for key, value in trial.params.items():
-            print(f"      {key}: {value}")
-
-    # save the top results to a file
-    with open("optuna_results_stump.json", "w") as f:
-        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    # study.optimize(objective, n_trials=60, catch=(RuntimeError,))
+    #
+    # print("Study statistics: ")
+    # print(f"  Number of finished trials: {len(study.trials)}")
+    #
+    # print("Best trials (Pareto front):")
+    # for i, trial in enumerate(study.best_trials):
+    #     print(f"  Trial {i}:")
+    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+    #     print("    Params: ")
+    #     for key, value in trial.params.items():
+    #         print(f"      {key}: {value}")
+    #
+    # # save the top results to a file
+    # with open("optuna_results_stump.json", "w") as f:
+    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
 
 
 
