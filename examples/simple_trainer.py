@@ -758,7 +758,7 @@ class Runner:
 
                 height, width = pixels.shape[1:3]
 
-                out = self.rasterize_splats(
+                renders_enh, _, info = self.rasterize_splats(
                     camtoworlds=camtoworlds,
                     Ks=Ks,
                     width=width,
@@ -769,8 +769,6 @@ class Runner:
                     render_mode="RGB",
                     masks=masks,
                 )
-
-                renders_enh, _, info = out
 
                 colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
@@ -792,7 +790,7 @@ class Runner:
                 colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
                 colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
-                loss_reconstruct_low = F.mse_loss(colors_low, pixels)
+                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
 
                 ssim_loss_low = 1.0 - self.ssim(
                     colors_low.permute(0, 3, 1, 2),

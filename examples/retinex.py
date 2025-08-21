@@ -49,7 +49,8 @@ class CBAM(nn.Module):
         return x
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int = 1, padding: int = 0, dilation: int = 1, bias: bool = False, padding_mode: str = 'replicate'):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int = 1, padding: int = 0,
+                 dilation: int = 1, bias: bool = False, padding_mode: str = 'reflect'):
         super().__init__()
         self.depthwise = nn.Conv2d(
             in_channels,
