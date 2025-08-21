@@ -12,7 +12,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("../../360_v2/bicycle")
+    data_dir: Path = Path("../../360_v2/kitchen")
     data_factor: int = 1
     result_dir: Path = Path("../../result")
     test_every: int = 8
@@ -76,19 +76,19 @@ class Config:
 
     lambda_illum_color: float = 1.
 
-    pretrain_retinex: bool = True
+    pretrain_retinex: bool = False
     pretrain_steps: int = 2000
 
     use_hsv_color_space: bool = True
 
-    predictive_adaptive_curve: bool = False
+    predictive_adaptive_curve: bool = True
 
-    learn_spatial_contrast: bool = False
+    learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
-    learn_local_exposure: bool = False
-    learn_global_exposure: bool = False
+    learn_local_exposure: bool = True
+    learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
-    use_enhancement_gate: bool = True
+    use_enhancement_gate: bool = False
 
     postfix: str = "_multiexposure"
 
@@ -97,7 +97,7 @@ class Config:
 
     retinex_embedding_dim: int = 32
 
-    freeze_step: int = 1
+    freeze_step: int = 3000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
