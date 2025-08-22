@@ -1,5 +1,6 @@
 import gc
 import json
+import pandas as pd
 import math
 import os
 import time
@@ -238,14 +239,7 @@ class Runner:
             "exclusion_val": nn.Parameter(torch.zeros(1)),
             "white_preservation": nn.Parameter(torch.zeros(1)),
             "histogram_loss": nn.Parameter(torch.zeros(1)),
-
-            "l1_loss_low": nn.Parameter(torch.zeros(1)),
-            "ssim_loss_low": nn.Parameter(torch.zeros(1)),
-            "l1_loss_enh": nn.Parameter(torch.zeros(1)),
-            "ssim_loss_enh": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
-
-        self.edge_aware_gamma_gate = nn.Parameter(torch.zeros(1).to(self.device))
 
         net_params = list(self.retinex_net.parameters())
 
@@ -256,7 +250,6 @@ class Runner:
 
         net_params.append(self.global_mean_val_param)
         net_params.append(self.target_histogram_dist)
-        net_params.append(self.edge_aware_gamma_gate)
 
         self.retinex_optimizer = torch.optim.AdamW(
             net_params,
@@ -480,9 +473,8 @@ class Runner:
 
         loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
 
-        edge_aware_gamma_gate_output = torch.sigmoid(self.edge_aware_gamma_gate)
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-            illumination_map, input_image_for_net, image_id=images_ids, gamma_gate=edge_aware_gamma_gate_output
+            illumination_map, input_image_for_net, image_id=images_ids
         )
         if cfg.learn_local_exposure:
             loss_exposure_local = self.loss_exposure_local(
@@ -848,25 +840,21 @@ class Runner:
                     colors_low.permute(0, 3, 1, 2),
                     pixels.permute(0, 3, 1, 2),
                 )
+                low_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
                 loss_reconstruct_enh = F.l1_loss(colors_enh, gt_reflectance_target_permuted)
                 ssim_loss_enh = 1.0 - self.ssim(
                     colors_enh.permute(0, 3, 1, 2),
                     gt_reflectance_target_permuted.permute(0, 3, 1, 2),
                 )
+                enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                loss = 0.0
 
-                loss += 0.5 * torch.exp(-self.log_sigmas["l1_loss_low"]) * loss_reconstruct_low + 0.5 * self.log_sigmas[
-                    "l1_loss_low"]
-                loss += 0.5 * torch.exp(-self.log_sigmas["ssim_loss_low"]) * ssim_loss_low + 0.5 * self.log_sigmas[
-                    "ssim_loss_low"]
-                loss += 0.5 * torch.exp(-self.log_sigmas["l1_loss_enh"]) * loss_reconstruct_enh + 0.5 * self.log_sigmas[
-                    "l1_loss_enh"]
-                loss += 0.5 * torch.exp(-self.log_sigmas["ssim_loss_enh"]) * ssim_loss_enh + 0.5 * self.log_sigmas[
-                    "ssim_loss_enh"]
-
-                loss += (retinex_loss * cfg.lambda_illumination) if step < cfg.freeze_step else 0.0
+                loss = (
+                        cfg.lambda_low * low_loss
+                        + (1.0 - cfg.lambda_low) * enh_loss
+                        + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
+                )
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
