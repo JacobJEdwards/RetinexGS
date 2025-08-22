@@ -524,7 +524,7 @@ class Runner:
 
         for i, loss in enumerate(loss_list):
             log_sigma = log_sigmas[i]
-            total_loss += 0.5 * torch.exp(-log_sigma) * loss + 0.5 * log_sigma
+            total_loss += 0.5 * torch.exp(-log_sigma).item() * loss.item() + 0.5 * log_sigma.item()
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)
