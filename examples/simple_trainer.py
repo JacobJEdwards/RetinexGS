@@ -517,7 +517,7 @@ class Runner:
         }
 
         retinex_embedding = self.retinex_embeds(images_ids)
-        log_sigmas = self.loss_weight_net(retinex_embedding)
+        log_sigmas = self.loss_weight_net(retinex_embedding.mean(dim=0))
 
         total_loss = 0
         loss_list = list(individual_losses.values())
