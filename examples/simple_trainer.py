@@ -245,14 +245,18 @@ class Runner:
             "histogram_loss": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
 
+        self.edge_aware_gamma_gate = nn.Parameter(torch.zeros(1).to(self.device))
+
         net_params = list(self.retinex_net.parameters())
 
         net_params += self.loss_edge_aware_smooth.parameters()
         net_params += self.loss_adaptive_curve.parameters()
         net_params += self.loss_spatial.parameters()
         net_params += self.log_sigmas.parameters()
+
         net_params.append(self.global_mean_val_param)
         net_params.append(self.target_histogram_dist)
+        net_params.append(self.edge_aware_gamma_gate)
 
         self.retinex_optimizer = torch.optim.AdamW(
             net_params,
@@ -476,8 +480,9 @@ class Runner:
 
         loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
 
+        edge_aware_gamma_gate_output = torch.sigmoid(self.edge_aware_gamma_gate)
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-            illumination_map, input_image_for_net, image_id=images_ids
+            illumination_map, input_image_for_net, image_id=images_ids, gamma_gate=edge_aware_gamma_gate_output
         )
         if cfg.learn_local_exposure:
             loss_exposure_local = self.loss_exposure_local(

@@ -503,7 +503,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
             else:
                 self.gamma_adjustment = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
 
-    def forward(self, img: Tensor, guide_img: Tensor, image_id: Tensor | None = None) -> Tensor:
+    def forward(self, img: Tensor, guide_img: Tensor, image_id: Tensor | None = None, gamma_gate: Tensor | None = None) -> Tensor:
         if img.shape[1] > 1:
             img_gray = torch.mean(img, dim=1, keepdim=True)
         else:
@@ -539,7 +539,12 @@ class EdgeAwareSmoothingLoss(nn.Module):
         loss_x = torch.mean(weights_x * torch.abs(dx_img))
         loss_y = torch.mean(weights_y * torch.abs(dy_img))
 
-        return loss_x + loss_y
+        total_loss = loss_x + loss_y
+
+        if gamma_gate is not None:
+            return gamma_gate * total_loss
+
+        return total_loss
 
 class LocalExposureLoss(nn.Module):
     def __init__(self, patch_size: int, mean_val: float = 0.5, patch_grid_size: int | tuple[int, int] | None = None) -> None:
