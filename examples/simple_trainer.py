@@ -853,7 +853,7 @@ class Runner:
 
             loss.backward()
 
-            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
+            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss:.3f} ",
                           f"sh_deg={sh_degree_to_use}"]
             pbar.set_description("| ".join(desc_parts))
 
