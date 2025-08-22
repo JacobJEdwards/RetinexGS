@@ -503,8 +503,6 @@ class EdgeAwareSmoothingLoss(nn.Module):
             else:
                 self.gamma_adjustment = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
 
-
-
     def forward(self, img: Tensor, guide_img: Tensor, image_id: Tensor | None = None) -> Tensor:
         if img.shape[1] > 1:
             img_gray = torch.mean(img, dim=1, keepdim=True)

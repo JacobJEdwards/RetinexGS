@@ -464,7 +464,7 @@ class Runner:
         loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
 
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-            illumination_map, input_image_for_net, images_id=images_ids
+            illumination_map, input_image_for_net, image_id=images_ids
         )
         if cfg.learn_local_exposure:
             loss_exposure_local = self.loss_exposure_local(
