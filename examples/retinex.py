@@ -151,24 +151,6 @@ class SpatiallyFiLMLayer(nn.Module):
 
         return (1 + gamma) * x + beta
 
-def spatially_film(x: Tensor, embedding: Tensor, feature_channels: int, embed_dim: int) -> Tensor:
-    b, _, h, w = x.shape
-    tiled_embedding = embedding.view(b, -1, 1, 1).expand(b, -1, h, w)
-    conditioning_input = torch.cat([x, tiled_embedding], dim=1)
-
-    param_predictor = nn.Sequential(
-        DepthwiseSeparableConv(feature_channels + embed_dim, feature_channels, kernel_size=3, padding=1),
-        nn.LeakyReLU(inplace=True),
-        nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
-    )
-
-    # functional:
-
-    mod_params = param_predictor(conditioning_input)
-    gamma, beta = torch.chunk(mod_params, 2, dim=1)
-
-    return (1 + gamma) * x + beta
-
 class FiLMLayer(nn.Module):
     def __init__(self, embed_dim: int, feature_channels: int):
         super(FiLMLayer, self).__init__()
@@ -196,7 +178,8 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.in_conv = RetinexBlock(in_channels, 16)
 
-        self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
+        # self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
+        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=16)
 
         self.enc1 = RetinexBlock(16, 32, stride=2)
         self.enc2 = RetinexBlock(32, 64, stride=2)
