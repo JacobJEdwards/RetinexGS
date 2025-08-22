@@ -94,6 +94,10 @@ class Config:
     learn_edge_aware_gamma: bool = False
     use_enhancement_gate: bool = True
 
+    use_illumination_field: bool = True
+    num_coeffs_w: int = 32
+    num_coeffs_h: int = 32
+
     postfix: str = "_multiexposure"
 
     retinex_opt_lr: float = 1e-3
