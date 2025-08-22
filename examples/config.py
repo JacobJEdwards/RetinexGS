@@ -87,16 +87,12 @@ class Config:
 
     predictive_adaptive_curve: bool = True
 
-    learn_spatial_contrast: bool = False
+    learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
     learn_local_exposure: bool = False
-    learn_global_exposure: bool = False
-    learn_edge_aware_gamma: bool = False
+    learn_global_exposure: bool = True
+    learn_edge_aware_gamma: bool = True
     use_enhancement_gate: bool = True
-
-    use_illumination_field: bool = True
-    num_coeffs_w: int = 32
-    num_coeffs_h: int = 32
 
     postfix: str = "_multiexposure"
 
