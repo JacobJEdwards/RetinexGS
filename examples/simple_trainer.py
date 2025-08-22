@@ -7,11 +7,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
-import ray
-from ray import tune
-from ray.tune import TuneConfig, Checkpoint, report
-from ray.tune.schedulers import ASHAScheduler
-from ray.tune.search.optuna import OptunaSearch
+from ray.tune import Checkpoint, report
 
 import imageio
 import kornia.color
@@ -22,7 +18,6 @@ import torch.nn.functional as F
 import tqdm
 import tyro
 import yaml
-from optuna.pruners import HyperbandPruner, SuccessiveHalvingPruner
 from scipy import stats
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -233,17 +228,24 @@ class Runner:
         if world_size > 1:
             self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
-        self.log_sigmas = nn.ParameterDict({
-            "reflect_spa": nn.Parameter(torch.zeros(1)),
-            "color_val": nn.Parameter(torch.zeros(1)),
-            "exposure_val": nn.Parameter(torch.zeros(1)),
-            "adaptive_curve": nn.Parameter(torch.zeros(1)),
-            "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
-            "exposure_local": nn.Parameter(torch.zeros(1)),
-            "exclusion_val": nn.Parameter(torch.zeros(1)),
-            "white_preservation": nn.Parameter(torch.zeros(1)),
-            "histogram_loss": nn.Parameter(torch.zeros(1)),
-        }).to(self.device)
+
+        # self.log_sigmas = nn.ParameterDict({
+        #     "reflect_spa": nn.Parameter(torch.zeros(1)),
+        #     "color_val": nn.Parameter(torch.zeros(1)),
+        #     "exposure_val": nn.Parameter(torch.zeros(1)),
+        #     "adaptive_curve": nn.Parameter(torch.zeros(1)),
+        #     "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
+        #     "exposure_local": nn.Parameter(torch.zeros(1)),
+        #     "exclusion_val": nn.Parameter(torch.zeros(1)),
+        #     "white_preservation": nn.Parameter(torch.zeros(1)),
+        #     "histogram_loss": nn.Parameter(torch.zeros(1)),
+        # }).to(self.device)
+
+        self.loss_weight_net = nn.Sequential(
+            nn.Linear(cfg.retinex_embedding_dim, 64),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(64, 9), # 9 losses
+        ).to(self.device)
 
         self.edge_aware_gamma_gate = nn.Parameter(torch.zeros(1).to(self.device))
 
@@ -252,7 +254,7 @@ class Runner:
         net_params += self.loss_edge_aware_smooth.parameters()
         net_params += self.loss_adaptive_curve.parameters()
         net_params += self.loss_spatial.parameters()
-        net_params += self.log_sigmas.parameters()
+        net_params += self.loss_weight_net.parameters()
 
         net_params.append(self.global_mean_val_param)
         net_params.append(self.target_histogram_dist)
@@ -514,44 +516,15 @@ class Runner:
             "histogram_loss": loss_histogram,
         }
 
-        total_loss = 0
-        loss_names = individual_losses.keys()
-        for name in loss_names:
-            loss = individual_losses[name]
-            log_sigma = self.log_sigmas[name]
-            total_loss += 0.5 * torch.exp(-log_sigma) * loss + 0.5 * log_sigma
+        retinex_embedding = self.retinex_embeds(images_ids)
+        log_sigmas = self.loss_weight_net(retinex_embedding)
 
-        #
-        # individual_losses = torch.stack(
-        #     [
-        #         loss_reflectance_spa,  # 0
-        #         loss_color_val,  # 1
-        #         loss_exposure_val,  # 2
-        #         loss_adaptive_curve,  # 4
-        #         loss_smooth_edge_aware,  # 8
-        #         loss_exposure_local,  # 9
-        #         loss_exclusion_val,  # 11
-        #         loss_white_preservation,  # 12
-        #         loss_histogram,  # 13
-        #     ]
-        # )
-        #
-        # base_lambdas = torch.tensor(
-        #     [
-        #         cfg.lambda_reflect,
-        #         cfg.lambda_illum_color,
-        #         cfg.lambda_illum_exposure,
-        #         cfg.lambda_illum_curve,
-        #         cfg.lambda_edge_aware_smooth,
-        #         cfg.lambda_illum_exposure_local,
-        #         cfg.lambda_illum_exclusion,
-        #         cfg.lambda_white_preservation,
-        #         cfg.lambda_histogram,
-        #     ],
-        #     device=device,
-        # )
-        #
-        # total_loss = (base_lambdas * individual_losses).sum()
+        total_loss = 0
+        loss_list = list(individual_losses.values())
+
+        for i, loss in enumerate(loss_list):
+            log_sigma = log_sigmas[i]
+            total_loss += 0.5 * torch.exp(-log_sigma) * loss + 0.5 * log_sigma
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)
@@ -570,22 +543,17 @@ class Runner:
 
             title = "retinex_net" if is_pretrain else "train"
 
-            for name in loss_names:
-                unweighted_loss = individual_losses[name].item()
-                learned_weight = torch.exp(-self.log_sigmas[name]).item()
+            for i, name in enumerate(loss_names):
                 self.writer.add_scalar(
-                    f"{title}/loss_{name}_unweighted", unweighted_loss, step
+                    f"{title}/{name}_loss",
+                    individual_losses[name].item(),
+                    step,
                 )
                 self.writer.add_scalar(
-                    f"{title}/learned_weight_{name}", learned_weight, step
+                    f"{title}/{name}_log_sigma",
+                    log_sigmas[i].item(),
+                    step,
                 )
-
-            # if cfg.learn_edge_aware_gamma:
-            #     self.writer.add_scalar(
-            #         f"{title}/edge_aware_gamma_adjustment",
-            #         self.loss_edge_aware_smooth.gamma_adjustment.item(),
-            #         step,
-            #     )
 
             if cfg.learn_global_exposure:
                 self.writer.add_scalar(
