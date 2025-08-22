@@ -1567,6 +1567,9 @@ def objective(trial: optuna.Trial):
     cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
         "learn_adaptive_curve_lambdas", [True, False]
     )
+    cfg.use_hsv_color_space = trial.suggest_categorical(
+        "use_hsv_color_space", [True, False]
+    )
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
