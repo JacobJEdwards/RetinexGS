@@ -243,7 +243,7 @@ class Runner:
         self.retinex_optimizer = torch.optim.AdamW(
             net_params,
             lr=cfg.retinex_opt_lr * math.sqrt(cfg.batch_size),
-            weight_decay=1e-4,
+            weight_decay=0.0,
             fused=True
         )
         self.retinex_embed_dim = cfg.retinex_embedding_dim
@@ -256,7 +256,7 @@ class Runner:
 
         self.retinex_embed_optimizer = torch.optim.AdamW(
             [{"params": self.retinex_embeds.parameters(), "lr": cfg.retinex_embedding_lr}],
-            weight_decay=1e-5,
+            weight_decay=0.0,
             fused=True
         )
 
