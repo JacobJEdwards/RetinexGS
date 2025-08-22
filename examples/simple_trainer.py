@@ -382,7 +382,7 @@ class Runner:
             self, images_ids: Tensor, pixels: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
         epsilon = torch.finfo(pixels.dtype).eps
-        pixels = kornia.enhance.equalize_clahe(pixels, clip_limit=2.0, grid_size=(8, 8))
+        pixels = kornia.enhance.equalize(pixels)
 
         if self.cfg.use_hsv_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
