@@ -1538,6 +1538,17 @@ def objective(trial: optuna.Trial):
     cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
     cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
 
+    cfg.luminance_threshold = trial.suggest_float(
+        "luminance_threshold", 75, 99.9
+    )
+    cfg.chroma_tolerance = trial.suggest_float(
+        "chroma_tolerance", 0, 10
+    )
+    cfg.gain = trial.suggest_float(
+        "gain", 0.1, 5.0, log=True
+    )
+
+
     cfg.learn_spatial_contrast = trial.suggest_categorical(
         "learn_spatial_contrast", [True, False]
     )
@@ -1552,6 +1563,9 @@ def objective(trial: optuna.Trial):
     )
     cfg.predictive_adaptive_curve = trial.suggest_categorical(
         "predictive_adaptive_curve", [True, False]
+    )
+    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
+        "learn_adaptive_curve_lambdas", [True, False]
     )
 
     cfg.max_steps = 3000
