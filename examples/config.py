@@ -74,7 +74,7 @@ class Config:
     lambda_histogram: float = 1
     lambda_illum_exclusion: float = 0.15
 
-    luminance_threshold: float = 80
+    luminance_threshold: float = 80.0
     chroma_tolerance: float = 0.75
     gain: float = 1.5
 
