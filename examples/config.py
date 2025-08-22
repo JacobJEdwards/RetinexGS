@@ -70,13 +70,13 @@ class Config:
     lambda_illum_exposure: float = 1.1
     lambda_edge_aware_smooth: float = 6.4
     lambda_illum_exposure_local: float = 1.8
-    lambda_white_preservation: float = 0.03
+    lambda_white_preservation: float = 3.7
     lambda_histogram: float = 1
     lambda_illum_exclusion: float = 0.15
 
-    luminance_threshold: float = 95.0
-    chroma_tolerance: float = 5.0
-    gain: float = 10.0
+    luminance_threshold: float = 85.0
+    chroma_tolerance: float = 0.75
+    gain: float = 1.5
 
     lambda_illum_color: float = 1.
 
