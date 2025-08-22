@@ -198,7 +198,8 @@ class Runner:
         self.loss_adaptive_curve = AdaptiveCurveLoss(
             learn_lambdas=cfg.learn_adaptive_curve_lambdas
         ).to(self.device)
-        self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss(learn_gamma=cfg.learn_edge_aware_gamma).to(self.device)
+        self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss(learn_gamma=cfg.learn_edge_aware_gamma,
+                                                             num_images=len(self.trainset)).to(self.device)
         self.loss_exposure_local = LocalExposureLoss(
             patch_size=64, patch_grid_size=8
         ).to(self.device)
@@ -463,7 +464,7 @@ class Runner:
         loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
 
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-            illumination_map, input_image_for_net
+            illumination_map, input_image_for_net, images_id=images_ids
         )
         if cfg.learn_local_exposure:
             loss_exposure_local = self.loss_exposure_local(
@@ -543,13 +544,12 @@ class Runner:
                     step,
                 )
 
-            if cfg.learn_edge_aware_gamma:
-                self.writer.add_scalar(
-                    f"{title}/edge_aware_gamma_adjustment",
-                    self.loss_edge_aware_smooth.gamma_adjustment.item(),
-                    step,
-                )
-
+            # if cfg.learn_edge_aware_gamma:
+            #     self.writer.add_scalar(
+            #         f"{title}/edge_aware_gamma_adjustment",
+            #         self.loss_edge_aware_smooth.gamma_adjustment.item(),
+            #         step,
+            #     )
 
             if cfg.learn_global_exposure:
                 self.writer.add_scalar(

@@ -489,17 +489,23 @@ class IlluminationFrequencyLoss(nn.Module):
 class EdgeAwareSmoothingLoss(nn.Module):
     initial_gamma: Tensor
 
-    def __init__(self, initial_gamma: float = 0.2, learn_gamma: bool = True) -> None:
+    def __init__(self, initial_gamma: float = 0.2, learn_gamma: bool = True, num_images: int | None = None) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
         self.learn_gamma = learn_gamma
+        self.use_embedding = num_images is not None
 
         self.register_buffer("initial_gamma", torch.tensor(initial_gamma, dtype=torch.float32))
 
         if self.learn_gamma:
-            self.gamma_adjustment = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
+            if self.use_embedding:
+                self.gamma_adjustments_embedding = nn.Embedding(num_images, 1)
+                self.gamma_adjustments_embedding.weight.data.fill_(0.0)
+            else:
+                self.gamma_adjustment = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
 
 
-    def forward(self, img: Tensor, guide_img: Tensor) -> Tensor:
+
+    def forward(self, img: Tensor, guide_img: Tensor, image_id: Tensor | None = None) -> Tensor:
         if img.shape[1] > 1:
             img_gray = torch.mean(img, dim=1, keepdim=True)
         else:
@@ -517,7 +523,13 @@ class EdgeAwareSmoothingLoss(nn.Module):
         dy_guide = guide_img_gray[:, :, 1:, :] - guide_img_gray[:, :, :-1, :]
 
         if self.learn_gamma:
-            effective_gamma = self.initial_gamma + 0.1 * torch.tanh(self.gamma_adjustment)
+            if self.use_embedding:
+                if image_id is None:
+                    raise ValueError("image_id must be provided when using embedding for gamma.")
+                adjustment = self.gamma_adjustments_embedding(image_id).view(-1, 1, 1, 1)
+            else:
+                adjustment = self.gamma_adjustment
+            effective_gamma = self.initial_gamma + 0.1 * torch.tanh(adjustment)
         else:
             effective_gamma = self.initial_gamma
 
