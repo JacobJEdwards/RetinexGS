@@ -1,6 +1,5 @@
 import gc
 import json
-import pandas as pd
 import math
 import os
 import time
@@ -35,7 +34,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from losses import white_preservation_loss, HistogramLoss
+from losses import HistogramLoss, WhitePreservationLoss
 from gsplat.distributed import cli
 from losses import (
     ColourConsistencyLoss,
@@ -200,6 +199,12 @@ class Runner:
         ).to(self.device)
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.histogram_loss = HistogramLoss().to(self.device)
+        self.loss_white_preservation = WhitePreservationLoss(
+            luminance_threshold=cfg.luminance_threshold,
+            chroma_tolerance=cfg.chroma_tolerance,
+            gain=cfg.gain,
+            learnable=cfg.learn_white_preservation,
+        ).to(self.device)
 
         mean_val = 128
         std_dev = 40
@@ -247,6 +252,7 @@ class Runner:
         net_params += self.loss_adaptive_curve.parameters()
         net_params += self.loss_spatial.parameters()
         net_params += self.log_sigmas.parameters()
+        net_params += self.loss_white_preservation.parameters()
 
         net_params.append(self.global_mean_val_param)
         net_params.append(self.target_histogram_dist)
@@ -478,11 +484,8 @@ class Runner:
 
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
 
-        loss_white_preservation = white_preservation_loss(
+        loss_white_preservation = self.loss_white_preservation(
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
-            luminance_threshold=cfg.luminance_threshold,
-            chroma_tolerance=cfg.chroma_tolerance,
-            gain=cfg.gain,
         )
 
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
@@ -693,6 +696,8 @@ class Runner:
                 torch.nn.utils.clip_grad_norm_(
                     [self.global_mean_val_param], max_norm=1.0
                 )
+            if self.loss_white_preservation.parameters():
+                torch.nn.utils.clip_grad_norm_(self.loss_white_preservation.parameters(), max_norm=1.0)
             if self.target_histogram_dist.requires_grad:
                 torch.nn.utils.clip_grad_norm_(
                     [self.target_histogram_dist], max_norm=1.0
