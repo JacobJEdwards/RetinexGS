@@ -68,7 +68,7 @@ class Config:
     lambda_reflect: float = 3
     lambda_illum_curve: float = 5.8
     lambda_illum_exposure: float = 1.1
-    lambda_edge_aware_smooth: float = 30
+    lambda_edge_aware_smooth: float = 6.4
     lambda_illum_exposure_local: float = 1.8
     lambda_white_preservation: float = 3.7
     lambda_histogram: float = 1
