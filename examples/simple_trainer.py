@@ -527,7 +527,7 @@ class Runner:
             total_loss += 0.5 * torch.exp(-log_sigma).item() * loss.item() + 0.5 * log_sigma.item()
 
         if step % self.cfg.tb_every == 0:
-            self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)
+            self.writer.add_scalar("retinex_net/total_loss", total_loss, step)
 
             loss_names = [
                 "reflect_spa",
