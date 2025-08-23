@@ -93,7 +93,7 @@ class Config:
     learn_local_exposure: bool = False
     learn_global_exposure: bool = False
     learn_edge_aware_gamma: bool = True
-    learn_white_preservation: bool = False
+    learn_white_preservation: bool = True
     use_enhancement_gate: bool = True
 
     postfix: str = "_multiexposure"
