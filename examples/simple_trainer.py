@@ -189,7 +189,8 @@ class Runner:
             num_images=len(self.trainset),
         ).to(self.device)
         self.loss_adaptive_curve = AdaptiveCurveLoss(
-            learn_lambdas=cfg.learn_adaptive_curve_lambdas, learn_thresholds=cfg.learn_adaptive_curve_thresholds, use_embedding=cfg.learn_adaptive_curve_use_embedding,
+            learn_lambdas=cfg.learn_adaptive_curve_lambdas, learn_thresholds=cfg.learn_adaptive_curve_thresholds,
+            use_embedding=cfg.learn_adaptive_curve_use_embedding, num_images=len(self.trainset),
         ).to(self.device)
         self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss(learn_gamma=cfg.learn_edge_aware_gamma,
                                                              num_images=len(self.trainset)).to(self.device)
