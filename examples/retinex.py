@@ -296,7 +296,6 @@ class MultiScaleRetinexNet(nn.Module):
             adaptive_params = self.adaptive_curve_head(d1)
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             base_alpha, base_beta, scale = 0.4, 0.7, 0.1
-            # illum_level = torch.sigmoid(final_illumination.detach()).mean(dim=[1,2,3], keepdim=True)
             illum_level = torch.sigmoid(final_illumination).mean(dim=[1,2,3], keepdim=True)
             alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
             alpha_map *= 1.0 - 0.5 * illum_level
