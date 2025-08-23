@@ -646,17 +646,15 @@ class Runner:
         initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
         initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
         schedulers = [
-            OneCycleLR(
+            CosineAnnealingLR(
                 self.retinex_optimizer,
-                max_lr=initial_retinex_lr,
-                total_steps=cfg.pretrain_steps + cfg.freeze_step,
-                pct_start=0.1,
+                T_max=cfg.pretrain_steps + cfg.freeze_step,
+                eta_min=initial_retinex_lr * 0.01,
             ),
-            OneCycleLR(
+            CosineAnnealingLR(
                 self.retinex_embed_optimizer,
-                max_lr=initial_embed_lr,
-                total_steps=cfg.pretrain_steps + cfg.freeze_step,
-                pct_start=0.1,
+                T_max=cfg.pretrain_steps + cfg.freeze_step,
+                eta_min=initial_embed_lr * 0.01,
             ),
         ]
 
@@ -724,7 +722,7 @@ class Runner:
         max_steps = cfg.max_steps
         init_step = 0
 
-        schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR | OneCycleLR] = [
+        schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
 
@@ -737,17 +735,17 @@ class Runner:
         initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
         initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
         schedulers.extend([
-            OneCycleLR(
+            CosineAnnealingLR(
                 self.retinex_optimizer,
-                max_lr=initial_retinex_lr,
-                total_steps=cfg.freeze_step,
-                pct_start=0.1,
+                T_max=cfg.freeze_step,
+                eta_min=initial_retinex_lr * 0.01,
             ),
             OneCycleLR(
-                self.retinex_embed_optimizer,
-                max_lr=initial_embed_lr,
-                total_steps=cfg.freeze_step,
-                pct_start=0.1,
+                CosineAnnealingLR(
+                    self.retinex_embed_optimizer,
+                    T_max=cfg.freeze_step,
+                    eta_min=initial_embed_lr * 0.01,
+                )
             )
         ])
 
