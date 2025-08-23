@@ -489,8 +489,6 @@ class Runner:
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         # loss_histogram = torch.tensor(0.0, device=device)
 
-        loss_frequency = self.loss_illum_frequency(illumination_map)
-
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
