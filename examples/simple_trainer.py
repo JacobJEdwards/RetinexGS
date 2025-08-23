@@ -413,11 +413,13 @@ class Runner:
         illumination_map = torch.exp(log_illumination_map)
         illumination_map = torch.clamp(illumination_map, min=1e-5)
         illumination_map = illumination_map.nan_to_num()
+        if not self.cfg.use_hsv_color_space:
+            illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)  # Grayscale: avg R,G,B
 
-        log_reflectance_target = log_input_image - log_illumination_map
+        reflectance_target = input_image_for_net / illumination_map
 
         if self.cfg.use_hsv_color_space:
-            reflectance_v_target = torch.exp(log_reflectance_target)
+            reflectance_v_target = log_reflectance_target
 
             h_channel = pixels_hsv[:, 0:1, :, :]
             s_channel = pixels_hsv[:, 1:2, :, :]
