@@ -1467,7 +1467,7 @@ def objective(trial: optuna.Trial):
     average_ssim = 0.0
     average_lpips = 0.0
 
-    datasets_to_run = [Path("/workspace/360_v2/bicycle"), Path("/workspace/360_v2/kitchen")]
+    datasets_to_run = [Path("/workspace/360_v2/bonsai")]
 
     for dataset in datasets_to_run:
         cfg.data_dir = dataset
@@ -1523,23 +1523,23 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    # cli(main, config, verbose=True)
+    cli(main, config, verbose=True)
 
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-
-    study.optimize(objective, n_trials=30, catch=(RuntimeError,))
-
-    print("Study statistics: ")
-    print(f" Number of finished trials: {len(study.trials)}")
-
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f" Trial {i}:")
-        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print(" Params: ")
-        for key, value in trial.params.items():
-            print(f" {key}: {value}")
-
-    # save the top results to a file
-    with open("optuna_results_stump.json", "w") as f:
-        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    #
+    # study.optimize(objective, n_trials=30, catch=(RuntimeError,))
+    #
+    # print("Study statistics: ")
+    # print(f" Number of finished trials: {len(study.trials)}")
+    #
+    # print("Best trials (Pareto front):")
+    # for i, trial in enumerate(study.best_trials):
+    #     print(f" Trial {i}:")
+    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+    #     print(" Params: ")
+    #     for key, value in trial.params.items():
+    #         print(f" {key}: {value}")
+    #
+    # # save the top results to a file
+    # with open("optuna_results_stump.json", "w") as f:
+    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)

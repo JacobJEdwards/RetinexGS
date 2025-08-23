@@ -12,7 +12,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("/workspace/360_v2/stump")
+    data_dir: Path = Path("/workspace/360_v2/bonsai")
     data_factor: int = 1
     result_dir: Path = Path("/workspace/result")
     test_every: int = 8
@@ -82,7 +82,7 @@ class Config:
     lambda_illum_color: float = 1.
 
     pretrain_retinex: bool = True
-    pretrain_steps: int = 2000
+    pretrain_steps: int = 1000
 
     use_lab_color_space: bool = False
 
