@@ -665,10 +665,10 @@ class Runner:
             self.scaler.step(self.retinex_optimizer)
             self.scaler.step(self.retinex_embed_optimizer)
 
+            self.scaler.update()
+
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
-
-            self.scaler.update()
 
             for scheduler in schedulers:
                 scheduler.step()
@@ -895,16 +895,19 @@ class Runner:
             for optimizer in self.optimizers.values():
                 # optimizer.step()
                 self.scaler.step(optimizer)
-                optimizer.zero_grad()
 
             self.scaler.step(self.retinex_optimizer)
             # self.retinex_optimizer.step()
-            self.retinex_optimizer.zero_grad()
             self.scaler.step(self.retinex_embed_optimizer)
             # self.retinex_embed_optimizer.step()
-            self.retinex_embed_optimizer.zero_grad()
 
             self.scaler.update()
+
+            for optimizer in self.optimizers.values():
+                optimizer.zero_grad()
+
+            self.retinex_optimizer.zero_grad()
+            self.retinex_embed_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
