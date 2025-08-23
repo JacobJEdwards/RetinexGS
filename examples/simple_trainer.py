@@ -475,8 +475,8 @@ class Runner:
         )
         loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean if cfg.learn_local_exposure else None)
 
-        loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
-        # loss_exclusion_val = torch.tensor(0.0, device=device)
+        # loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
+        loss_exclusion_val = torch.tensor(0.0, device=device)
 
         loss_white_preservation = self.loss_white_preservation(
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
