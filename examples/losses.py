@@ -235,17 +235,37 @@ class ColourConsistencyLoss(nn.Module):
 
 # Exposure Loss, control the generated image exposure
 class ExposureLoss(nn.Module):
-    def __init__(self, patch_size: int, mean_val: float = 0.5) -> None:
+    def __init__(self, patch_size: int, mean_val: float = 0.5, learn_global_exposure: bool = False, use_embeddings: bool = False, num_images: int | None = None) -> None:
         super(ExposureLoss, self).__init__()
         self.pool = nn.AvgPool2d(patch_size)
-        self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
+        self.learn_global_exposure = learn_global_exposure
+        self.use_embeddings = use_embeddings and num_images is not None
 
-    def forward(self, x: Tensor, exposure: Tensor | None = None) -> Tensor:
+        if self.learn_global_exposure:
+            if self.use_embeddings:
+                self.mean_val_tensor = nn.Embedding(num_images, 1)
+                self.mean_val_tensor.weight.data.fill_(mean_val)
+            else:
+                self.mean_val_tensor = nn.Parameter(torch.tensor([mean_val], dtype=torch.float32))
+        else:
+            self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
+
+    def forward(self, x: Tensor, image_ids: Tensor | None = None) -> Tensor:
         x = torch.mean(x, 1, keepdim=True)
         mean = self.pool(x)
-        target = exposure if exposure is not None else self.mean_val_tensor
-        d = torch.mean(torch.pow(mean - target, 2))
+        if self.learn_global_exposure:
+            if self.use_embeddings:
+                if image_ids is None:
+                    raise ValueError("image_ids must be provided when using embeddings for global exposure.")
+                mean_val = self.mean_val_tensor(image_ids).view(-1, 1, 1, 1)
+            else:
+                mean_val = torch.clamp(self.mean_val_tensor, 0.0, 1.0)
+        else:
+            mean_val = self.mean_val_tensor
+
+        d = torch.mean(torch.pow(mean - mean_val, 2))
         return d
+
 
 
 class SpatialLoss(nn.Module):

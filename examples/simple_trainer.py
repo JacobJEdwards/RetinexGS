@@ -183,7 +183,8 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=32).to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=32, learn_global_exposure=cfg.learn_global_exposure,
+                                          use_embeddings=True, num_images=len(self.trainset)).to(self.device)
         self.loss_spatial = SpatialLoss(
             learn_contrast=cfg.learn_spatial_contrast,
             num_images=len(self.trainset),
@@ -215,10 +216,6 @@ class Runner:
 
         retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
         retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
-
-        self.global_mean_val_param = nn.Parameter(
-            torch.tensor([0.5], dtype=torch.float32).to(self.device)
-        )
 
         self.retinex_net = MultiScaleRetinexNet(
             in_channels=retinex_in_channels,
@@ -252,8 +249,8 @@ class Runner:
         net_params += self.loss_spatial.parameters()
         net_params += self.log_sigmas.parameters()
         net_params += self.loss_white_preservation.parameters()
+        net_params += self.loss_exposure.parameters()
 
-        net_params.append(self.global_mean_val_param)
         net_params.append(self.target_histogram_dist)
 
         self.retinex_optimizer = torch.optim.AdamW(
@@ -449,8 +446,6 @@ class Runner:
             beta,
             local_exposure_mean,
         ) = self.get_retinex_output(images_ids=images_ids, pixels=pixels)
-        global_mean_val_target = torch.sigmoid(self.global_mean_val_param)
-
         loss_color_val = (
             self.loss_color(illumination_map)
             if not cfg.use_hsv_color_space
@@ -458,7 +453,7 @@ class Runner:
         )
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         # loss_adaptive_curve = torch.tensor(0.0, device=device)
-        loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target if cfg.learn_global_exposure else None)
+        loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
         # loss_exposure_val = torch.tensor(0.0, device=device)
 
 
@@ -570,12 +565,6 @@ class Runner:
             #         step,
             #     )
 
-            if cfg.learn_global_exposure:
-                self.writer.add_scalar(
-                    f"{title}/global_mean_val_param",
-                    self.global_mean_val_param.item(),
-                    step,
-                )
             if cfg.learn_local_exposure:
                 self.writer.add_scalar(
                     f"{title}/local_mean_val_param",
@@ -687,10 +676,6 @@ class Runner:
                 torch.nn.utils.clip_grad_norm_(self.loss_adaptive_curve.parameters(), max_norm=1.0)
             if self.loss_spatial.parameters():
                 torch.nn.utils.clip_grad_norm_(self.loss_spatial.parameters(), max_norm=1.0)
-            if self.global_mean_val_param.requires_grad:
-                torch.nn.utils.clip_grad_norm_(
-                    [self.global_mean_val_param], max_norm=1.0
-                )
             if self.loss_white_preservation.parameters():
                 torch.nn.utils.clip_grad_norm_(self.loss_white_preservation.parameters(), max_norm=1.0)
             if self.target_histogram_dist.requires_grad:
