@@ -37,8 +37,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.losses import (
-    FrequencyLoss,
+from losses import (
     IlluminationFrequencyLoss,
     DarkPreservationLoss,
 )
