@@ -455,11 +455,7 @@ class Runner:
             beta,
             local_exposure_mean,
         ) = self.get_retinex_output(images_ids=images_ids, pixels=pixels)
-        loss_color_val = (
-            self.loss_color(illumination_map)
-            if not cfg.use_lab_color_space
-            else torch.tensor(0.0, device=device)
-        )
+        loss_color_val = self.loss_color(illumination_map)
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         # loss_adaptive_curve = torch.tensor(0.0, device=device)
         loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
