@@ -37,7 +37,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from losses import DarkPreservationLoss
+from examples.losses import DarkPreservationLoss
 from losses import PerceptualColorLoss
 from losses import HistogramLoss, WhitePreservationLoss
 from gsplat.distributed import cli
@@ -192,8 +192,8 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=256, learn_global_exposure=cfg.learn_global_exposure,
-                                          use_embeddings=True, num_images=len(self.trainset)).to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=64, learn_global_exposure=cfg.learn_global_exposure,
+                                          use_embeddings=False, num_images=len(self.trainset)).to(self.device)
         self.loss_spatial = SpatialLoss(
             learn_contrast=cfg.learn_spatial_contrast,
             num_images=len(self.trainset),
@@ -248,7 +248,7 @@ class Runner:
         self.log_sigmas = nn.ParameterDict({
             "reflect_spa": nn.Parameter(torch.zeros(1)),
             "color_val": nn.Parameter(torch.zeros(1)),
-            "perceptual_color": nn.Parameter(torch.tensor([5.0])),
+            "perceptual_color": nn.Parameter(torch.zeros(1)),
             "exposure_val": nn.Parameter(torch.zeros(1)),
             "adaptive_curve": nn.Parameter(torch.zeros(1)),
             "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
@@ -267,6 +267,7 @@ class Runner:
             net_params += self.loss_edge_aware_smooth.parameters()
         if cfg.learn_spatial_contrast:
             net_params += self.loss_spatial.parameters()
+
         if cfg.learn_white_preservation:
             net_params += self.loss_white_preservation.parameters()
         if cfg.learn_dark_preservation:
@@ -499,8 +500,8 @@ class Runner:
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
         )
 
-        # loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
-        loss_histogram = torch.tensor(0.0, device=device)
+        loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
+        # loss_histogram = torch.tensor(0.0, device=device)
 
         loss_perceptual_color = self.loss_perceptual_colour(
             reflectance_map.permute(0, 2, 3, 1), pixels
