@@ -487,9 +487,10 @@ class Runner:
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         # loss_histogram = torch.tensor(0.0, device=device)
 
-        input_hsv = kornia.color.rgb_to_hsv(pixels.permute(0,3,1,2))
-        reflectance_hsv = kornia.color.rgb_to_hsv(reflectance_map)
-        loss_hue = F.mse_loss(input_hsv[:,0,:,:], reflectance_hsv[:,0,:,:])
+        # input_hsv = kornia.color.rgb_to_hsv(pixels.permute(0,3,1,2))
+        # reflectance_hsv = kornia.color.rgb_to_hsv(reflectance_map)
+        # loss_hue = F.mse_loss(input_hsv[:,0,:,:], reflectance_hsv[:,0,:,:])
+        loss_hue = torch.tensor(0.0, device=device)
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
