@@ -427,7 +427,7 @@ class Runner:
 
         if self.cfg.apply_bilateral_blur:
             illumination_map = kornia.filters.bilateral_blur(
-                illumination_map, kernel_size=(5, 5), sigma_color=0.1, sigma_space=5.0
+                illumination_map, kernel_size=(5, 5), sigma_color=0.1, sigma_space=(5, 5)
             )
 
 
