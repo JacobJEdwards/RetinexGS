@@ -189,7 +189,7 @@ class Runner:
             num_images=len(self.trainset),
         ).to(self.device)
         self.loss_adaptive_curve = AdaptiveCurveLoss(
-            learn_lambdas=cfg.learn_adaptive_curve_lambdas, learn_thresholds=cfg.learn_adaptive_curve_thresholds,
+            learn_lambdas=cfg.learn_adaptive_curve_lambdas, learn_thresholds=cfg.learn_adaptive_curve_thresholds, use_embedding=cfg.learn_adaptive_curve_use_embedding,
         ).to(self.device)
         self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss(learn_gamma=cfg.learn_edge_aware_gamma,
                                                              num_images=len(self.trainset)).to(self.device)
@@ -456,7 +456,7 @@ class Runner:
             if not cfg.use_hsv_color_space
             else torch.tensor(0.0, device=device)
         )
-        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
+        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta, images_ids)
         # loss_adaptive_curve = torch.tensor(0.0, device=device)
         loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target if cfg.learn_global_exposure else None)
         # loss_exposure_val = torch.tensor(0.0, device=device)
