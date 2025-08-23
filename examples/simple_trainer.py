@@ -458,8 +458,8 @@ class Runner:
         )
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         # loss_adaptive_curve = torch.tensor(0.0, device=device)
-        # loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target if cfg.learn_global_exposure else None)
-        loss_exposure_val = torch.tensor(0.0, device=device)
+        loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target if cfg.learn_global_exposure else None)
+        # loss_exposure_val = torch.tensor(0.0, device=device)
 
 
         con_degree = (0.5 / torch.mean(pixels))
@@ -467,7 +467,8 @@ class Runner:
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
 
-        loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
+        # loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
+        loss_reflectance_spa = torch.tensor(0.0, device=device)
 
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
             illumination_map, input_image_for_net, image_id=images_ids
