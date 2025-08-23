@@ -99,6 +99,7 @@ class Config:
     learn_dark_preservation: bool = True
     use_enhancement_gate: bool = True
     apply_bilateral_blur: bool = True
+    apply_chroma_compensation: bool = False
 
     postfix: str = "_multiexposure"
 
