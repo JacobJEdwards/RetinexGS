@@ -719,11 +719,52 @@ class PatchConsistencyLoss(nn.Module):
 
         return photometric_loss
 
+# class WhitePreservationLoss(nn.Module):
+#     def __init__(self, luminance_threshold: float = 95.0, chroma_tolerance: float = 5.0, gain: float = 10.0, learnable: bool = False):
+#         super(WhitePreservationLoss, self).__init__()
+#         if learnable:
+#             self.luminance_threshold = nn.Parameter(torch.tensor(luminance_threshold))
+#             self.chroma_tolerance = nn.Parameter(torch.tensor(chroma_tolerance))
+#             self.gain = nn.Parameter(torch.tensor(gain))
+#         else:
+#             self.register_buffer("luminance_threshold", torch.tensor(luminance_threshold))
+#             self.register_buffer("chroma_tolerance", torch.tensor(chroma_tolerance))
+#             self.register_buffer("gain", torch.tensor(gain))
+#
+#         self.learnable = learnable
+#
+#     def forward(self, input_image: Tensor, reflectance_map: Tensor) -> Tensor:
+#         input_lab = kornia.color.rgb_to_lab(input_image.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+#
+#         L = input_lab[..., 0]
+#         a = input_lab[..., 1]
+#         b = input_lab[..., 2]
+#
+#         if self.learnable:
+#             luminance_threshold = 100.0 * torch.sigmoid(self.luminance_threshold)  # (0, 100)
+#             chroma_tolerance = F.softplus(self.chroma_tolerance)  # > 0
+#             gain = F.softplus(self.gain)  # > 0
+#         else:
+#             luminance_threshold = self.luminance_threshold
+#             chroma_tolerance = self.chroma_tolerance
+#             gain = self.gain
+#
+#         luminance_mask = torch.sigmoid((L - luminance_threshold) * gain)
+#         chroma_mask = torch.exp(-(a.pow(2) + b.pow(2)) / (2 * chroma_tolerance**2))
+#
+#         soft_white_mask = luminance_mask * chroma_mask
+#         soft_white_mask = soft_white_mask.unsqueeze(-1)
+#
+#         loss = torch.mean(torch.abs(reflectance_map - input_image) * soft_white_mask)
+#
+#         return loss
+
 class WhitePreservationLoss(nn.Module):
     def __init__(self, luminance_threshold: float = 95.0, chroma_tolerance: float = 5.0, gain: float = 10.0, learnable: bool = False):
         super(WhitePreservationLoss, self).__init__()
         if learnable:
-            self.luminance_threshold = nn.Parameter(torch.tensor(luminance_threshold))
+            # Using logit to keep the learned threshold in a reasonable range after sigmoid
+            self.luminance_threshold_param = nn.Parameter(torch.tensor(torch.logit(torch.tensor(luminance_threshold / 100.0))))
             self.chroma_tolerance = nn.Parameter(torch.tensor(chroma_tolerance))
             self.gain = nn.Parameter(torch.tensor(gain))
         else:
@@ -734,28 +775,36 @@ class WhitePreservationLoss(nn.Module):
         self.learnable = learnable
 
     def forward(self, input_image: Tensor, reflectance_map: Tensor) -> Tensor:
-        input_lab = kornia.color.rgb_to_lab(input_image.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        input_image_nchw = input_image.permute(0, 3, 1, 2)
+        reflectance_map_nchw = reflectance_map.permute(0, 3, 1, 2)
 
-        L = input_lab[..., 0]
-        a = input_lab[..., 1]
-        b = input_lab[..., 2]
+        with torch.no_grad():
+            input_lab = kornia.color.rgb_to_lab(input_image_nchw)
+            L_in = input_lab[:, 0, :, :]
+            a_in = input_lab[:, 1, :, :]
+            b_in = input_lab[:, 2, :, :]
 
-        if self.learnable:
-            luminance_threshold = 100.0 * torch.sigmoid(self.luminance_threshold)  # (0, 100)
-            chroma_tolerance = F.softplus(self.chroma_tolerance)  # > 0
-            gain = F.softplus(self.gain)  # > 0
-        else:
-            luminance_threshold = self.luminance_threshold
-            chroma_tolerance = self.chroma_tolerance
-            gain = self.gain
+            if self.learnable:
+                luminance_threshold = 100.0 * torch.sigmoid(self.luminance_threshold_param)
+                chroma_tolerance = F.softplus(self.chroma_tolerance)
+                gain = F.softplus(self.gain)
+            else:
+                luminance_threshold = self.luminance_threshold
+                chroma_tolerance = self.chroma_tolerance
+                gain = self.gain
 
-        luminance_mask = torch.sigmoid((L - luminance_threshold) * gain)
-        chroma_mask = torch.exp(-(a.pow(2) + b.pow(2)) / (2 * chroma_tolerance**2))
+            luminance_mask = torch.sigmoid((L_in - luminance_threshold) * gain)
+            chroma_mask = torch.exp(-(a_in.pow(2) + b_in.pow(2)) / (2 * chroma_tolerance.pow(2) + 1e-6))
 
-        soft_white_mask = luminance_mask * chroma_mask
-        soft_white_mask = soft_white_mask.unsqueeze(-1)
+            soft_white_mask = (luminance_mask * chroma_mask).unsqueeze(1) # Add channel dim
 
-        loss = torch.mean(torch.abs(reflectance_map - input_image) * soft_white_mask)
+        reflectance_lab = kornia.color.rgb_to_lab(reflectance_map_nchw)
+        a_ref = reflectance_lab[:, 1:2, :, :]
+        b_ref = reflectance_lab[:, 2:3, :, :]
+
+        chroma_error = a_ref.pow(2) + b_ref.pow(2)
+
+        loss = torch.mean(chroma_error * soft_white_mask)
 
         return loss
 
