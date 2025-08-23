@@ -419,7 +419,7 @@ class Runner:
         reflectance_target = input_image_for_net / illumination_map
 
         if self.cfg.use_hsv_color_space:
-            reflectance_v_target = log_reflectance_target
+            reflectance_v_target = reflectance_target
 
             h_channel = pixels_hsv[:, 0:1, :, :]
             s_channel = pixels_hsv[:, 1:2, :, :]
@@ -428,7 +428,7 @@ class Runner:
             )
             reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
         else:
-            reflectance_map = torch.exp(log_reflectance_target)
+            reflectance_map = reflectance_target
 
         reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
         reflectance_map = reflectance_map.nan_to_num()
