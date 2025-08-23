@@ -242,12 +242,19 @@ class Runner:
             "histogram_loss": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
 
+        self.log_sigmas_top_level = nn.ParameterDict({
+            "low_loss": nn.Parameter(torch.zeros(1)),
+            "enh_loss": nn.Parameter(torch.zeros(1)),
+            "retinex_loss": nn.Parameter(torch.zeros(1)),
+        }).to(self.device)
+
         net_params = list(self.retinex_net.parameters())
 
         net_params += self.loss_edge_aware_smooth.parameters()
         net_params += self.loss_adaptive_curve.parameters()
         net_params += self.loss_spatial.parameters()
         net_params += self.log_sigmas.parameters()
+        net_params += self.log_sigmas_top_level.parameters()
         net_params += self.loss_white_preservation.parameters()
         net_params += self.loss_exposure.parameters()
 
@@ -827,12 +834,19 @@ class Runner:
                 )
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
+                log_sigma_low = self.log_sigmas_top_level["low_loss"]
+                log_sigma_enh = self.log_sigmas_top_level["enh_loss"]
+                log_sigma_retinex = self.log_sigmas_top_level["retinex_loss"]
 
-                loss = (
-                        cfg.lambda_low * low_loss
-                        + (1.0 - cfg.lambda_low) * enh_loss
-                        + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
-                )
+                weighted_low_loss = 0.5 * torch.exp(-log_sigma_low) * low_loss + 0.5 * log_sigma_low
+                weighted_enh_loss = 0.5 * torch.exp(-log_sigma_enh) * enh_loss + 0.5 * log_sigma_enh
+
+                loss = weighted_low_loss + weighted_enh_loss
+
+                if step < cfg.freeze_step:
+                    weighted_retinex_loss = 0.5 * torch.exp(-log_sigma_retinex) * retinex_loss + 0.5 * log_sigma_retinex
+                    loss += weighted_retinex_loss
+
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
