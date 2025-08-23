@@ -221,7 +221,6 @@ class Runner:
             gain=cfg.gain,
             learnable=cfg.learn_dark_preservation
         )
-        self.loss_illum_frequency = IlluminationFrequencyLoss().to(self.device)
 
         x = np.arange(256)
         pdf = stats.beta.pdf(x / 255.0, a=2, b=5)
@@ -256,7 +255,6 @@ class Runner:
             "white_preservation": nn.Parameter(torch.zeros(1)),
             "dark_preservation": nn.Parameter(torch.zeros(1)),
             "histogram_loss": nn.Parameter(torch.zeros(1)),
-            "illum_frequency": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
 
         net_params = list(self.retinex_net.parameters())
@@ -427,6 +425,13 @@ class Runner:
         if not self.cfg.use_hsv_color_space:
             illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)  # Grayscale: avg R,G,B
 
+        if self.cfg.apply_bilateral_blur:
+            illumination_map = kornia.filters.bilateral_blur(
+                illumination_map, kernel_size=(5, 5), sigma_color=0.1, sigma_space=5.0
+            )
+
+
+
         reflectance_target = input_image_for_net / illumination_map
 
         if self.cfg.use_hsv_color_space:
@@ -443,6 +448,13 @@ class Runner:
 
         reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
         reflectance_map = reflectance_map.nan_to_num()
+
+        if not self.cfg.use_hsv_color_space and self.cfg.apply_chroma_compensation:
+            input_hsv = kornia.color.rgb_to_hsv(pixels.permute(0, 3, 1, 2))
+            reflect_hsv = kornia.color.rgb_to_hsv(reflectance_map.permute(0, 3, 1, 2))
+            saturation_boost = 1.2
+            reflect_hsv[:, 1, :, :] = torch.clamp(input_hsv[:, 1, :, :] * saturation_boost, 0, 1)
+            reflectance_map = kornia.color.hsv_to_rgb(reflect_hsv).permute(0, 2, 3, 1)
 
         return (
             input_image_for_net,
@@ -504,8 +516,6 @@ class Runner:
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         # loss_histogram = torch.tensor(0.0, device=device)
 
-        loss_frequency = self.loss_illum_frequency(illumination_map)
-
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
@@ -518,7 +528,6 @@ class Runner:
             "white_preservation": loss_white_preservation,
             "dark_preservation": loss_dark_preservation,
             "histogram_loss": loss_histogram,
-            "illum_frequency": loss_frequency,
         }
 
         total_loss = 0
