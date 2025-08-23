@@ -266,6 +266,7 @@ class Runner:
         net_params += self.loss_spatial.parameters()
         net_params += self.log_sigmas.parameters()
         net_params += self.loss_white_preservation.parameters()
+        net_params += self.loss_dark_preservation.parameters()
         net_params += self.loss_exposure.parameters()
 
         net_params.append(self.target_histogram_dist)
