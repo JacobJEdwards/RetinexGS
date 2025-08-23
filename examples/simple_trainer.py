@@ -248,7 +248,7 @@ class Runner:
         self.log_sigmas = nn.ParameterDict({
             "reflect_spa": nn.Parameter(torch.zeros(1)),
             "color_val": nn.Parameter(torch.zeros(1)),
-            "perceptual_color": nn.Parameter(torch.zeros(1)),
+            "perceptual_color": nn.Parameter(torch.tensor([5.0])),
             "exposure_val": nn.Parameter(torch.zeros(1)),
             "adaptive_curve": nn.Parameter(torch.zeros(1)),
             "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
