@@ -80,7 +80,7 @@ class Config:
 
     lambda_illum_color: float = 1.
 
-    pretrain_retinex: bool = False
+    pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
     use_hsv_color_space: bool = True
@@ -90,7 +90,7 @@ class Config:
     learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = True
     learn_adaptive_curve_thresholds: bool = True
-    learn_adaptive_curve_use_embedding: bool = True
+    learn_adaptive_curve_use_embedding: bool = False
     learn_local_exposure: bool = False
     learn_global_exposure: bool = False
     learn_edge_aware_gamma: bool = True
