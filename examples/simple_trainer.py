@@ -498,7 +498,7 @@ class Runner:
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
         )
         loss_dark_preservation = self.loss_dark_preservation(
-            input_image=pixels, illumination_map=illumination_map.permute(0, 2,3,1),
+            input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
         )
 
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
