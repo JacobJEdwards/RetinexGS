@@ -482,7 +482,8 @@ class Runner:
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
         )
 
-        loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
+        # loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
+        loss_histogram = torch.tensor(0.0, device=device)
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
