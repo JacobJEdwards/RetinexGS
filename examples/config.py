@@ -88,7 +88,7 @@ class Config:
 
     predictive_adaptive_curve: bool = True
 
-    exposure_loss_patch_size: int = 64
+    exposure_loss_patch_size: int = 256
     exposure_mean_val: float = 0.45
     exposure_loss_use_embedding: bool = True
 
