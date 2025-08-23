@@ -191,7 +191,7 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=cfg.patch_size, learn_global_exposure=cfg.learn_global_exposure,
+        self.loss_exposure = ExposureLoss(patch_size=cfg.exposure_loss_patch_size, learn_global_exposure=cfg.learn_global_exposure,
                                           use_embeddings=cfg.exposure_loss_use_embedding, num_images=len(self.trainset)).to(self.device)
         self.loss_spatial = SpatialLoss(
             learn_contrast=cfg.learn_spatial_contrast,
