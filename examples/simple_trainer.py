@@ -462,10 +462,15 @@ class Runner:
             if not cfg.use_lab_color_space
             else torch.tensor(0.0, device=device)
         )
-        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
-        # loss_adaptive_curve = torch.tensor(0.0, device=device)
-        loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
-        # loss_exposure_val = torch.tensor(0.0, device=device)
+        if cfg.loss_adaptive_curve:
+            loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
+        else:
+            loss_adaptive_curve = torch.tensor(0.0, device=device)
+
+        if cfg.loss_exposure:
+            loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
+        else:
+            loss_exposure_val = torch.tensor(0.0, device=device)
 
 
         con_degree = (0.5 / torch.mean(pixels))
@@ -473,28 +478,46 @@ class Runner:
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
 
-        loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
-        # loss_reflectance_spa = torch.tensor(0.0, device=device)
+        if cfg.loss_reflectance_spa:
+            loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
+        else:
+            loss_reflectance_spa = torch.tensor(0.0, device=device)
 
-        loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-            illumination_map, input_image_for_net, image_id=images_ids
-        )
-        # loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean if cfg.learn_local_exposure else None)
-        loss_exposure_local = torch.tensor(0.0, device=device)
+        if cfg.loss_smooth_edge_aware:
+            loss_smooth_edge_aware = self.loss_edge_aware_smooth(
+                illumination_map, input_image_for_net, image_id=images_ids
+            )
+        else:
+            loss_smooth_edge_aware = torch.tensor(0.0, device=device)
 
-        # loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
-        loss_exclusion_val = torch.tensor(0.0, device=device)
+        if cfg.loss_exposure_local:
+            loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean if cfg.learn_local_exposure else None)
+        else:
+            loss_exposure_local = torch.tensor(0.0, device=device)
 
-        loss_white_preservation = self.loss_white_preservation(
-            input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
-        )
+        if cfg.loss_exclusion:
+            loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
+        else:
+            loss_exclusion_val = torch.tensor(0.0, device=device)
 
-        loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
-        # loss_histogram = torch.tensor(0.0, device=device)
+        if cfg.loss_white_preservation:
+            loss_white_preservation = self.loss_white_preservation(
+                input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
+            )
+        else:
+            loss_white_preservation = torch.tensor(0.0, device=device)
 
-        loss_perceptual_color = self.loss_perceptual_colour(
-            reflectance_map.permute(0, 2, 3, 1), pixels
-        )
+        if cfg.loss_histogram:
+            loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
+        else:
+            loss_histogram = torch.tensor(0.0, device=device)
+
+        if cfg.loss_perceptual_color:
+            loss_perceptual_color = self.loss_perceptual_colour(
+                reflectance_map.permute(0, 2, 3, 1), pixels
+            )
+        else:
+            loss_perceptual_color = torch.tensor(0.0, device=device)
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
@@ -1441,6 +1464,72 @@ def objective1(trial: optuna.Trial):
         gc.collect()
         torch.cuda.empty_cache()
 
+def objective2(trial: optuna.Trial):
+    cfg = Config()
+
+    cfg.loss_adaptive_curve = trial.suggest_categorical(
+        "loss_adaptive_curve", [True, False]
+    )
+    cfg.loss_exposure = trial.suggest_categorical(
+        "loss_exposure", [True, False]
+    )
+    cfg.loss_reflectance_spa = trial.suggest_categorical(
+        "loss_reflectance_spa", [True, False]
+    )
+    cfg.loss_smooth_edge_aware = trial.suggest_categorical(
+        "loss_smooth_edge_aware", [True, False]
+    )
+    cfg.loss_exposure_local = trial.suggest_categorical(
+        "loss_exposure_local", [True, False]
+    )
+    cfg.loss_exclusion = trial.suggest_categorical(
+        "loss_exclusion", [True, False]
+    )
+    cfg.loss_white_preservation = trial.suggest_categorical(
+        "loss_white_preservation", [True, False]
+    )
+    cfg.loss_histogram = trial.suggest_categorical(
+        "loss_histogram", [True, False]
+    )
+    cfg.loss_perceptual_color = trial.suggest_categorical(
+        "loss_perceptual_color", [True, False]
+    )
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+    cfg.pretrain_retinex = True
+    cfg.pretrain_steps = 1000
+
+    average_psnr = 0.0
+    average_ssim = 0.0
+    average_lpips = 0.0
+
+    datasets_to_run = [Path("/workspace/360_v2/bonsai"), Path("/workspace/360_v2/kitchen"),
+                       Path("/workspace/360_v2/garden"), Path("/workspace/360_v2/bicycle")]
+
+    for dataset in datasets_to_run:
+        cfg.data_dir = dataset
+        runner = None
+        try:
+            runner = Runner(0, 0, 1, cfg)
+            runner.trial = trial
+            runner.pre_train_retinex()
+
+            psnr, ssim, lpips = runner.eval_retinex()
+            average_psnr += psnr
+            average_ssim += ssim
+            average_lpips += lpips
+        finally:
+            if runner is not None:
+                del runner
+
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    num_datasets = len(datasets_to_run)
+
+    return average_psnr / num_datasets, average_ssim / num_datasets, average_lpips / num_datasets
+
 def objective(trial: optuna.Trial):
     cfg = Config()
 
@@ -1538,6 +1627,21 @@ if __name__ == "__main__":
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
     study.optimize(objective, n_trials=60, catch=(RuntimeError, ValueError))
+
+    print("Study statistics: ")
+    print(f" Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f" Trial {i}:")
+        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print(" Params: ")
+        for key, value in trial.params.items():
+            print(f" {key}: {value}")
+
+    print("objective 2")
+
+    study.optimize(objective2, n_trials=60, catch=(RuntimeError, ValueError))
 
     print("Study statistics: ")
     print(f" Number of finished trials: {len(study.trials)}")

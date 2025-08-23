@@ -104,6 +104,17 @@ class Config:
     use_enhancement_gate: bool = True
 
 
+    loss_adaptive_curve: bool = True
+    loss_exposure: bool = True
+    loss_reflectance_spa: bool = True
+    loss_smooth_edge_aware: bool = True
+    loss_exposure_local: bool = False
+    loss_exclusion: bool = False
+    loss_white_preservation: bool = True
+    loss_histogram: bool = True
+    loss_perceptual_color: bool = True
+
+
     postfix: str = "_multiexposure"
 
     retinex_opt_lr: float = 1e-3
