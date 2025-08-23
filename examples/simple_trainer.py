@@ -220,8 +220,8 @@ class Runner:
 
         self.target_histogram_dist = nn.Parameter(target_hist)
 
-        retinex_in_channels = 1 if cfg.use_hsv_color_space else 3
-        retinex_out_channels = 1 if cfg.use_hsv_color_space else 3
+        retinex_in_channels = 1 if cfg.use_lab_color_space else 3
+        retinex_out_channels = 1 if cfg.use_lab_color_space else 3
 
         self.retinex_net = MultiScaleRetinexNet(
             in_channels=retinex_in_channels,
@@ -395,7 +395,7 @@ class Runner:
             l_channel = pixels_lab[:, 0:1, :, :] / 100.0
             input_image_for_net = l_channel
         else:
-            pixels_hsv = torch.tensor(0.0, device=self.device)
+            pixels_lab = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
 
         retinex_embedding = self.retinex_embeds(images_ids)
@@ -454,7 +454,7 @@ class Runner:
         ) = self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         loss_color_val = (
             self.loss_color(illumination_map)
-            if not cfg.use_hsv_color_space
+            if not cfg.use_lab_color_space
             else torch.tensor(0.0, device=device)
         )
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
