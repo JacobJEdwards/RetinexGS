@@ -473,12 +473,7 @@ class Runner:
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
             illumination_map, input_image_for_net, image_id=images_ids
         )
-        if cfg.learn_local_exposure:
-            loss_exposure_local = self.loss_exposure_local(
-                reflectance_map, local_exposure_mean
-            )
-        else:
-            loss_exposure_local = self.loss_exposure_local(reflectance_map)
+        loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean if cfg.learn_local_exposure else None)
 
         loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
 
