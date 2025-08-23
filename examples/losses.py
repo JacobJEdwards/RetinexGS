@@ -234,7 +234,7 @@ class ColourConsistencyLoss(nn.Module):
 
 # Exposure Loss, control the generated image exposure
 class ExposureLoss(nn.Module):
-    def __init__(self, patch_size: int, mean_val: float = 0.5, white_threshold: float = 0.95) -> None:
+    def __init__(self, patch_size: int, mean_val: float = 0.5, white_threshold: float = 0.98) -> None:
         super(ExposureLoss, self).__init__()
         self.pool = nn.AvgPool2d(patch_size)
         self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
