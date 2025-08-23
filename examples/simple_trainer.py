@@ -23,7 +23,6 @@ from torch.optim.lr_scheduler import (
     ExponentialLR,
     ChainedScheduler,
     CosineAnnealingLR,
-    OneCycleLR,
 )
 from torch.utils.checkpoint import checkpoint
 from torch.utils.tensorboard import SummaryWriter
@@ -740,12 +739,10 @@ class Runner:
                 T_max=cfg.freeze_step,
                 eta_min=initial_retinex_lr * 0.01,
             ),
-            OneCycleLR(
-                CosineAnnealingLR(
-                    self.retinex_embed_optimizer,
-                    T_max=cfg.freeze_step,
-                    eta_min=initial_embed_lr * 0.01,
-                )
+            CosineAnnealingLR(
+                self.retinex_embed_optimizer,
+                T_max=cfg.freeze_step,
+                eta_min=initial_embed_lr * 0.01,
             )
         ])
 
