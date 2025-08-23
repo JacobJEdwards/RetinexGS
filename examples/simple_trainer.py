@@ -449,12 +449,12 @@ class Runner:
         reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
         reflectance_map = reflectance_map.nan_to_num()
 
-        if not self.cfg.use_hsv_color_space and self.cfg.apply_chroma_compensation:
-            input_hsv = kornia.color.rgb_to_hsv(pixels.permute(0, 3, 1, 2))
-            reflect_hsv = kornia.color.rgb_to_hsv(reflectance_map.permute(0, 3, 1, 2))
-            saturation_boost = 1.2
-            reflect_hsv[:, 1, :, :] = torch.clamp(input_hsv[:, 1, :, :] * saturation_boost, 0, 1)
-            reflectance_map = kornia.color.hsv_to_rgb(reflect_hsv).permute(0, 2, 3, 1)
+        # if not self.cfg.use_hsv_color_space and self.cfg.apply_chroma_compensation:
+        #     input_hsv = kornia.color.rgb_to_hsv(pixels.permute(0, 3, 1, 2))
+        #     reflect_hsv = kornia.color.rgb_to_hsv(reflectance_map.permute(0, 3, 1, 2))
+        #     saturation_boost = 1.2
+        #     reflect_hsv[:, 1, :, :] = torch.clamp(input_hsv[:, 1, :, :] * saturation_boost, 0, 1)
+        #     reflectance_map = kornia.color.hsv_to_rgb(reflect_hsv).permute(0, 2, 3, 1)
 
         return (
             input_image_for_net,
