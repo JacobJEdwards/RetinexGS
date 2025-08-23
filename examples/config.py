@@ -80,7 +80,7 @@ class Config:
 
     lambda_illum_color: float = 1.
 
-    pretrain_retinex: bool = True
+    pretrain_retinex: bool = False
     pretrain_steps: int = 2000
 
     use_hsv_color_space: bool = True
