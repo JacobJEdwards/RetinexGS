@@ -191,8 +191,8 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=64, learn_global_exposure=cfg.learn_global_exposure,
-                                          use_embeddings=False, num_images=len(self.trainset)).to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=32, learn_global_exposure=cfg.learn_global_exposure,
+                                          use_embeddings=True, num_images=len(self.trainset)).to(self.device)
         self.loss_spatial = SpatialLoss(
             learn_contrast=cfg.learn_spatial_contrast,
             num_images=len(self.trainset),
@@ -252,16 +252,12 @@ class Runner:
         }).to(self.device)
 
         net_params = list(self.retinex_net.parameters())
-        net_params += self.log_sigmas.parameters()
+
+        net_params += self.loss_edge_aware_smooth.parameters()
         net_params += self.loss_adaptive_curve.parameters()
-
-        if cfg.learn_edge_aware_gamma:
-            net_params += self.loss_edge_aware_smooth.parameters()
-        if cfg.learn_spatial_contrast:
-            net_params += self.loss_spatial.parameters()
-
-        if cfg.learn_white_preservation:
-            net_params += self.loss_white_preservation.parameters()
+        net_params += self.loss_spatial.parameters()
+        net_params += self.log_sigmas.parameters()
+        net_params += self.loss_white_preservation.parameters()
         net_params += self.loss_exposure.parameters()
 
         net_params.append(self.target_histogram_dist)
@@ -459,7 +455,11 @@ class Runner:
             beta,
             local_exposure_mean,
         ) = self.get_retinex_output(images_ids=images_ids, pixels=pixels)
-        loss_color_val = self.loss_color(illumination_map)
+        loss_color_val = (
+            self.loss_color(illumination_map)
+            if not cfg.use_lab_color_space
+            else torch.tensor(0.0, device=device)
+        )
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         # loss_adaptive_curve = torch.tensor(0.0, device=device)
         loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)

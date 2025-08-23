@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from torchvision import models
 
 def gamma_curve(x, g):
     # Power Curve, Gamma Correction Curve
@@ -837,8 +836,7 @@ class PerceptualColorLoss(nn.Module):
     def __init__(self):
         super(PerceptualColorLoss, self).__init__()
 
-    @staticmethod
-    def forward(img1_rgb: Tensor, img2_rgb: Tensor) -> Tensor:
+    def forward(self, img1_rgb: Tensor, img2_rgb: Tensor) -> Tensor:
         if img1_rgb.shape[1] != 3 or img2_rgb.shape[1] != 3:
             return torch.tensor(0.0, device=img1_rgb.device)
 
