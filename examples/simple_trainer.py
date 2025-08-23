@@ -17,7 +17,7 @@ import tqdm
 import tyro
 import yaml
 from scipy import stats
-from torch import Tensor, nn
+from torch import Tensor, nn, GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import (
     ExponentialLR,
@@ -178,6 +178,8 @@ class Runner:
             test_every=cfg.test_every,
             postfix=cfg.postfix,
         )
+
+        self.scaler = GradScaler()
 
         self.trainset = Dataset(
             self.parser, patch_size=cfg.patch_size
@@ -626,7 +628,7 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
-            with torch.autocast(enabled=False, device_type=device):
+            with torch.autocast(enabled=True, device_type=device):
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
 
@@ -638,7 +640,7 @@ class Runner:
             if loss.isnan():
                 raise RuntimeError("Loss is NaN")
 
-            loss.backward()
+            self.scaler.scale(loss).backward()
 
             torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
 
@@ -658,11 +660,15 @@ class Runner:
                 torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
 
 
-            self.retinex_optimizer.step()
-            self.retinex_embed_optimizer.step()
+            # self.retinex_optimizer.step()
+            # self.retinex_embed_optimizer.step()
+            self.scaler.step(self.retinex_optimizer)
+            self.scaler.step(self.retinex_embed_optimizer)
 
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
+
+            self.scaler.update()
 
             for scheduler in schedulers:
                 scheduler.step()
@@ -739,7 +745,7 @@ class Runner:
                 for param in self.retinex_embeds.parameters():
                     param.requires_grad = False
 
-            with (torch.autocast(enabled=False, device_type=device)):
+            with (torch.autocast(enabled=True, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
 
@@ -822,7 +828,7 @@ class Runner:
                             * torch.abs(torch.exp(self.splats["scales"])).mean()
                     )
 
-            loss.backward()
+            self.scaler.scale(loss).backward()
 
             desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
                           f"sh_deg={sh_degree_to_use}"]
@@ -887,15 +893,18 @@ class Runner:
 
 
             for optimizer in self.optimizers.values():
-                optimizer.step()
+                # optimizer.step()
+                self.scaler.step(optimizer)
                 optimizer.zero_grad()
 
-            # scaler.step(self.retinex_optimizer)
-            self.retinex_optimizer.step()
+            self.scaler.step(self.retinex_optimizer)
+            # self.retinex_optimizer.step()
             self.retinex_optimizer.zero_grad()
-            # scaler.step(self.retinex_embed_optimizer)
-            self.retinex_embed_optimizer.step()
+            self.scaler.step(self.retinex_embed_optimizer)
+            # self.retinex_embed_optimizer.step()
             self.retinex_embed_optimizer.zero_grad()
+
+            self.scaler.update()
 
             for scheduler in schedulers:
                 scheduler.step()
