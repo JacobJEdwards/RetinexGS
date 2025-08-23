@@ -389,17 +389,14 @@ class Runner:
     def get_retinex_output(
             self, images_ids: Tensor, pixels: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
-        epsilon = torch.finfo(pixels.dtype).eps
         if self.cfg.use_hsv_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
             pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
             v_channel = pixels_hsv[:, 2:3, :, :]
             input_image_for_net = v_channel
-            log_input_image = torch.log(input_image_for_net + epsilon)
         else:
             pixels_hsv = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
-            log_input_image = torch.log(input_image_for_net + epsilon)
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
@@ -413,14 +410,8 @@ class Runner:
         illumination_map = torch.clamp(illumination_map, min=1e-5)
         illumination_map = illumination_map.nan_to_num()
 
-        if self.cfg.apply_bilateral_blur:
-            illumination_map = kornia.filters.bilateral_blur(
-                illumination_map, kernel_size=(5, 5), sigma_color=0.1, sigma_space=(5.0, 5.0)
-            )
-
         if not self.cfg.use_hsv_color_space:
             illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
-
 
         reflectance_target = input_image_for_net / illumination_map
 
