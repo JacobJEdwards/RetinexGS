@@ -282,6 +282,12 @@ class MultiScaleRetinexNet(nn.Module):
 
         final_illumination = self.out_conv(d1_nested)
 
+        if self.learn_local_exposure:
+            predicted_local_mean_map = self.predicted_local_mean_head(d1)
+            predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_map, output_size=8)
+        else:
+            predicted_local_mean_val = None
+
         if self.use_enhancement_gate:
             identity_map = torch.zeros_like(final_illumination)
             final_illumination = enhancement_gate_map * final_illumination + (1 - enhancement_gate_map) * identity_map
@@ -290,20 +296,21 @@ class MultiScaleRetinexNet(nn.Module):
             adaptive_params = self.adaptive_curve_head(d1)
             alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
             base_alpha, base_beta, scale = 0.4, 0.7, 0.1
-            illum_level = torch.sigmoid(final_illumination.detach()).mean(dim=[1,2,3], keepdim=True)
+            # illum_level = torch.sigmoid(final_illumination.detach()).mean(dim=[1,2,3], keepdim=True)
+            illum_level = torch.sigmoid(final_illumination).mean(dim=[1,2,3], keepdim=True)
             alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
             alpha_map *= 1.0 - 0.5 * illum_level
 
             beta_map  = base_beta  + scale * torch.tanh(beta_map_raw)
             beta_map *= 1.0 - 0.5 * illum_level
+            if self.learn_local_exposure:
+                local_mean = F.interpolate(predicted_local_mean_val, size=final_illumination.shape[2:], mode='bilinear')
+                alpha_map *= (1 - local_mean)
+                beta_map *= local_mean
+
         else:
             alpha_map = None
             beta_map = None
 
-        if self.learn_local_exposure:
-            predicted_local_mean_map = self.predicted_local_mean_head(d1)
-            predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_map, output_size=8)
-        else:
-            predicted_local_mean_val = None
 
         return final_illumination, alpha_map, beta_map, predicted_local_mean_val
