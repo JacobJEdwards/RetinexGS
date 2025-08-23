@@ -389,11 +389,11 @@ class Runner:
     def get_retinex_output(
             self, images_ids: Tensor, pixels: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
-        if self.cfg.use_hsv_color_space:
+        if self.cfg.use_lab_color_space:
             pixels_nchw = pixels.permute(0, 3, 1, 2)
-            pixels_hsv = kornia.color.rgb_to_hsv(pixels_nchw)
-            v_channel = pixels_hsv[:, 2:3, :, :]
-            input_image_for_net = v_channel
+            pixels_lab = kornia.color.rgb_to_lab(pixels_nchw)
+            l_channel = pixels_lab[:, 0:1, :, :] / 100.0
+            input_image_for_net = l_channel
         else:
             pixels_hsv = torch.tensor(0.0, device=self.device)
             input_image_for_net = pixels.permute(0, 3, 1, 2)
@@ -410,20 +410,20 @@ class Runner:
         illumination_map = torch.clamp(illumination_map, min=1e-5)
         illumination_map = illumination_map.nan_to_num()
 
-        if not self.cfg.use_hsv_color_space:
+        if not self.cfg.use_lab_color_space:
             illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
         reflectance_target = input_image_for_net / illumination_map
 
-        if self.cfg.use_hsv_color_space:
-            reflectance_v_target = reflectance_target
+        if self.cfg.use_lab_color_space:
+            a_channel = pixels_lab[:, 1:2, :, :]
+            b_channel = pixels_lab[:, 2:3, :, :]
 
-            h_channel = pixels_hsv[:, 0:1, :, :]
-            s_channel = pixels_hsv[:, 1:2, :, :]
-            reflectance_hsv_target = torch.cat(
-                [h_channel, s_channel, reflectance_v_target], dim=1
+            reflectance_lab_target = torch.cat(
+                [reflectance_target * 100.0, a_channel, b_channel], dim=1
             )
-            reflectance_map = kornia.color.hsv_to_rgb(reflectance_hsv_target)
+
+            reflectance_map = kornia.color.lab_to_rgb(reflectance_lab_target)
         else:
             reflectance_map = reflectance_target
 

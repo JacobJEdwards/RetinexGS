@@ -84,7 +84,7 @@ class Config:
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
-    use_hsv_color_space: bool = False
+    use_lab_color_space: bool = True
 
     predictive_adaptive_curve: bool = True
 
