@@ -1454,7 +1454,7 @@ def objective(trial: optuna.Trial):
 
     cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
     cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64])
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64, 128])
 
     cfg.luminance_threshold = trial.suggest_float(
         "luminance_threshold", 75, 99.9
@@ -1467,9 +1467,6 @@ def objective(trial: optuna.Trial):
     )
 
 
-    cfg.learn_spatial_contrast = trial.suggest_categorical(
-        "learn_spatial_contrast", [True, False]
-    )
     cfg.learn_global_exposure = trial.suggest_categorical(
         "learn_global_exposure", [True, False]
     )
@@ -1485,20 +1482,29 @@ def objective(trial: optuna.Trial):
     cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
         "learn_adaptive_curve_lambdas", [True, False]
     )
-    cfg.use_hsv_color_space = trial.suggest_categorical(
-        "use_hsv_color_space", [True, False]
+    cfg.learn_adaptive_curve_thresholds = trial.suggest_categorical(
+        "learn_adaptive_curve_thresholds", [True, False]
+    )
+    cfg.learn_adaptive_curve_use_embedding = trial.suggest_categorical(
+        "learn_adaptive_curve_use_embedding", [True, False]
+    )
+    cfg.learn_white_preservation = trial.suggest_categorical(
+        "learn_white_preservation", [True, False]
+    )
+    cfg.use_enhancement_gate = trial.suggest_categorical(
+        "use_enhancement_gate", [True, False]
     )
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 2000
+    cfg.pretrain_steps = 1000
     cfg.pretrain_retinex = True
 
     average_psnr = 0.0
     average_ssim = 0.0
     average_lpips = 0.0
 
-    datasets_to_run = [Path("/workspace/360_v2/bicycle")]
+    datasets_to_run = [Path("/workspace/360_v2/bicycle"), Path("/workspace/360_v2/kitchen")]
 
     for dataset in datasets_to_run:
         cfg.data_dir = dataset
@@ -1554,23 +1560,23 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    # cli(main, config, verbose=True)
 
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-    #
-    # study.optimize(objective, n_trials=30, catch=(RuntimeError,))
-    #
-    # print("Study statistics: ")
-    # print(f" Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f" Trial {i}:")
-    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print(" Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f" {key}: {value}")
-    #
-    # # save the top results to a file
-    # with open("optuna_results_stump.json", "w") as f:
-    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+
+    study.optimize(objective, n_trials=30, catch=(RuntimeError,))
+
+    print("Study statistics: ")
+    print(f" Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f" Trial {i}:")
+        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print(" Params: ")
+        for key, value in trial.params.items():
+            print(f" {key}: {value}")
+
+    # save the top results to a file
+    with open("optuna_results_stump.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
