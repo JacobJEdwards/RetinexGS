@@ -467,8 +467,8 @@ class Runner:
             input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
         )
 
-        # loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
-        loss_reflectance_spa = torch.tensor(0.0, device=device)
+        loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
+        # loss_reflectance_spa = torch.tensor(0.0, device=device)
 
         loss_smooth_edge_aware = self.loss_edge_aware_smooth(
             illumination_map, input_image_for_net, image_id=images_ids
