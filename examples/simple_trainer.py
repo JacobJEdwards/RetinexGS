@@ -179,7 +179,7 @@ class Runner:
             postfix=cfg.postfix,
         )
 
-        self.scaler = GradScaler()
+        self.scaler = GradScaler(enabled=False)
 
         self.trainset = Dataset(
             self.parser, patch_size=cfg.patch_size
@@ -628,7 +628,7 @@ class Runner:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
 
-            with torch.autocast(enabled=True, device_type=device):
+            with torch.autocast(enabled=False, device_type=device):
                 images_ids = data["image_id"].to(device)
                 pixels = data["image"].to(device) / 255.0
 
@@ -745,7 +745,7 @@ class Runner:
                 for param in self.retinex_embeds.parameters():
                     param.requires_grad = False
 
-            with (torch.autocast(enabled=True, device_type=device)):
+            with (torch.autocast(enabled=False, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
 
