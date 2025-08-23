@@ -19,7 +19,12 @@ import yaml
 from scipy import stats
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnnealingLR
+from torch.optim.lr_scheduler import (
+    ExponentialLR,
+    ChainedScheduler,
+    CosineAnnealingLR,
+    OneCycleLR,
+)
 from torch.utils.checkpoint import checkpoint
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
@@ -641,15 +646,17 @@ class Runner:
         initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
         initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
         schedulers = [
-            CosineAnnealingLR(
+            OneCycleLR(
                 self.retinex_optimizer,
-                T_max=cfg.pretrain_steps + cfg.max_steps,
-                eta_min=initial_retinex_lr * 0.01,
+                max_lr=initial_retinex_lr,
+                total_steps=cfg.pretrain_steps + cfg.freeze_step,
+                pct_start=0.1,
             ),
-            CosineAnnealingLR(
+            OneCycleLR(
                 self.retinex_embed_optimizer,
-                T_max=cfg.pretrain_steps + cfg.max_steps,
-                eta_min=initial_embed_lr * 0.01,
+                max_lr=initial_embed_lr,
+                total_steps=cfg.pretrain_steps + cfg.freeze_step,
+                pct_start=0.1,
             ),
         ]
 
@@ -717,32 +724,32 @@ class Runner:
         max_steps = cfg.max_steps
         init_step = 0
 
-        schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
+        schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR | OneCycleLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
 
-        initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
-        schedulers.append(
-            CosineAnnealingLR(
-                self.retinex_optimizer,
-                T_max=max_steps,
-                eta_min=initial_retinex_lr * 0.01,
-            )
-        )
-
-        initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
-        schedulers.append(
-            CosineAnnealingLR(
-                self.retinex_embed_optimizer,
-                T_max=max_steps,
-                eta_min=initial_embed_lr * 0.01,
-            )
-        )
 
         if cfg.pretrain_retinex:
             self.pre_train_retinex()
             psnr, ssim, lpips = self.eval_retinex()
             print(f"Pre-trained RetinexNet: PSNR={psnr:.4f}, SSIM={ssim:.4f}, LPIPS={lpips:.4f}")
+
+        initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
+        initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
+        schedulers.extend([
+            OneCycleLR(
+                self.retinex_optimizer,
+                max_lr=initial_retinex_lr,
+                total_steps=cfg.freeze_step,
+                pct_start=0.1,
+            ),
+            OneCycleLR(
+                self.retinex_embed_optimizer,
+                max_lr=initial_embed_lr,
+                total_steps=cfg.freeze_step,
+                pct_start=0.1,
+            )
+        ])
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -847,6 +854,11 @@ class Runner:
                     weighted_retinex_loss = 0.5 * torch.exp(-log_sigma_retinex) * retinex_loss + 0.5 * log_sigma_retinex
                     loss += weighted_retinex_loss
 
+                # loss = (
+                #         cfg.lambda_low * low_loss
+                #         + (1.0 - cfg.lambda_low) * enh_loss
+                #         + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
+                # )
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -1574,23 +1586,23 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    # cli(main, config, verbose=True)
+    cli(main, config, verbose=True)
 
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-
-    study.optimize(objective, n_trials=30, catch=(RuntimeError,))
-
-    print("Study statistics: ")
-    print(f" Number of finished trials: {len(study.trials)}")
-
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f" Trial {i}:")
-        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print(" Params: ")
-        for key, value in trial.params.items():
-            print(f" {key}: {value}")
-
-    # save the top results to a file
-    with open("optuna_results_stump.json", "w") as f:
-        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    #
+    # study.optimize(objective, n_trials=30, catch=(RuntimeError,))
+    #
+    # print("Study statistics: ")
+    # print(f" Number of finished trials: {len(study.trials)}")
+    #
+    # print("Best trials (Pareto front):")
+    # for i, trial in enumerate(study.best_trials):
+    #     print(f" Trial {i}:")
+    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+    #     print(" Params: ")
+    #     for key, value in trial.params.items():
+    #         print(f" {key}: {value}")
+    #
+    # # save the top results to a file
+    # with open("optuna_results_stump.json", "w") as f:
+    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
