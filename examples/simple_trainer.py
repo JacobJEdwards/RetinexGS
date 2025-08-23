@@ -412,8 +412,15 @@ class Runner:
         illumination_map = torch.exp(log_illumination_map)
         illumination_map = torch.clamp(illumination_map, min=1e-5)
         illumination_map = illumination_map.nan_to_num()
+
+        if self.cfg.apply_bilateral_blur:
+            illumination_map = kornia.filters.bilateral_blur(
+                illumination_map, kernel_size=(5, 5), sigma_color=0.1, sigma_space=(5.0, 5.0)
+            )
+
         if not self.cfg.use_hsv_color_space:
-            illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)  # Grayscale: avg R,G,B
+            illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
+
 
         reflectance_target = input_image_for_net / illumination_map
 
