@@ -75,6 +75,7 @@ class Config:
     lambda_illum_exclusion: float = 0.15
 
     luminance_threshold: float = 75.0
+    dark_luminance_threshold: float = 10.0
     chroma_tolerance: float = 2.75
     gain: float = 2.0
 
@@ -95,6 +96,7 @@ class Config:
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = False
     learn_white_preservation: bool = True
+    learn_dark_preservation: bool = True
     use_enhancement_gate: bool = True
 
     postfix: str = "_multiexposure"

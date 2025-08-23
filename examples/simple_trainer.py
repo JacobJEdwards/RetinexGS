@@ -37,6 +37,11 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.losses import (
+    FrequencyLoss,
+    IlluminationFrequencyLoss,
+    DarkPreservationLoss,
+)
 from losses import HistogramLoss, WhitePreservationLoss
 from gsplat.distributed import cli
 from losses import (
@@ -211,11 +216,16 @@ class Runner:
             gain=cfg.gain,
             learnable=cfg.learn_white_preservation,
         ).to(self.device)
+        self.loss_dark_preservation = DarkPreservationLoss(
+            luminance_threshold=cfg.dark_luminance_threshold,
+            chroma_tolerance=cfg.chroma_tolerance,
+            gain=cfg.gain,
+            learnable=cfg.learn_dark_preservation
+        )
+        self.loss_illum_frequency = IlluminationFrequencyLoss().to(self.device)
 
-        mean_val = 128
-        std_dev = 40
         x = np.arange(256)
-        pdf = stats.norm.pdf(x, mean_val, std_dev)
+        pdf = stats.beta.pdf(x / 255.0, a=2, b=5)
         target_hist = torch.from_numpy(pdf / pdf.sum()).float().to(self.device)
 
         self.target_histogram_dist = nn.Parameter(target_hist)
@@ -238,15 +248,16 @@ class Runner:
 
         self.log_sigmas = nn.ParameterDict({
             "reflect_spa": nn.Parameter(torch.zeros(1)),
-            "color_val": nn.Parameter(torch.tensor([5.0])),
+            "color_val": nn.Parameter(torch.zeros(1)),
             "exposure_val": nn.Parameter(torch.zeros(1)),
             "adaptive_curve": nn.Parameter(torch.zeros(1)),
             "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
             "exposure_local": nn.Parameter(torch.zeros(1)),
             "exclusion_val": nn.Parameter(torch.zeros(1)),
             "white_preservation": nn.Parameter(torch.zeros(1)),
+            "dark_preservation": nn.Parameter(torch.zeros(1)),
             "histogram_loss": nn.Parameter(torch.zeros(1)),
-            "hue_shift_loss": nn.Parameter(torch.zeros(1)),
+            "illum_frequency": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
 
         net_params = list(self.retinex_net.parameters())
@@ -256,6 +267,7 @@ class Runner:
         net_params += self.loss_spatial.parameters()
         net_params += self.log_sigmas.parameters()
         net_params += self.loss_white_preservation.parameters()
+        net_params += self.loss_dark_preservation.parameters()
         net_params += self.loss_exposure.parameters()
 
         net_params.append(self.target_histogram_dist)
@@ -486,14 +498,15 @@ class Runner:
         loss_white_preservation = self.loss_white_preservation(
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
         )
+        loss_dark_preservation = self.loss_dark_preservation(
+            input_image=pixels, illumination_map=illumination_map.permute(0, 2,3,1),
+        )
 
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         # loss_histogram = torch.tensor(0.0, device=device)
 
-        # input_hsv = kornia.color.rgb_to_hsv(pixels.permute(0,3,1,2))
-        # reflectance_hsv = kornia.color.rgb_to_hsv(reflectance_map)
-        # loss_hue = F.mse_loss(input_hsv[:,0,:,:], reflectance_hsv[:,0,:,:])
-        loss_hue = torch.tensor(0.0, device=device)
+        loss_frequency = self.loss_illum_frequency(illumination_map)
+
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
@@ -504,8 +517,9 @@ class Runner:
             "exposure_local": loss_exposure_local,
             "exclusion_val": loss_exclusion_val,
             "white_preservation": loss_white_preservation,
+            "dark_preservation": loss_dark_preservation,
             "histogram_loss": loss_histogram,
-            "hue_shift_loss": loss_hue,
+            "illum_frequency": loss_frequency,
         }
 
         total_loss = 0
