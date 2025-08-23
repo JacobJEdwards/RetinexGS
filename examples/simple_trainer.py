@@ -456,14 +456,11 @@ class Runner:
             if not cfg.use_hsv_color_space
             else torch.tensor(0.0, device=device)
         )
-        # loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
-        loss_adaptive_curve = torch.tensor(0.0, device=device)
-        if cfg.learn_global_exposure:
-            loss_exposure_val = self.loss_exposure(
-                reflectance_map, global_mean_val_target
-            )
-        else:
-            loss_exposure_val = self.loss_exposure(reflectance_map)
+        loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
+        # loss_adaptive_curve = torch.tensor(0.0, device=device)
+        # loss_exposure_val = self.loss_exposure(reflectance_map, global_mean_val_target if cfg.learn_global_exposure else None)
+        loss_exposure_val = torch.tensor(0.0, device=device)
+
 
         con_degree = (0.5 / torch.mean(pixels))
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
