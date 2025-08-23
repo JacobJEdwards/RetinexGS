@@ -244,14 +244,6 @@ class MultiScaleRetinexNet(nn.Module):
             init.constant_(m.bias, 0)
 
     def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
-        luminance = torch.mean(x, dim=1, keepdim=True) if x.shape[1] == 3 else x
-        subimage_size = 50
-        sub_means = F.avg_pool2d(luminance, kernel_size=subimage_size, stride=subimage_size, padding=0)
-        global_mean = torch.mean(luminance)
-        P = 1 - (1 / (global_mean + 1e-8)) * torch.sqrt(torch.mean((sub_means - global_mean)**2 + 1e-8))
-
-        large_scale_weight = (3 - 1) * P + 1 / 3
-
         b, _ = embedding.shape
 
         e0 = self.in_conv(x)
@@ -260,7 +252,7 @@ class MultiScaleRetinexNet(nn.Module):
         e1 = self.enc1(e0_modulated)
         e2 = self.enc2(e1)
 
-        b = self.bottleneck(e2) * large_scale_weight
+        b = self.bottleneck(e2)
 
         d2_up = self.dec2(b)
         if d2_up.shape[2:] != e1.shape[2:]:
