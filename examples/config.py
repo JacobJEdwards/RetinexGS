@@ -12,7 +12,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("/workspace/360_v2/kitchen")
+    data_dir: Path = Path("/workspace/360_v2/bicycle")
     data_factor: int = 1
     result_dir: Path = Path("/workspace/result")
     test_every: int = 8
