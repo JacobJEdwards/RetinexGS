@@ -107,8 +107,6 @@ class AdaptiveCurveLoss(nn.Module):
             lambda3: float = 1.0,
             learn_lambdas: bool = False,
             learn_thresholds: bool = False,
-            use_embedding: bool = False,
-            num_images: int | None = None,
     ):
         """
         Custom loss function for controlling curve enhancement and compression.
@@ -125,17 +123,9 @@ class AdaptiveCurveLoss(nn.Module):
         self.beta = beta
 
         self.learn_thresholds = learn_thresholds
-        self.use_embedding = use_embedding
-
         if self.learn_thresholds:
-            if use_embedding:
-                self.low_thresh = nn.Embedding(num_images, 1)
-                self.high_thresh = nn.Embedding(num_images, 1)
-                self.low_thresh.weight.data.fill_(torch.logit(torch.tensor(initial_low_thresh, dtype=torch.float32)))
-                self.high_thresh.weight.data.fill_(torch.logit(torch.tensor(initial_high_thresh, dtype=torch.float32)))
-            else:
-                self.low_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_low_thresh, dtype=torch.float32))]))
-                self.high_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_high_thresh, dtype=torch.float32))]))
+            self.low_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_low_thresh, dtype=torch.float32))]))
+            self.high_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_high_thresh, dtype=torch.float32))]))
         else:
             self.low_thresh = initial_low_thresh
             self.high_thresh = initial_high_thresh
@@ -155,7 +145,6 @@ class AdaptiveCurveLoss(nn.Module):
             output: Tensor,
             alpha_map: Tensor,
             beta_map: Tensor,
-            image_ids: Tensor | None = None,
     ) -> Tensor:
         if alpha_map.shape[2:] != output.shape[2:]:
             alpha_map = F.interpolate(alpha_map, size=output.shape[2:], mode='bilinear', align_corners=False)
@@ -163,14 +152,8 @@ class AdaptiveCurveLoss(nn.Module):
             beta_map = F.interpolate(beta_map, size=output.shape[2:], mode='bilinear', align_corners=False)
 
         if self.learn_thresholds:
-            if self.use_embedding:
-                if image_ids is None:
-                    raise ValueError("image_ids must be provided when using embedding for thresholds.")
-                low_thresh_val = torch.sigmoid(self.low_thresh(image_ids)).view(-1, 1, 1, 1)
-                high_thresh_val = torch.sigmoid(self.high_thresh(image_ids)).view(-1, 1, 1, 1)
-            else:
-                low_thresh_val = torch.sigmoid(self.low_thresh)
-                high_thresh_val = torch.sigmoid(self.high_thresh)
+            low_thresh_val = torch.sigmoid(self.low_thresh)
+            high_thresh_val = torch.sigmoid(self.high_thresh)
         else:
             low_thresh_val = self.low_thresh
             high_thresh_val = self.high_thresh
@@ -197,19 +180,13 @@ class AdaptiveCurveLoss(nn.Module):
 
         return total_loss.squeeze()
 
-    def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None, image_ids: Tensor | None = None)-> Tensor:
+    def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None) -> Tensor:
         if alpha_map is not None and beta_map is not None:
-            return self.forward_with_maps(output, alpha_map, beta_map, image_ids)
+            return self.forward_with_maps(output, alpha_map, beta_map)
 
         if self.learn_thresholds:
-            if self.use_embedding:
-                if image_ids is None:
-                    raise ValueError("image_ids must be provided when using embedding for thresholds.")
-                low_thresh_val = torch.sigmoid(self.low_thresh(image_ids)).view(-1, 1, 1, 1)
-                high_thresh_val = torch.sigmoid(self.high_thresh(image_ids)).view(-1, 1, 1, 1)
-            else:
-                low_thresh_val = torch.sigmoid(self.low_thresh)
-                high_thresh_val = torch.sigmoid(self.high_thresh)
+            low_thresh_val = torch.sigmoid(self.low_thresh)
+            high_thresh_val = torch.sigmoid(self.high_thresh)
         else:
             low_thresh_val = self.low_thresh
             high_thresh_val = self.high_thresh
