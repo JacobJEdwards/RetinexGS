@@ -6,7 +6,6 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
-from ray.tune import Checkpoint, report
 
 import imageio
 import kornia.color
@@ -190,7 +189,7 @@ class Runner:
             num_images=len(self.trainset),
         ).to(self.device)
         self.loss_adaptive_curve = AdaptiveCurveLoss(
-            learn_lambdas=cfg.learn_adaptive_curve_lambdas
+            learn_lambdas=cfg.learn_adaptive_curve_lambdas, learn_thresholds=cfg.learn_adaptive_curve_thresholds,
         ).to(self.device)
         self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss(learn_gamma=cfg.learn_edge_aware_gamma,
                                                              num_images=len(self.trainset)).to(self.device)
@@ -1468,66 +1467,6 @@ def objective1(trial: optuna.Trial):
 
         gc.collect()
         torch.cuda.empty_cache()
-
-def objective_ray(config: dict):
-    cfg = Config()
-
-    # cfg.lambda_reflect = config["lambda_reflect"]
-    # cfg.lambda_illum_curve = config["lambda_illum_curve"]
-    # cfg.lambda_illum_exposure = config["lambda_illum_exposure"]
-    # cfg.lambda_edge_aware_smooth = config["lambda_edge_aware_smooth"]
-    # cfg.lambda_illum_exposure_local = config["lambda_illum_exposure_local"]
-    cfg.lambda_white_preservation = config["lambda_white_preservation"]
-    # cfg.lambda_histogram = config["lambda_histogram"]
-    # cfg.lambda_illum_exclusion = config["lambda_illum_exclusion"]
-    # cfg.retinex_embedding_dim = config["retinex_embedding_dim"]
-    # cfg.learn_spatial_contrast = config["learn_spatial_contrast"]
-    # cfg.learn_global_exposure = config["learn_global_exposure"]
-    # cfg.learn_local_exposure = config["learn_local_exposure"]
-    # cfg.learn_edge_aware_gamma = config["learn_edge_aware_gamma"]
-    # cfg.predictive_adaptive_curve = config["predictive_adaptive_curve"]
-    cfg.luminance_threshold = config["luminance_threshold"]
-    cfg.chroma_tolerance = config["chroma_tolerance"]
-    cfg.gain = config["gain"]
-
-
-    cfg.max_steps = 3000
-    cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 2000
-
-    average_psnr = 0.0
-    average_ssim = 0.0
-    average_lpips = 0.0
-
-    datasets_to_run = [Path("/workspace/360_v2/bicycle")] #, Path("../../360_v2/kitchen")]
-
-    for dataset in datasets_to_run:
-        cfg.data_dir = dataset
-        runner = None
-        try:
-            runner = Runner(0, 0, 1, cfg)
-            runner.pre_train_retinex()
-
-            psnr, ssim, lpips = runner.eval_retinex()
-            average_psnr += psnr
-            average_ssim += ssim
-            average_lpips += lpips
-        finally:
-            if runner is not None:
-                del runner
-
-            gc.collect()
-            torch.cuda.empty_cache()
-
-    num_datasets = float(len(datasets_to_run))
-    metrics = {
-        "psnr": average_psnr / 2,
-        "ssim": average_ssim / 2,
-        "lpips": average_lpips / 2,
-    }
-
-    checkpoint = Checkpoint.from_dict({"step": cfg.max_steps})
-    report(metrics, checkpoint=checkpoint)
 
 def objective(trial: optuna.Trial):
     cfg = Config()
