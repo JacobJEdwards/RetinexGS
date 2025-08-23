@@ -1445,7 +1445,7 @@ def objective(trial: optuna.Trial):
     cfg = Config()
 
     cfg.exposure_loss_patch_size = trial.suggest_categorical(
-        "exposure_loss_patch_size", [16, 32, 64, 128, 256]
+        "exposure_loss_patch_size", [16, 32, 64, 128, 256, 512]
     )
     cfg.exposure_mean_val = trial.suggest_float("exposure_mean_val", 0.2, 0.8)
     cfg.exposure_loss_use_embedding = trial.suggest_categorical(
