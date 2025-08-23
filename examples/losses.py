@@ -556,13 +556,8 @@ class EdgeAwareSmoothingLoss(nn.Module):
 
         effective_gamma += 1e-8
 
-        dx_guide_mag = torch.abs(dx_guide) + 1e-4
-        dy_guide_mag = torch.abs(dy_guide) + 1e-4
-        weights_x = torch.exp(-dx_guide_mag / effective_gamma) * (1 / dx_guide_mag)
-        weights_y = torch.exp(-dy_guide_mag / effective_gamma) * (1 / dy_guide_mag)
-
-        # weights_x = torch.exp(-torch.abs(dx_guide) / effective_gamma)
-        # weights_y = torch.exp(-torch.abs(dy_guide) / effective_gamma)
+        weights_x = torch.exp(-torch.abs(dx_guide) / effective_gamma)
+        weights_y = torch.exp(-torch.abs(dy_guide) / effective_gamma)
 
         loss_x = torch.mean(weights_x * torch.abs(dx_img))
         loss_y = torch.mean(weights_y * torch.abs(dy_img))
