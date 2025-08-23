@@ -37,6 +37,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.losses import PerceptualColorLoss
 from losses import HistogramLoss, WhitePreservationLoss
 from gsplat.distributed import cli
 from losses import (
@@ -189,6 +190,7 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
+        self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=32, learn_global_exposure=cfg.learn_global_exposure,
                                           use_embeddings=True, num_images=len(self.trainset)).to(self.device)
         self.loss_spatial = SpatialLoss(
@@ -238,7 +240,8 @@ class Runner:
 
         self.log_sigmas = nn.ParameterDict({
             "reflect_spa": nn.Parameter(torch.zeros(1)),
-            "color_val": nn.Parameter(torch.tensor([5.0])),
+            "color_val": nn.Parameter(torch.zeros(1)),
+            "perceptual_color": nn.Parameter(torch.zeros(1)),
             "exposure_val": nn.Parameter(torch.zeros(1)),
             "adaptive_curve": nn.Parameter(torch.zeros(1)),
             "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
@@ -487,9 +490,13 @@ class Runner:
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         # loss_histogram = torch.tensor(0.0, device=device)
 
+        loss_perceptual_color = self.loss_perceptual_colour(
+            reflectance_map.permute(0, 2, 3, 1), pixels
+        )
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
+            "perceptual_color": loss_perceptual_color,
             "color_val": loss_color_val,
             "exposure_val": loss_exposure_val,
             "adaptive_curve": loss_adaptive_curve,

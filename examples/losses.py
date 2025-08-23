@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from torchvision import models
 
 def gamma_curve(x, g):
     # Power Curve, Gamma Correction Curve
@@ -833,6 +832,21 @@ class HistogramLoss(nn.Module):
         loss = torch.abs(reflectance_sorted - target_quantiles).mean()
         return loss
 
+class PerceptualColorLoss(nn.Module):
+    def __init__(self):
+        super(PerceptualColorLoss, self).__init__()
+
+    def forward(self, img1_rgb: Tensor, img2_rgb: Tensor) -> Tensor:
+        if img1_rgb.shape[1] != 3 or img2_rgb.shape[1] != 3:
+            return torch.tensor(0.0, device=img1_rgb.device)
+
+        img1_lab = kornia.color.rgb_to_lab(img1_rgb)
+        img2_lab = kornia.color.rgb_to_lab(img2_rgb)
+
+        img1_ab = img1_lab[:, 1:3, :, :]
+        img2_ab = img2_lab[:, 1:3, :, :]
+
+        return F.l1_loss(img1_ab, img2_ab)
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
