@@ -88,6 +88,9 @@ class Config:
 
     predictive_adaptive_curve: bool = True
 
+    exposure_loss_patch_size: int = 32
+    exposure_loss_use_embedding: bool = True
+
     learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = True
     learn_adaptive_curve_thresholds: bool = False
