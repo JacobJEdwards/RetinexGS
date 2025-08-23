@@ -192,7 +192,7 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=32, learn_global_exposure=cfg.learn_global_exposure,
+        self.loss_exposure = ExposureLoss(patch_size=128, learn_global_exposure=cfg.learn_global_exposure,
                                           use_embeddings=True, num_images=len(self.trainset)).to(self.device)
         self.loss_spatial = SpatialLoss(
             learn_contrast=cfg.learn_spatial_contrast,
@@ -471,8 +471,8 @@ class Runner:
         loss_color_val = self.loss_color(illumination_map)
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         # loss_adaptive_curve = torch.tensor(0.0, device=device)
-        # loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
-        loss_exposure_val = torch.tensor(0.0, device=device)
+        loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
+        # loss_exposure_val = torch.tensor(0.0, device=device)
 
 
         con_degree = (0.5 / torch.mean(pixels))
