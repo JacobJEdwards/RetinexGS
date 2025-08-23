@@ -471,8 +471,8 @@ class Runner:
         loss_color_val = self.loss_color(illumination_map)
         loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
         # loss_adaptive_curve = torch.tensor(0.0, device=device)
-        loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
-        # loss_exposure_val = torch.tensor(0.0, device=device)
+        # loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
+        loss_exposure_val = torch.tensor(0.0, device=device)
 
 
         con_degree = (0.5 / torch.mean(pixels))
@@ -499,8 +499,8 @@ class Runner:
             input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
         )
 
-        loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
-        # loss_histogram = torch.tensor(0.0, device=device)
+        # loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
+        loss_histogram = torch.tensor(0.0, device=device)
 
         loss_perceptual_color = self.loss_perceptual_colour(
             reflectance_map.permute(0, 2, 3, 1), pixels
