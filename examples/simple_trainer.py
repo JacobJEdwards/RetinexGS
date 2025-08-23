@@ -191,7 +191,9 @@ class Runner:
 
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=cfg.exposure_loss_patch_size, learn_global_exposure=cfg.learn_global_exposure,
+        self.loss_exposure = ExposureLoss(patch_size=cfg.exposure_loss_patch_size,
+                                          learn_global_exposure=cfg.learn_global_exposure,
+                                          mean_val=cfg.exposure_mean_val,
                                           use_embeddings=cfg.exposure_loss_use_embedding, num_images=len(self.trainset)).to(self.device)
         self.loss_spatial = SpatialLoss(
             learn_contrast=cfg.learn_spatial_contrast,
@@ -1442,47 +1444,18 @@ def objective1(trial: optuna.Trial):
 def objective(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64, 128])
-
-    cfg.luminance_threshold = trial.suggest_float(
-        "luminance_threshold", 75, 99.9
+    cfg.exposure_loss_patch_size = trial.suggest_categorical(
+        "exposure_loss_patch_size", [16, 32, 64, 128, 256]
     )
-    cfg.chroma_tolerance = trial.suggest_float(
-        "chroma_tolerance", 0, 10
+    cfg.exposure_mean_val = trial.suggest_float("exposure_mean_val", 0.2, 0.8)
+    cfg.exposure_loss_use_embedding = trial.suggest_categorical(
+        "exposure_loss_use_embedding", [True, False]
     )
-    cfg.gain = trial.suggest_float(
-        "gain", 0.1, 5.0, log=True
-    )
-
-
     cfg.learn_global_exposure = trial.suggest_categorical(
         "learn_global_exposure", [True, False]
     )
-    cfg.learn_local_exposure = trial.suggest_categorical(
-        "learn_local_exposure", [True, False]
-    )
-    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
-        "learn_edge_aware_gamma", [True, False]
-    )
-    cfg.predictive_adaptive_curve = trial.suggest_categorical(
-        "predictive_adaptive_curve", [True, False]
-    )
-    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
-        "learn_adaptive_curve_lambdas", [True, False]
-    )
-    cfg.learn_adaptive_curve_thresholds = trial.suggest_categorical(
-        "learn_adaptive_curve_thresholds", [True, False]
-    )
-    cfg.learn_adaptive_curve_use_embedding = trial.suggest_categorical(
-        "learn_adaptive_curve_use_embedding", [True, False]
-    )
     cfg.learn_white_preservation = trial.suggest_categorical(
         "learn_white_preservation", [True, False]
-    )
-    cfg.use_enhancement_gate = trial.suggest_categorical(
-        "use_enhancement_gate", [True, False]
     )
 
     cfg.max_steps = 3000
@@ -1550,23 +1523,23 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    # cli(main, config, verbose=True)
 
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-    #
-    # study.optimize(objective, n_trials=30, catch=(RuntimeError,))
-    #
-    # print("Study statistics: ")
-    # print(f" Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f" Trial {i}:")
-    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print(" Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f" {key}: {value}")
-    #
-    # # save the top results to a file
-    # with open("optuna_results_stump.json", "w") as f:
-    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+
+    study.optimize(objective, n_trials=30, catch=(RuntimeError,))
+
+    print("Study statistics: ")
+    print(f" Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f" Trial {i}:")
+        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print(" Params: ")
+        for key, value in trial.params.items():
+            print(f" {key}: {value}")
+
+    # save the top results to a file
+    with open("optuna_results_stump.json", "w") as f:
+        json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)

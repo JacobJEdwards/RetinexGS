@@ -12,7 +12,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("/workspace/360_v2/room")
+    data_dir: Path = Path("/workspace/360_v2/stump")
     data_factor: int = 1
     result_dir: Path = Path("/workspace/result")
     test_every: int = 8
@@ -89,6 +89,7 @@ class Config:
     predictive_adaptive_curve: bool = True
 
     exposure_loss_patch_size: int = 32
+    exposure_mean_val: float = 0.5
     exposure_loss_use_embedding: bool = True
 
     learn_spatial_contrast: bool = False
@@ -101,6 +102,7 @@ class Config:
     learn_white_preservation: bool = True
     learn_dark_preservation: bool = True
     use_enhancement_gate: bool = True
+
 
     postfix: str = "_multiexposure"
 
