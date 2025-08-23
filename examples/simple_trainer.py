@@ -238,7 +238,7 @@ class Runner:
 
         self.log_sigmas = nn.ParameterDict({
             "reflect_spa": nn.Parameter(torch.zeros(1)),
-            "color_val": nn.Parameter(torch.zeros(1)),
+            "color_val": nn.Parameter(torch.tensor([5.0])),
             "exposure_val": nn.Parameter(torch.zeros(1)),
             "adaptive_curve": nn.Parameter(torch.zeros(1)),
             "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
@@ -246,6 +246,7 @@ class Runner:
             "exclusion_val": nn.Parameter(torch.zeros(1)),
             "white_preservation": nn.Parameter(torch.zeros(1)),
             "histogram_loss": nn.Parameter(torch.zeros(1)),
+            "hue_shift_loss": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
 
         net_params = list(self.retinex_net.parameters())
@@ -486,6 +487,10 @@ class Runner:
         loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         # loss_histogram = torch.tensor(0.0, device=device)
 
+        input_hsv = kornia.color.rgb_to_hsv(pixels.permute(0,3,1,2))
+        reflectance_hsv = kornia.color.rgb_to_hsv(reflectance_map)
+        loss_hue = F.mse_loss(input_hsv[:,0,:,:], reflectance_hsv[:,0,:,:])
+
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
             "color_val": loss_color_val,
@@ -496,6 +501,7 @@ class Runner:
             "exclusion_val": loss_exclusion_val,
             "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
+            "hue_shift_loss": loss_hue,
         }
 
         total_loss = 0

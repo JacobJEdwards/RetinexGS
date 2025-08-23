@@ -83,7 +83,7 @@ class Config:
     pretrain_retinex: bool = True
     pretrain_steps: int = 2000
 
-    use_hsv_color_space: bool = True
+    use_hsv_color_space: bool = False
 
     predictive_adaptive_curve: bool = True
 
@@ -95,7 +95,7 @@ class Config:
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = False
     learn_white_preservation: bool = True
-    use_enhancement_gate: bool = False
+    use_enhancement_gate: bool = True
 
     postfix: str = "_multiexposure"
 

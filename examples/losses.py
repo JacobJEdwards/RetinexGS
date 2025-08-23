@@ -98,8 +98,8 @@ class AdaptiveCurveLoss(nn.Module):
 
     def __init__(
             self,
-            alpha: float = 0.3,
-            beta: float = 0.7,
+            alpha: float = 0.2,
+            beta: float = 0.8,
             initial_low_thresh: float = 0.3,
             initial_high_thresh: float = 0.7,
             lambda1: float = 1.0,
