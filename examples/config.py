@@ -96,15 +96,15 @@ class Config:
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
 
-    learn_white_preservation: bool = False
-    learn_dark_preservation: bool = False
-    learn_colour_preservation: bool = False
+    learn_white_preservation: bool = True
+    learn_dark_preservation: bool = True
+    learn_colour_preservation: bool = True
 
     luminance_threshold: float = 75.0
     dark_luminance_threshold: float = 10.0
     colour_luminance_threshold: float = 50.0
-    chroma_tolerance: float = 20.0
-    gain: float = 5.0
+    chroma_tolerance: float = 2.7
+    gain: float = 2.0
 
     use_enhancement_gate: bool = True
 
