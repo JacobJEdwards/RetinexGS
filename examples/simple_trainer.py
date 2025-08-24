@@ -672,7 +672,7 @@ class Runner:
             shuffle=True,
             num_workers=4,
             persistent_workers=True,
-            pin_memory=True,
+            pin_memory=False, # change ?
         )
 
         trainloader_iter = iter(trainloader)
@@ -791,7 +791,7 @@ class Runner:
             shuffle=True,
             num_workers=4,
             persistent_workers=True,
-            pin_memory=True,
+            pin_memory=False,
         )
         trainloader_iter = iter(trainloader)
 
@@ -1317,7 +1317,7 @@ class Runner:
             shuffle=False, # Must be False to correctly pair images
             num_workers=1,
             persistent_workers=False,
-            pin_memory=True,
+            pin_memory=False,
         )
 
         trainloader_groundtruth = torch.utils.data.DataLoader(
@@ -1326,7 +1326,7 @@ class Runner:
             shuffle=False,
             num_workers=1,
             persistent_workers=False,
-            pin_memory=True,
+            pin_memory=False,
         )
 
         metrics = defaultdict(list)
@@ -1654,7 +1654,7 @@ if __name__ == "__main__":
 
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    study.optimize(objective2, n_trials=30, catch=(RuntimeError, ValueError))
+    study.optimize(objective2, n_trials=60, catch=(RuntimeError, ValueError))
 
     print("Study statistics: ")
     print(f" Number of finished trials: {len(study.trials)}")
