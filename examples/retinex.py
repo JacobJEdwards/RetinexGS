@@ -186,7 +186,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.bottleneck = nn.Sequential(
             RetinexBlock(64, 64),
-            CBAM(64),
+            # CBAM(64),
             # RetinexBlock(64, 64),
         )
 
