@@ -1650,11 +1650,11 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    # cli(main, config, verbose=True)
 
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    study.optimize(objective2, n_trials=60, catch=(RuntimeError, ValueError))
+    study.optimize(objective2, n_trials=45, catch=(RuntimeError, ValueError))
 
     print("Study statistics: ")
     print(f" Number of finished trials: {len(study.trials)}")
