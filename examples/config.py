@@ -96,9 +96,9 @@ class Config:
     learn_global_exposure: bool = False
     learn_edge_aware_gamma: bool = True
 
-    learn_white_preservation: bool = True
-    learn_dark_preservation: bool = True
-    learn_colour_preservation: bool = True
+    learn_white_preservation: bool = False
+    learn_dark_preservation: bool = False
+    learn_colour_preservation: bool = False
 
     luminance_threshold: float = 75.0
     dark_luminance_threshold: float = 10.0
@@ -118,7 +118,7 @@ class Config:
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
     loss_dark_preservation: bool = True
-    loss_color_preservation: bool = True
+    loss_color_preservation: bool = False
     loss_chromaticity: bool = False
 
     postfix: str = "_multiexposure"
