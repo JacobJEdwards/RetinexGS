@@ -106,7 +106,7 @@ class Config:
     chroma_tolerance: float = 2.7
     gain: float = 2.0
 
-    use_enhancement_gate: bool = False
+    use_enhancement_gate: bool = True
 
     loss_adaptive_curve: bool = True
     loss_exposure: bool = True
