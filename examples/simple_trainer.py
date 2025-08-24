@@ -37,8 +37,8 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.losses import ChromaticityFidelityLoss
-from losses import HistogramLoss, WhitePreservationLoss, DarkPreservationLoss, SaturatedColorPreservationLoss, PerceptualColorLoss
+from losses import (HistogramLoss, WhitePreservationLoss, DarkPreservationLoss, SaturatedColorPreservationLoss,
+                    PerceptualColorLoss, ChromaticityFidelityLoss)
 from gsplat.distributed import cli
 from losses import (
     ColourConsistencyLoss,
