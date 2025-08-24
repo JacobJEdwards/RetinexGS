@@ -118,8 +118,8 @@ class Config:
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
     loss_dark_preservation: bool = True
-    loss_color_preservation: bool = True
-    loss_chromaticity: bool = True
+    loss_color_preservation: bool = False
+    loss_chromaticity: bool = False
 
     postfix: str = "_multiexposure"
 
