@@ -93,15 +93,15 @@ class Config:
     learn_adaptive_curve_thresholds: bool = False
     learn_adaptive_curve_use_embedding: bool = True
     learn_local_exposure: bool = False
-    learn_global_exposure: bool = True
+    learn_global_exposure: bool = False
     learn_edge_aware_gamma: bool = True
 
-    learn_white_preservation: bool = True
-    learn_dark_preservation: bool = True
-    learn_colour_preservation: bool = True
+    learn_white_preservation: bool = False
+    learn_dark_preservation: bool = False
+    learn_colour_preservation: bool = False
 
     luminance_threshold: float = 75.0
-    dark_luminance_threshold: float = 10.0
+    dark_luminance_threshold: float = 5.0
     colour_luminance_threshold: float = 50.0
     chroma_tolerance: float = 2.7
     gain: float = 2.0
@@ -117,8 +117,8 @@ class Config:
     loss_white_preservation: bool = True
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
-    loss_dark_preservation: bool = True
-    loss_color_preservation: bool = False
+    loss_dark_preservation: bool = False
+    loss_color_preservation: bool = True
     loss_chromaticity: bool = False
 
     postfix: str = "_multiexposure"
