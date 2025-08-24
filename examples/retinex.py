@@ -13,7 +13,7 @@ class ChannelAttention(nn.Module):
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.fc = nn.Sequential(
             nn.Conv2d(channel, channel // reduction, 1, bias=False),
-            nn.LeakyReLU(inplace=True),
+            nn.SiLU(inplace=True),
             nn.Conv2d(channel // reduction, channel, 1, bias=False)
         )
         self.sigmoid = nn.Sigmoid()
@@ -75,7 +75,7 @@ class RetinexBlock(nn.Module):
         super().__init__()
         self.conv = DepthwiseSeparableConv(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
         self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
-        self.act = nn.LeakyReLU()
+        self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:
         return self.act(self.norm(self.conv(x)))
@@ -118,7 +118,7 @@ class SEBlock(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            nn.LeakyReLU(inplace=True),
+            nn.SiLU(inplace=True),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
         )
@@ -135,7 +135,7 @@ class SpatiallyFiLMLayer(nn.Module):
         conditioning_channels = feature_channels + embed_dim
         self.param_predictor = nn.Sequential(
             DepthwiseSeparableConv(conditioning_channels, feature_channels, kernel_size=3, padding=1),
-            nn.LeakyReLU(inplace=True),
+            nn.SiLU(inplace=True),
             nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
         )
         nn.init.zeros_(self.param_predictor[-1].weight)
@@ -208,7 +208,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.predictive_adaptive_curve:
             self.adaptive_curve_head = nn.Sequential(
                 DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-                nn.LeakyReLU(inplace=True),
+                nn.SiLU(inplace=True),
                 nn.Conv2d(8, 2, kernel_size=1)
             )
             nn.init.zeros_(self.adaptive_curve_head[-1].weight)
@@ -217,7 +217,7 @@ class MultiScaleRetinexNet(nn.Module):
         if self.learn_local_exposure:
             self.predicted_local_mean_head = nn.Sequential(
                 DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-                nn.LeakyReLU(inplace=True),
+                nn.SiLU(inplace=True),
                 nn.Conv2d(8, 1, kernel_size=1),
                 nn.Sigmoid()
             )
@@ -227,7 +227,7 @@ class MultiScaleRetinexNet(nn.Module):
             gate_input_channels = 16 + self.embed_dim
             self.gate_conv_head = nn.Sequential(
                 DepthwiseSeparableConv(gate_input_channels, 16, kernel_size=3, padding=1),
-                nn.LeakyReLU(inplace=True),
+                nn.SiLU(inplace=True),
                 nn.Conv2d(16, 1, kernel_size=1),
                 nn.Sigmoid()
             )
