@@ -1505,33 +1505,23 @@ def objective1(trial: optuna.Trial):
 def objective2(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.loss_adaptive_curve = trial.suggest_categorical(
-        "loss_adaptive_curve", [True, False]
-    )
-    cfg.loss_exposure = trial.suggest_categorical(
-        "loss_exposure", [True, False]
-    )
-    cfg.loss_reflectance_spa = trial.suggest_categorical(
-        "loss_reflectance_spa", [True, False]
-    )
-    cfg.loss_smooth_edge_aware = trial.suggest_categorical(
-        "loss_smooth_edge_aware", [True, False]
-    )
-    cfg.loss_exposure_local = trial.suggest_categorical(
-        "loss_exposure_local", [True, False]
-    )
-    cfg.loss_exclusion = trial.suggest_categorical(
-        "loss_exclusion", [True, False]
-    )
-    cfg.loss_white_preservation = trial.suggest_categorical(
-        "loss_white_preservation", [True, False]
-    )
-    cfg.loss_histogram = trial.suggest_categorical(
-        "loss_histogram", [True, False]
-    )
-    cfg.loss_perceptual_color = trial.suggest_categorical(
-        "loss_perceptual_color", [True, False]
-    )
+    cfg.luminance_threshold = trial.suggest_float("luminance_threshold", 75.0, 99.9)
+    cfg.dark_luminance_threshold = trial.suggest_float("dark_luminance_threshold", 0.0, 15.0)
+    cfg.colour_luminance_threshold = trial.suggest_float("colour_luminance_threshold", 0.0, 100.0)
+    cfg.chroma_tolerance = trial.suggest_float("chroma_tolerance", 1.0, 30.0)
+    cfg.gain = trial.suggest_float("gain", 0.5, 20.0)
+
+    cfg.loss_dark_preservation = trial.suggest_categorical("loss_dark_preservation", [True, False])
+    cfg.loss_color_preservation = trial.suggest_categorical("loss_color_preservation", [True, False])
+    cfg.loss_chromaticity = trial.suggest_categorical("loss_chromaticity", [True, False])
+    cfg.loss_exclusion = trial.suggest_categorical("loss_exclusion", [True, False])
+
+    cfg.learn_white_preservation = trial.suggest_categorical("learn_white_preservation", [True, False])
+    cfg.learn_dark_preservation = trial.suggest_categorical("learn_dark_preservation", [True, False])
+    cfg.learn_colour_preservation = trial.suggest_categorical("learn_colour_preservation", [True, False])
+
+    cfg.exposure_mean_val = trial.suggest_float("exposure_mean_val", 0.4, 0.6)
+
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
@@ -1662,36 +1652,18 @@ if __name__ == "__main__":
 
     cli(main, config, verbose=True)
 
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
-    # study.optimize(objective, n_trials=60, catch=(RuntimeError, ValueError))
-    #
-    # print("Study statistics: ")
-    # print(f" Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f" Trial {i}:")
-    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print(" Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f" {key}: {value}")
-    #
-    # print("objective 2")
-    #
-    # study.optimize(objective2, n_trials=30, catch=(RuntimeError, ValueError))
-    #
-    # print("Study statistics: ")
-    # print(f" Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f" Trial {i}:")
-    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print(" Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f" {key}: {value}")
+    study.optimize(objective2, n_trials=60, catch=(RuntimeError, ValueError))
 
-    # save the top results to a file
-    # with open("optuna_results_stump.json", "w") as f:
-    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    print("Study statistics: ")
+    print(f" Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f" Trial {i}:")
+        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print(" Params: ")
+        for key, value in trial.params.items():
+            print(f" {key}: {value}")
+
