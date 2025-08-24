@@ -261,7 +261,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         d2 = torch.cat([d2_up, e1], dim=1)
         d2 = self.dec2_conv(d2)
-        # d2 = self.dec2_attn(d2)
+        d2 = self.dec2_attn(d2)
 
         d1_up = self.dec1(d2)
         if d1_up.shape[2:] != e0_modulated.shape[2:]:
