@@ -38,7 +38,7 @@ class SpatialAttention(nn.Module):
         return x * self.sigmoid(out)
 
 class CBAM(nn.Module):
-    def __init__(self, channel, reduction=8, kernel_size=7):
+    def __init__(self, channel, reduction=16, kernel_size=7):
         super().__init__()
         self.ca = ChannelAttention(channel, reduction)
         self.sa = SpatialAttention(kernel_size)
@@ -269,7 +269,7 @@ class MultiScaleRetinexNet(nn.Module):
 
         d1 = torch.cat([d1_up, e0_modulated], dim=1)
         d1 = self.dec1_conv(d1)
-        # d1 = self.dec1_attn(d1)
+        d1 = self.dec1_attn(d1)
 
         if self.use_enhancement_gate:
             b_d1, _, h_d1, w_d1 = d1.shape
