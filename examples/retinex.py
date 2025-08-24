@@ -178,8 +178,8 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.in_conv = RetinexBlock(in_channels, 16)
 
-        # self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
-        self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=16)
+        self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
+        # self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=16)
 
         self.enc1 = RetinexBlock(16, 32, stride=2)
         self.enc2 = RetinexBlock(32, 64, stride=2)
