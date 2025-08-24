@@ -103,7 +103,7 @@ class Config:
     luminance_threshold: float = 75.0
     dark_luminance_threshold: float = 10.0
     colour_luminance_threshold: float = 50.0
-    chroma_tolerance: float = 20
+    chroma_tolerance: float = 20.0
     gain: float = 5.0
 
     use_enhancement_gate: bool = True
