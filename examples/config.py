@@ -74,10 +74,6 @@ class Config:
     lambda_histogram: float = 1
     lambda_illum_exclusion: float = 0.15
 
-    luminance_threshold: float = 75.0
-    dark_luminance_threshold: float = 10.0
-    chroma_tolerance: float = 2.75
-    gain: float = 2.0
 
     lambda_illum_color: float = 1.
 
@@ -99,10 +95,18 @@ class Config:
     learn_local_exposure: bool = False
     learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = True
+
     learn_white_preservation: bool = True
     learn_dark_preservation: bool = True
-    use_enhancement_gate: bool = True
+    learn_colour_preservation: bool = True
 
+    luminance_threshold: float = 75.0
+    dark_luminance_threshold: float = 10.0
+    colour_luminance_threshold: float = 50.0
+    chroma_tolerance: float = 20
+    gain: float = 5.0
+
+    use_enhancement_gate: bool = True
 
     loss_adaptive_curve: bool = True
     loss_exposure: bool = True
@@ -113,7 +117,9 @@ class Config:
     loss_white_preservation: bool = True
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
-
+    loss_dark_preservation: bool = True
+    loss_color_preservation: bool = True
+    loss_chromaticity: bool = True
 
     postfix: str = "_multiexposure"
 

@@ -37,8 +37,8 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from losses import PerceptualColorLoss
-from losses import HistogramLoss, WhitePreservationLoss
+from examples.losses import ChromaticityFidelityLoss
+from losses import HistogramLoss, WhitePreservationLoss, DarkPreservationLoss, SaturatedColorPreservationLoss, PerceptualColorLoss
 from gsplat.distributed import cli
 from losses import (
     ColourConsistencyLoss,
@@ -215,6 +215,17 @@ class Runner:
             gain=cfg.gain,
             learnable=cfg.learn_white_preservation,
         ).to(self.device)
+        self.loss_dark_preservation = DarkPreservationLoss(
+            luminance_threshold=cfg.dark_luminance_threshold,
+            chroma_tolerance=cfg.chroma_tolerance,
+            gain=cfg.gain,
+            learnable=cfg.learn_dark_preservation,
+        ).to(self.device)
+        self.loss_color_preservation = SaturatedColorPreservationLoss(
+            luminance_threshold=cfg.colour_luminance_threshold,
+            learnable=cfg.learn_colour_preservation,
+        ).to(self.device)
+        self.loss_chromaticity = ChromaticityFidelityLoss().to(self.device)
 
         mean_val = 128
         std_dev = 40
@@ -250,7 +261,10 @@ class Runner:
             "exposure_local": nn.Parameter(torch.zeros(1)),
             "exclusion_val": nn.Parameter(torch.zeros(1)),
             "white_preservation": nn.Parameter(torch.zeros(1)),
+            "dark_preservation": nn.Parameter(torch.zeros(1)),
+            "color_preservation": nn.Parameter(torch.zeros(1)),
             "histogram_loss": nn.Parameter(torch.zeros(1)),
+            "chromaticity": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
 
         net_params = list(self.retinex_net.parameters())
@@ -507,6 +521,20 @@ class Runner:
         else:
             loss_white_preservation = torch.tensor(0.0, device=device)
 
+        if cfg.loss_dark_preservation:
+            loss_dark_preservation = self.loss_dark_preservation(
+                input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
+            )
+        else:
+            loss_dark_preservation = torch.tensor(0.0, device=device)
+
+        if cfg.loss_color_preservation:
+            loss_color_preservation = self.loss_color_preservation(
+                input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
+            )
+        else:
+            loss_color_preservation = torch.tensor(0.0, device=device)
+
         if cfg.loss_histogram:
             loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         else:
@@ -519,6 +547,11 @@ class Runner:
         else:
             loss_perceptual_color = torch.tensor(0.0, device=device)
 
+        if cfg.loss_chromaticity:
+            loss_chromaticity = self.loss_chromaticity(input_image_for_net, reflectance_map, illumination_map)
+        else:
+            loss_chromaticity = torch.tensor(0.0, device=device)
+
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
             "perceptual_color": loss_perceptual_color,
@@ -530,6 +563,9 @@ class Runner:
             "exclusion_val": loss_exclusion_val,
             "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
+            "dark_preservation": loss_dark_preservation,
+            "color_preservation": loss_color_preservation,
+            "chromaticity": loss_chromaticity,
         }
 
         total_loss = 0

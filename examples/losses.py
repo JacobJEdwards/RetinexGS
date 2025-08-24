@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+import kornia.filters as KF
 
 def gamma_curve(x, g):
     # Power Curve, Gamma Correction Curve
@@ -797,6 +798,43 @@ class DarkPreservationLoss(nn.Module):
         loss = torch.mean(diff * soft_dark_mask)
         return loss
 
+class SaturatedColorPreservationLoss(nn.Module):
+    def __init__(self, luminance_threshold: float = 50.0, chroma_threshold: float = 20.0, gain: float = 5.0, learnable: bool = False):
+        super().__init__()
+        if learnable:
+            self.luminance_threshold = nn.Parameter(torch.tensor(luminance_threshold))
+            self.chroma_threshold = nn.Parameter(torch.tensor(chroma_threshold))
+            self.gain = nn.Parameter(torch.tensor(gain))
+        else:
+            self.register_buffer("luminance_threshold", torch.tensor(luminance_threshold))
+            self.register_buffer("chroma_threshold", torch.tensor(chroma_threshold))
+            self.register_buffer("gain", torch.tensor(gain))
+        self.learnable = learnable
+
+    def forward(self, input_image: Tensor, reflectance_map: Tensor) -> Tensor:
+        input_lab = kornia.color.rgb_to_lab(input_image.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        L = input_lab[..., 0]
+        a = input_lab[..., 1]
+        b = input_lab[..., 2]
+        chroma = torch.sqrt(a.pow(2) + b.pow(2))
+
+        if self.learnable:
+            luminance_threshold = 100.0 * torch.sigmoid(self.luminance_threshold / 100.0)
+            chroma_threshold = F.softplus(self.chroma_threshold)
+            gain = F.softplus(self.gain)
+        else:
+            luminance_threshold = self.luminance_threshold
+            chroma_threshold = self.chroma_threshold
+            gain = self.gain
+
+        luminance_mask = torch.sigmoid((L - luminance_threshold) * gain)
+        chroma_mask = torch.sigmoid((chroma - chroma_threshold) * gain)
+        soft_saturated_mask = luminance_mask * chroma_mask
+        soft_saturated_mask = soft_saturated_mask.unsqueeze(-1)
+
+        loss = torch.mean(torch.abs(reflectance_map - input_image) * soft_saturated_mask)
+        return loss
+
 def interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
     right_indices = torch.searchsorted(xp, x, right=True)
 
@@ -836,7 +874,8 @@ class PerceptualColorLoss(nn.Module):
     def __init__(self):
         super(PerceptualColorLoss, self).__init__()
 
-    def forward(self, img1_rgb: Tensor, img2_rgb: Tensor) -> Tensor:
+    @staticmethod
+    def forward(img1_rgb: Tensor, img2_rgb: Tensor) -> Tensor:
         if img1_rgb.shape[1] != 3 or img2_rgb.shape[1] != 3:
             return torch.tensor(0.0, device=img1_rgb.device)
 
@@ -847,6 +886,22 @@ class PerceptualColorLoss(nn.Module):
         img2_ab = img2_lab[:, 1:3, :, :]
 
         return F.l1_loss(img1_ab, img2_ab)
+
+class ChromaticityFidelityLoss(nn.Module):
+    def __init__(self, illum_threshold: float = 0.3):
+        super().__init__()
+        self.illum_threshold = illum_threshold
+
+    def forward(self, input_image: Tensor, reflectance_map: Tensor, illumination_map: Tensor) -> Tensor:
+        eps = 1e-6
+        input_chroma = input_image / (input_image.sum(dim=1, keepdim=True) + eps)
+        reflect_chroma = reflectance_map / (reflectance_map.sum(dim=1, keepdim=True) + eps)
+
+        illum_mask = (illumination_map.mean(dim=1) > self.illum_threshold).float().unsqueeze(1)
+
+        loss = torch.mean(torch.abs(input_chroma - reflect_chroma) * illum_mask)
+        return loss
+
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
