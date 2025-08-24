@@ -105,12 +105,12 @@ class Config:
 
 
     loss_adaptive_curve: bool = True
-    loss_exposure: bool = True
+    loss_exposure: bool = False
     loss_reflectance_spa: bool = True
-    loss_smooth_edge_aware: bool = True
-    loss_exposure_local: bool = False
+    loss_smooth_edge_aware: bool = False
+    loss_exposure_local: bool = True
     loss_exclusion: bool = False
-    loss_white_preservation: bool = True
+    loss_white_preservation: bool = False
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
 

@@ -1622,9 +1622,9 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    # cli(main, config, verbose=True)
+    cli(main, config, verbose=True)
 
-    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
     # study.optimize(objective, n_trials=60, catch=(RuntimeError, ValueError))
     #
@@ -1639,20 +1639,20 @@ if __name__ == "__main__":
     #     for key, value in trial.params.items():
     #         print(f" {key}: {value}")
     #
-    print("objective 2")
-
-    study.optimize(objective2, n_trials=30, catch=(RuntimeError, ValueError))
-
-    print("Study statistics: ")
-    print(f" Number of finished trials: {len(study.trials)}")
-
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f" Trial {i}:")
-        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print(" Params: ")
-        for key, value in trial.params.items():
-            print(f" {key}: {value}")
+    # print("objective 2")
+    #
+    # study.optimize(objective2, n_trials=30, catch=(RuntimeError, ValueError))
+    #
+    # print("Study statistics: ")
+    # print(f" Number of finished trials: {len(study.trials)}")
+    #
+    # print("Best trials (Pareto front):")
+    # for i, trial in enumerate(study.best_trials):
+    #     print(f" Trial {i}:")
+    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+    #     print(" Params: ")
+    #     for key, value in trial.params.items():
+    #         print(f" {key}: {value}")
 
     # save the top results to a file
     # with open("optuna_results_stump.json", "w") as f:
