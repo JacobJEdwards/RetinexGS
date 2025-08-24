@@ -97,8 +97,8 @@ class Config:
     learn_adaptive_curve_thresholds: bool = False
     learn_adaptive_curve_use_embedding: bool = True
     learn_local_exposure: bool = False
-    learn_global_exposure: bool = False
-    learn_edge_aware_gamma: bool = False
+    learn_global_exposure: bool = True
+    learn_edge_aware_gamma: bool = True
     learn_white_preservation: bool = True
     learn_dark_preservation: bool = True
     use_enhancement_gate: bool = True
