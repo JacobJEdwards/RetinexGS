@@ -88,8 +88,8 @@ class Config:
 
     predictive_adaptive_curve: bool = True
 
-    exposure_loss_patch_size: int = 256
-    exposure_mean_val: float = 0.46
+    exposure_loss_patch_size: int = 32
+    exposure_mean_val: float = 0.38
     exposure_loss_use_embedding: bool = True
 
     learn_spatial_contrast: bool = False
@@ -97,9 +97,9 @@ class Config:
     learn_adaptive_curve_thresholds: bool = False
     learn_adaptive_curve_use_embedding: bool = True
     learn_local_exposure: bool = False
-    learn_global_exposure: bool = True
+    learn_global_exposure: bool = False
     learn_edge_aware_gamma: bool = False
-    learn_white_preservation: bool = True
+    learn_white_preservation: bool = False
     learn_dark_preservation: bool = True
     use_enhancement_gate: bool = True
 
