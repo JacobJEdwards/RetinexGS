@@ -117,7 +117,7 @@ class Config:
     loss_white_preservation: bool = True
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
-    loss_dark_preservation: bool = True
+    loss_dark_preservation: bool = False
     loss_color_preservation: bool = False
     loss_chromaticity: bool = False
 
