@@ -1650,7 +1650,7 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    # cli(main, config, verbose=True)
+    cli(main, config, verbose=True)
 
     study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
