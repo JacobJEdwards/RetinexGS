@@ -12,7 +12,7 @@ class Config:
     compression: Literal["png"] | None = None
     render_traj_path: str = "interp"
 
-    data_dir: Path = Path("/workspace/360_v2/bicycle")
+    data_dir: Path = Path("/workspace/360_v2/bonsai")
     data_factor: int = 1
     result_dir: Path = Path("/workspace/result")
     test_every: int = 8
@@ -96,9 +96,9 @@ class Config:
     learn_global_exposure: bool = False
     learn_edge_aware_gamma: bool = True
 
-    learn_white_preservation: bool = True
-    learn_dark_preservation: bool = True
-    learn_colour_preservation: bool = True
+    learn_white_preservation: bool = False
+    learn_dark_preservation: bool = False
+    learn_colour_preservation: bool = False
 
     luminance_threshold: float = 75.0
     dark_luminance_threshold: float = 10.0
