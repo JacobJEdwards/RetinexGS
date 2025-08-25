@@ -1,12 +1,11 @@
 SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
-RENDER_TRAJ_PATH="ellipse"
 POSTFIXES="_contrast _variance _multiexposure"
 CONFIG_OPTIONS=(
-    "--no_appearance_embeddings"
-    "--no-use_view_dirs"
-    "--no-use_normals"
-    "--no-use_camera_response_network"
+    "--no-appearance-embeddings"
+    "--no-use-view-dirs"
+    "--no-use-normals"
+    "--no-use-camera-response-network"
     "--lambda_illum_smoothness 0.0"
     "--lambda_exclusion 0.0"
     "--lambda_shn_reg 0.0"
@@ -46,11 +45,10 @@ for POSTFIX in $POSTFIXES; do
             echo "Running $SCENE with ${CONFIG_NAMES[$i]}"
             RESULT_DIR="$RESULT_DIR_BASE/${CONFIG_NAMES[$i]}"
             CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer --data_factor $DATA_FACTOR \
-                --render_traj_path $RENDER_TRAJ_PATH \
                 --data_dir $SCENE_DIR/"$SCENE"/ \
+                --postfix $POSTFIX \
                 --result_dir $RESULT_DIR/"$SCENE"/ \
-                ${CONFIG_OPTIONS[$i]} \
-                --postfix $POSTFIX
+                ${CONFIG_OPTIONS[$i]}
         done
     done
 done

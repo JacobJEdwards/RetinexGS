@@ -62,6 +62,8 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
+    postfix = "_contrast"
+
     appearance_embeddings: bool = True
     appearance_embedding_dim: int = 64
 
@@ -73,7 +75,6 @@ class Config:
 
     use_yuv_colourspace: bool = False
 
-    postfix = "_contrast"
 
     lambda_illum_smoothness: float = 0.005
     lambda_exclusion: float = 0.3
