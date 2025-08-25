@@ -431,7 +431,7 @@ class Runner:
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        log_illumination_map, alpha, beta, local_exposure, _ = checkpoint(
+        log_illumination_map, alpha, beta, local_exposure = checkpoint(
             self.retinex_net,
             input_image_for_net,
             retinex_embedding,
