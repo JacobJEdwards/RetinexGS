@@ -871,8 +871,8 @@ class Runner:
                     is_pretrain=False
                 )
 
-                gt_illumination_map = gt_illumination_map.detach()
-                gt_reflectance_target = gt_reflectance_target.detach()
+                # gt_illumination_map = gt_illumination_map.detach()
+                # gt_reflectance_target = gt_reflectance_target.detach()
 
                 gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1)
 
