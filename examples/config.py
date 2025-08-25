@@ -62,7 +62,7 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    postfix = "_contrast"
+    postfix: str = "_contrast"
 
     appearance_embeddings: bool = True
     appearance_embedding_dim: int = 64
