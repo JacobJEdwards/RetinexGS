@@ -92,12 +92,12 @@ class Config:
     exposure_mean_val: float = 0.38
     exposure_loss_use_embedding: bool = True
 
-    learn_spatial_contrast: bool = False
+    learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
     learn_adaptive_curve_thresholds: bool = False
     learn_adaptive_curve_use_embedding: bool = True
-    learn_local_exposure: bool = False
-    learn_global_exposure: bool = False
+    learn_local_exposure: bool = True
+    learn_global_exposure: bool = True
     learn_edge_aware_gamma: bool = False
     learn_white_preservation: bool = False
     learn_dark_preservation: bool = True
