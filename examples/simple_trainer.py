@@ -532,12 +532,29 @@ class Runner:
             "histogram_loss": loss_histogram,
         }
 
+        fallback_lambdas = {
+            "reflect_spa": cfg.lambda_reflect,
+            "perceptual_color": cfg.lambda_perceptual_color,
+            "color_val": cfg.lambda_illum_color,
+            "exposure_val": cfg.lambda_illum_exposure,
+            "adaptive_curve": cfg.lambda_illum_curve,
+            "smooth_edge_aware": cfg.lambda_edge_aware_smooth,
+            "exposure_local": cfg.lambda_illum_exposure_local,
+            "exclusion_val": cfg.lambda_illum_exclusion,
+            "white_preservation": cfg.lambda_white_preservation,
+            "histogram_loss": cfg.lambda_histogram,
+        }
+
+
         total_loss = 0
         loss_names = individual_losses.keys()
         for name in loss_names:
             loss = individual_losses[name]
-            log_sigma = self.log_sigmas[name]
-            total_loss += 0.5 * torch.exp(-log_sigma) * loss + 0.5 * log_sigma
+            if cfg.dynamic_weights:
+                log_sigma = self.log_sigmas[name]
+                total_loss += 0.5 * torch.exp(-log_sigma) * loss + 0.5 * log_sigma
+            else:
+                total_loss += fallback_lambdas[name] * loss
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)

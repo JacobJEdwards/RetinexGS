@@ -65,14 +65,16 @@ class Config:
     lambda_low: float = 0.2
     lambda_illumination: float = 0.1
 
-    lambda_reflect: float = 3
-    lambda_illum_curve: float = 5.8
-    lambda_illum_exposure: float = 1.1
-    lambda_edge_aware_smooth: float = 6.4
+    lambda_reflect: float = 1.0
+    lambda_illum_curve: float = 1.0
+    lambda_illum_exposure: float = 1.0
+    lambda_edge_aware_smooth: float = 20.0
+
     lambda_illum_exposure_local: float = 1.8
     lambda_white_preservation: float = 3.7
     lambda_histogram: float = 1
     lambda_illum_exclusion: float = 0.15
+    lambda_perceptual_color: float = 1.0
 
     luminance_threshold: float = 75.0
     dark_luminance_threshold: float = 10.0
@@ -103,17 +105,17 @@ class Config:
     learn_dark_preservation: bool = True
     use_enhancement_gate: bool = True
 
+    dynamic_weights: bool = False
 
     loss_adaptive_curve: bool = True
-    loss_exposure: bool = False
+    loss_exposure: bool = True
     loss_reflectance_spa: bool = True
     loss_smooth_edge_aware: bool = True
-    loss_exposure_local: bool = True
+    loss_exposure_local: bool = False
     loss_exclusion: bool = False
     loss_white_preservation: bool = False
-    loss_histogram: bool = True
-    loss_perceptual_color: bool = True
-
+    loss_histogram: bool = False
+    loss_perceptual_color: bool = False
 
     postfix: str = "_multiexposure"
 
