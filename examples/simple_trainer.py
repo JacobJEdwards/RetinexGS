@@ -57,6 +57,7 @@ from utils import (
     set_random_seed,
 )
 from retinex import MultiScaleRetinexNet
+from retinex_old import MultiScaleRetinexNet as MultiScaleRetinexNetOld
 
 
 def create_splats_with_optimizers(
@@ -227,13 +228,15 @@ class Runner:
         retinex_in_channels = 1 if cfg.use_lab_color_space else 3
         retinex_out_channels = 1 if cfg.use_lab_color_space else 3
 
-        self.retinex_net = MultiScaleRetinexNet(
+        self.retinex_net = MultiScaleRetinexNetOld(
             in_channels=retinex_in_channels,
             out_channels=retinex_out_channels,
-            predictive_adaptive_curve=cfg.predictive_adaptive_curve,
-            learn_local_exposure=cfg.learn_local_exposure,
             embed_dim=cfg.retinex_embedding_dim,
-            use_enhancement_gate=cfg.use_enhancement_gate,
+            predictive_adaptive_curve=cfg.predictive_adaptive_curve,
+            use_dilated_convs=True,
+            use_se_blocks=True,
+            use_pixel_shuffle=True,
+            use_stride_conv=True,
         ).to(self.device)
 
         if world_size > 1:
