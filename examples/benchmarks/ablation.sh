@@ -1,5 +1,4 @@
-SCENE_DIR="../../360_v2"
-RESULT_DIR="../../3d/contrast/results/benchmark"
+SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 RENDER_TRAJ_PATH="ellipse"
 POSTFIXES="_contrast _variance _multiexposure"
