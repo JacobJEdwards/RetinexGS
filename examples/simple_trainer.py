@@ -228,15 +228,24 @@ class Runner:
         retinex_in_channels = 1 if cfg.use_lab_color_space else 3
         retinex_out_channels = 1 if cfg.use_lab_color_space else 3
 
-        self.retinex_net = MultiScaleRetinexNetOld(
+        # self.retinex_net = MultiScaleRetinexNetOld(
+        #     in_channels=retinex_in_channels,
+        #     out_channels=retinex_out_channels,
+        #     embed_dim=cfg.retinex_embedding_dim,
+        #     predictive_adaptive_curve=cfg.predictive_adaptive_curve,
+        #     use_dilated_convs=True,
+        #     use_se_blocks=True,
+        #     use_pixel_shuffle=True,
+        #     use_stride_conv=True,
+        # ).to(self.device)
+
+        self.retinex_net = MultiScaleRetinexNet(
             in_channels=retinex_in_channels,
             out_channels=retinex_out_channels,
             embed_dim=cfg.retinex_embedding_dim,
             predictive_adaptive_curve=cfg.predictive_adaptive_curve,
-            use_dilated_convs=True,
-            use_se_blocks=True,
-            use_pixel_shuffle=True,
-            use_stride_conv=True,
+            learn_local_exposure=cfg.learn_local_exposure,
+            use_enhancement_gate=cfg.use_enhancement_gate,
         ).to(self.device)
 
         if world_size > 1:
@@ -1501,38 +1510,15 @@ def objective1(trial: optuna.Trial):
 def objective2(trial: optuna.Trial):
     cfg = Config()
 
-    cfg.loss_adaptive_curve = trial.suggest_categorical(
-        "loss_adaptive_curve", [True, False]
+    cfg.freeze_step = trial.suggest_categorical(
+        "freeze_step", [1000, 2000, 3000]
     )
-    cfg.loss_exposure = trial.suggest_categorical(
-        "loss_exposure", [True, False]
-    )
-    cfg.loss_reflectance_spa = trial.suggest_categorical(
-        "loss_reflectance_spa", [True, False]
-    )
-    cfg.loss_smooth_edge_aware = trial.suggest_categorical(
-        "loss_smooth_edge_aware", [True, False]
-    )
-    cfg.loss_exposure_local = trial.suggest_categorical(
-        "loss_exposure_local", [True, False]
-    )
-    cfg.loss_exclusion = trial.suggest_categorical(
-        "loss_exclusion", [True, False]
-    )
-    cfg.loss_white_preservation = trial.suggest_categorical(
-        "loss_white_preservation", [True, False]
-    )
-    cfg.loss_histogram = trial.suggest_categorical(
-        "loss_histogram", [True, False]
-    )
-    cfg.loss_perceptual_color = trial.suggest_categorical(
-        "loss_perceptual_color", [True, False]
-    )
+    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 1e-4, 100.0, log=True)
+    cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 1.0)
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
-    cfg.pretrain_retinex = True
-    cfg.pretrain_steps = 1000
+    cfg.pretrain_retinex = False
 
     average_psnr = 0.0
     average_ssim = 0.0
@@ -1656,9 +1642,9 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    # cli(main, config, verbose=True)
 
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
+    study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
 
     # study.optimize(objective, n_trials=60, catch=(RuntimeError, ValueError))
     #
@@ -1675,19 +1661,15 @@ if __name__ == "__main__":
     #
     # print("objective 2")
     #
-    # study.optimize(objective2, n_trials=30, catch=(RuntimeError, ValueError))
-    #
-    # print("Study statistics: ")
-    # print(f" Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f" Trial {i}:")
-    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print(" Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f" {key}: {value}")
+    study.optimize(objective2, n_trials=60, catch=(RuntimeError, ValueError))
 
-    # save the top results to a file
-    # with open("optuna_results_stump.json", "w") as f:
-    #     json.dump(study.trials_dataframe().to_dict(orient="records"), f, indent=4)
+    print("Study statistics: ")
+    print(f" Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f" Trial {i}:")
+        print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print(" Params: ")
+        for key, value in trial.params.items():
+            print(f" {key}: {value}")

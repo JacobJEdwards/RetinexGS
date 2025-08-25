@@ -76,46 +76,46 @@ class Config:
     lambda_illum_exclusion: float = 0.15
     lambda_perceptual_color: float = 1.0
 
-    luminance_threshold: float = 75.0
+    luminance_threshold: float = 85.0
     dark_luminance_threshold: float = 10.0
     chroma_tolerance: float = 2.75
     gain: float = 2.0
 
     lambda_illum_color: float = 1.
 
-    pretrain_retinex: bool = True
+    pretrain_retinex: bool = False
     pretrain_steps: int = 2000
 
     use_lab_color_space: bool = False
 
-    predictive_adaptive_curve: bool = False
+    predictive_adaptive_curve: bool = True
 
     exposure_loss_patch_size: int = 32
-    exposure_mean_val: float = 0.48
+    exposure_mean_val: float = 0.46
     exposure_loss_use_embedding: bool = False
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
-    learn_adaptive_curve_thresholds: bool = False
+    learn_adaptive_curve_thresholds: bool = True
     learn_adaptive_curve_use_embedding: bool = True
     learn_local_exposure: bool = True
     learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = False
-    learn_white_preservation: bool = False
+    learn_edge_aware_gamma: bool = True
+    learn_white_preservation: bool = True
     learn_dark_preservation: bool = False
     use_enhancement_gate: bool = True
 
-    dynamic_weights: bool = False
+    dynamic_weights: bool = True
 
     loss_adaptive_curve: bool = True
     loss_exposure: bool = True
     loss_reflectance_spa: bool = True
     loss_smooth_edge_aware: bool = True
     loss_exposure_local: bool = False
-    loss_exclusion: bool = False
-    loss_white_preservation: bool = False
-    loss_histogram: bool = False
-    loss_perceptual_color: bool = False
+    loss_exclusion: bool = True
+    loss_white_preservation: bool = True
+    loss_histogram: bool = True
+    loss_perceptual_color: bool = True
 
     postfix: str = "_multiexposure"
 
