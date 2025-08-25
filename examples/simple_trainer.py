@@ -256,19 +256,8 @@ class Runner:
             "histogram_loss": nn.Parameter(torch.zeros(1)),
         }).to(self.device)
 
-        net_params = list(self.retinex_net.parameters())
-
-        net_params += self.loss_edge_aware_smooth.parameters()
-        net_params += self.loss_adaptive_curve.parameters()
-        net_params += self.loss_spatial.parameters()
-        net_params += self.log_sigmas.parameters()
-        net_params += self.loss_white_preservation.parameters()
-        net_params += self.loss_exposure.parameters()
-
-        net_params.append(self.target_histogram_dist)
-
         self.retinex_optimizer = torch.optim.AdamW(
-            net_params,
+            self.retinex_net.parameters(),
             lr=cfg.retinex_opt_lr * math.sqrt(cfg.batch_size),
             weight_decay=0.0,
             fused=True
@@ -282,10 +271,35 @@ class Runner:
             self.retinex_embeds = DDP(self.retinex_embeds, device_ids=[local_rank])
 
         self.retinex_embed_optimizer = torch.optim.AdamW(
-            [{"params": self.retinex_embeds.parameters(), "lr": cfg.retinex_embedding_lr}],
+            self.retinex_embeds.parameters(),
+            lr=cfg.retinex_embedding_lr * math.sqrt(cfg.batch_size),
             weight_decay=0.0,
             fused=True
         )
+
+        loss_params = []
+        if cfg.learn_edge_aware_gamma:
+            loss_params += self.loss_edge_aware_smooth.parameters()
+        if cfg.predictive_adaptive_curve or cfg.learn_adaptive_curve_thresholds or cfg.learn_adaptive_curve_lambdas:
+            loss_params += self.loss_adaptive_curve.parameters()
+        if cfg.learn_spatial_contrast:
+            loss_params += self.loss_spatial.parameters()
+        if cfg.dynamic_weights:
+            loss_params += self.log_sigmas.parameters()
+        if cfg.learn_white_preservation:
+            loss_params += self.loss_white_preservation.parameters()
+        if cfg.learn_global_exposure:
+            loss_params += self.loss_exposure.parameters()
+
+        loss_params.append(self.target_histogram_dist)
+
+        self.loss_optimizer = torch.optim.AdamW(
+            loss_params,
+            lr=cfg.loss_opt_lr * math.sqrt(cfg.batch_size),
+            weight_decay=0.0,
+            fused=True
+        )
+
 
         feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
