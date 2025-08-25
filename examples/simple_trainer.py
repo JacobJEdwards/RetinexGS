@@ -1638,7 +1638,12 @@ def objective2(trial: optuna.Trial):
             runner.trial = trial
             runner.train()
 
-            psnr, ssim, lpips = runner.eval_get_stats(step=3000)
+            with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
+                stats = json.load(f)
+
+            psnr = stats.get("psnr_enh", 0)
+            ssim = stats.get("ssim_enh", 0)
+            lpips = stats.get("lpips_enh", 0)
 
             average_psnr += psnr
             average_ssim += ssim
