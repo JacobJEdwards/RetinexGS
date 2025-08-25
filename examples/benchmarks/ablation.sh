@@ -48,9 +48,9 @@ for POSTFIX in $POSTFIXES; do
             CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer --data_factor $DATA_FACTOR \
                 --render_traj_path $RENDER_TRAJ_PATH \
                 --data_dir $SCENE_DIR/"$SCENE"/ \
-                --postfix $POSTFIX \
                 --result_dir $RESULT_DIR/"$SCENE"/ \
-                ${CONFIG_OPTIONS[$i]}
+                ${CONFIG_OPTIONS[$i]} \
+                --postfix $POSTFIX
         done
     done
 done
