@@ -1635,6 +1635,46 @@ def objective2(trial: optuna.Trial):
     cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 1e-4, 100.0, log=True)
     cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 1.0)
 
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-2, log=True)
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
+    cfg.loss_opt_lr = trial.suggest_float("loss_opt_lr", 1e-6, 1e-2, log=True)
+
+    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
+        "learn_adaptive_curve_lambdas", [True, False]
+    )
+    cfg.learn_spatial_contrast = trial.suggest_categorical(
+        "learn_spatial_contrast", [True, False]
+    )
+    cfg.learn_global_exposure = trial.suggest_categorical(
+        "learn_global_exposure", [True, False]
+    )
+    cfg.learn_local_exposure = trial.suggest_categorical(
+        "learn_local_exposure", [True, False]
+    )
+    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
+        "learn_edge_aware_gamma", [True, False]
+    )
+    cfg.predictive_adaptive_curve = trial.suggest_categorical(
+        "predictive_adaptive_curve", [True, False]
+    )
+    cfg.use_enhancement_gate = trial.suggest_categorical(
+        "use_enhancement_gate", [True, False]
+    )
+    cfg.learn_adaptive_curve_thresholds = trial.suggest_categorical(
+        "learn_adaptive_curve_thresholds", [True, False]
+    )
+    cfg.learn_adaptive_curve_use_embedding = trial.suggest_categorical(
+        "learn_adaptive_curve_use_embedding", [True, False]
+    )
+    cfg.learn_white_preservation = trial.suggest_categorical(
+        "learn_white_preservation", [True, False]
+    )
+    cfg.dynamic_weights = trial.suggest_categorical(
+        "dynamic_weights", [True, False]
+    )
+
+
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
     cfg.pretrain_retinex = False
