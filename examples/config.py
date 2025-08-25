@@ -92,7 +92,7 @@ class Config:
 
     exposure_loss_patch_size: int = 32
     exposure_mean_val: float = 0.46
-    exposure_loss_use_embedding: bool = False
+    exposure_loss_use_embedding: bool = True
 
     learn_spatial_contrast: bool = True
     learn_adaptive_curve_lambdas: bool = True
