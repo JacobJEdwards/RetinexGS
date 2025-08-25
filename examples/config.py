@@ -62,8 +62,8 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    lambda_low: float = 0.2
-    lambda_illumination: float = 0.1
+    lambda_low: float = 0.80
+    lambda_illumination: float = 0.45
 
     lambda_reflect: float = 1.0
     lambda_illum_curve: float = 1.0
@@ -88,24 +88,24 @@ class Config:
 
     use_lab_color_space: bool = False
 
-    predictive_adaptive_curve: bool = True
+    predictive_adaptive_curve: bool = False
 
     exposure_loss_patch_size: int = 32
     exposure_mean_val: float = 0.46
     exposure_loss_use_embedding: bool = True
 
-    learn_spatial_contrast: bool = True
+    learn_spatial_contrast: bool = False
     learn_adaptive_curve_lambdas: bool = True
-    learn_adaptive_curve_thresholds: bool = True
+    learn_adaptive_curve_thresholds: bool = False
     learn_adaptive_curve_use_embedding: bool = True
-    learn_local_exposure: bool = True
-    learn_global_exposure: bool = True
-    learn_edge_aware_gamma: bool = True
-    learn_white_preservation: bool = True
+    learn_local_exposure: bool = False
+    learn_global_exposure: bool = False
+    learn_edge_aware_gamma: bool = False
+    learn_white_preservation: bool = False
     learn_dark_preservation: bool = False
-    use_enhancement_gate: bool = True
+    use_enhancement_gate: bool = False
 
-    dynamic_weights: bool = True
+    dynamic_weights: bool = False
 
     loss_adaptive_curve: bool = True
     loss_exposure: bool = True
@@ -119,13 +119,13 @@ class Config:
 
     postfix: str = "_multiexposure"
 
-    retinex_opt_lr: float = 1e-3
-    retinex_embedding_lr: float = 5e-5
+    retinex_opt_lr: float = 7e-3
+    retinex_embedding_lr: float = 4e-4
     loss_opt_lr: float = 1e-4
 
-    retinex_embedding_dim: int = 32
+    retinex_embedding_dim: int = 128
 
-    freeze_step: int = 10
+    freeze_step: int = 1000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
