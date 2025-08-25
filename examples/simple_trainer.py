@@ -684,6 +684,7 @@ class Runner:
 
         initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
         initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
+        initial_loss_lr = self.loss_optimizer.param_groups[0]["lr"]
         schedulers = [
             CosineAnnealingLR(
                 self.retinex_optimizer,
@@ -695,6 +696,11 @@ class Runner:
                 T_max=cfg.pretrain_steps + cfg.freeze_step,
                 eta_min=initial_embed_lr * 0.01,
             ),
+            CosineAnnealingLR(
+                self.loss_optimizer,
+                T_max=cfg.pretrain_steps + cfg.freeze_step,
+                eta_min=initial_loss_lr * 0.01,
+            )
         ]
 
         pbar = tqdm.tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
@@ -741,11 +747,13 @@ class Runner:
             # self.retinex_embed_optimizer.step()
             self.scaler.step(self.retinex_optimizer)
             self.scaler.step(self.retinex_embed_optimizer)
+            self.scaler.step(self.loss_optimizer)
 
             self.scaler.update()
 
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
+            self.loss_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
@@ -777,6 +785,7 @@ class Runner:
 
         initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
         initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
+        initial_loss_lr = self.retinex_optimizer.param_groups[0]["lr"]
         schedulers.extend([
             CosineAnnealingLR(
                 self.retinex_optimizer,
@@ -787,6 +796,11 @@ class Runner:
                 self.retinex_embed_optimizer,
                 T_max=cfg.freeze_step,
                 eta_min=initial_embed_lr * 0.01,
+            ),
+            CosineAnnealingLR(
+                self.loss_optimizer,
+                T_max=cfg.freeze_step,
+                eta_min=initial_loss_lr * 0.01
             )
         ])
 
@@ -977,6 +991,7 @@ class Runner:
             # self.retinex_optimizer.step()
             self.scaler.step(self.retinex_embed_optimizer)
             # self.retinex_embed_optimizer.step()
+            self.scaler.step(self.loss_optimizer)
 
             self.scaler.update()
 
@@ -985,6 +1000,7 @@ class Runner:
 
             self.retinex_optimizer.zero_grad()
             self.retinex_embed_optimizer.zero_grad()
+            self.loss_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
