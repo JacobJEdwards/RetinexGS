@@ -1015,6 +1015,109 @@ class Runner:
                 self.render_traj(step)
 
     @torch.no_grad()
+    def eval_get_stats(self, step: int, stage: str = "val"):
+        print(f"Running evaluation for step {step} on '{stage}' set...")
+        cfg = self.cfg
+        device = self.device
+        world_rank = self.world_rank
+
+        valloader = torch.utils.data.DataLoader(
+            self.valset, shuffle=False, num_workers=1
+        )
+        ellipse_time_total = 0
+        metrics = defaultdict(list)
+        for i, data in enumerate(tqdm.tqdm(valloader, desc=f"Eval {stage}")):
+            camtoworlds = data["camtoworld"].to(device)
+            Ks = data["K"].to(device)
+
+            pixels = data["image"].to(device) / 255.0
+            image_id = data["image_id"].to(device)
+
+            masks = data["mask"].to(device) if "mask" in data else None
+            height, width = pixels.shape[1:3]
+
+            torch.cuda.synchronize()
+            tic = time.time()
+
+            out = self.rasterize_splats(
+                camtoworlds=camtoworlds,
+                Ks=Ks,
+                width=width,
+                height=height,
+                sh_degree=cfg.sh_degree,
+                near_plane=cfg.near_plane,
+                far_plane=cfg.far_plane,
+                masks=masks,
+            )
+
+            colors_enh, alphas_enh, info = out
+            retinex_output = self.get_retinex_output(
+                images_ids=image_id, pixels=pixels
+            )
+            (
+                _,
+                illumination_map,
+                _,
+                _,
+                _,
+                _,
+            ) = retinex_output
+
+            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1)
+            colors_low = torch.clamp(colors_low, 0.0, 1.0)
+
+            torch.cuda.synchronize()
+            ellipse_time_total += max(time.time() - tic, 1e-10)
+
+            colors_low = torch.clamp(colors_low, 0.0, 1.0)
+            colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
+
+            if world_rank == 0:
+                pixels_p = pixels.permute(0, 3, 1, 2)
+                colors_p = colors_low.permute(0, 3, 1, 2)
+
+                metrics["psnr"].append(self.psnr(colors_p, pixels_p))
+                metrics["ssim"].append(self.ssim(colors_p, pixels_p))
+                metrics["lpips"].append(self.lpips(colors_p, pixels_p))
+
+                colors_enh_p = colors_enh.permute(0, 3, 1, 2)
+
+                metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
+                metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
+                metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
+
+        if world_rank == 0:
+            stats_eval = {}
+            for k, v_list in metrics.items():
+                if v_list:
+                    if isinstance(v_list[0], torch.Tensor):
+                        stats_eval[k] = torch.stack(v_list).mean().item()
+                    else:
+                        stats_eval[k] = sum(v_list) / len(v_list)
+                else:
+                    stats_eval[k] = 0
+
+            print_parts_eval = [
+                f"PSNR: {stats_eval.get('psnr', 0):.3f}",
+                f"SSIM: {stats_eval.get('ssim', 0):.4f}",
+                f"LPIPS: {stats_eval.get('lpips', 0):.3f}",
+                f"PSNR Enh: {stats_eval.get('psnr_enh', 0):.3f}",
+                f"SSIM Enh: {stats_eval.get('ssim_enh', 0):.4f}",
+                f"LPIPS Enh: {stats_eval.get('lpips_enh', 0):.3f}",
+            ]
+            print_parts_eval.extend(
+                [
+                    f"Time: {stats_eval.get('ellipse_time', 0):.3f}s/image",
+                    f"GS: {stats_eval.get('num_GS', 0)}",
+                ]
+            )
+            print(f"Eval {stage} Step {step}: " + " | ".join(print_parts_eval))
+
+            return stats_eval["psnr_enh"], stats_eval["ssim_enh"], stats_eval["lpips_enh"]
+
+
+
+    @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
         print(f"Running evaluation for step {step} on '{stage}' set...")
         cfg = self.cfg
@@ -1533,9 +1636,10 @@ def objective2(trial: optuna.Trial):
         try:
             runner = Runner(0, 0, 1, cfg)
             runner.trial = trial
-            runner.pre_train_retinex()
+            runner.train()
 
-            psnr, ssim, lpips = runner.eval_retinex()
+            psnr, ssim, lpips = runner.eval_get_stats(step=3000)
+
             average_psnr += psnr
             average_ssim += ssim
             average_lpips += lpips
