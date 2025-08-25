@@ -1826,7 +1826,7 @@ if __name__ == "__main__":
     #
     # print("objective 2")
     #
-    study.optimize(objective2, n_trials=60, catch=(RuntimeError, ValueError))
+    study.optimize(objective2, n_trials=50, catch=(RuntimeError, ValueError))
 
     print("Study statistics: ")
     print(f" Number of finished trials: {len(study.trials)}")
