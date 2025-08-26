@@ -11,10 +11,6 @@ CONFIG_OPTIONS=(
   "--no-loss_white_preservation"
   "--no-loss_histogram"
   "--no-loss_perceptual_color"
-  "--no-learn_adaptive_curve_lambdas"
-  "--no-learn_adaptive_curve_use_embedding"
-  "--lambda_low 0.0"
-  "--lambda_illumination 0.0"
 )
 
 CONFIG_NAMES=(
@@ -27,10 +23,6 @@ CONFIG_NAMES=(
   "no_loss_white_preservation"
   "no_loss_histogram"
   "no_loss_perceptual_color"
-  "no_learn_adaptive_curve_lambdas"
-  "no_learn_adaptive_curve_use_embedding"
-  "lambda_low_0.0"
-  "lambda_illumination_0.0"
 )
 
 for POSTFIX in $POSTFIXES; do
