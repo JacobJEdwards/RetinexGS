@@ -185,9 +185,9 @@ class Parser:
         #     image_dir_suffix = f"_{factor}"
         # else:
         #     image_dir_suffix = ""
-        self.postfix = postfix
-        colmap_image_dir = os.path.join(data_dir, f"images_8{postfix}")
-        image_dir = os.path.join(data_dir, f"images_8{postfix}")
+        self.postfix = postfix if postfix.startswith("_") else "_" + postfix
+        colmap_image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
+        image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
                 raise ValueError(f"Image folder {d} does not exist.")
