@@ -483,11 +483,11 @@ class IlluminationField(nn.Module):
         residual = mlp_input_tensor[:, :residual_dim]
 
         if residual_dim == self.hidden_dim:
-            hidden_features += residual
+            hidden_features = hidden_features.clone() + residual
         else:
             padded_residual = torch.zeros(mlp_input_tensor.shape[0], self.hidden_dim, device=mlp_input_tensor.device)
             padded_residual[:, :residual_dim] = residual
-            hidden_features += padded_residual
+            hidden_features = hidden_features.clone() + padded_residual
 
         # residual = mlp_input_tensor[:, :self.hidden_dim]
         # hidden_features = hidden_features.clone() + residual
