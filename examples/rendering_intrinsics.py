@@ -16,26 +16,28 @@ from gsplat.cuda._wrapper import (
     rasterize_to_pixels,
     spherical_harmonics,
 )
+
+
 def rasterize_intrinsics(
-        means: Tensor,  # [..., N, 3]
-        quats: Tensor,  # [..., N, 4]
-        scales: Tensor,  # [..., N, 3]
-        opacities: Tensor,  # [..., N]
-        base_reflectance_sh: Tensor,  # [..., (C,) N, K, 3]
-        viewmats: Tensor,  # [..., C, 4, 4]
-        Ks: Tensor,  # [..., C, 3, 3]
-        width: int,
-        height: int,
-        sh_degree: int,
-        near_plane: float = 0.01,
-        far_plane: float = 1e10,
-        radius_clip: float = 0.0,
-        eps2d: float = 0.3,
-        packed: bool = False,
-        tile_size: int = 16,
-        backgrounds: Tensor | None = None,
-        absgrad: bool = False,
-        rasterize_mode: Literal["classic", "antialiased"] = "classic",
+    means: Tensor,  # [..., N, 3]
+    quats: Tensor,  # [..., N, 4]
+    scales: Tensor,  # [..., N, 3]
+    opacities: Tensor,  # [..., N]
+    base_reflectance_sh: Tensor,  # [..., (C,) N, K, 3]
+    viewmats: Tensor,  # [..., C, 4, 4]
+    Ks: Tensor,  # [..., C, 3, 3]
+    width: int,
+    height: int,
+    sh_degree: int,
+    near_plane: float = 0.01,
+    far_plane: float = 1e10,
+    radius_clip: float = 0.0,
+    eps2d: float = 0.3,
+    packed: bool = False,
+    tile_size: int = 16,
+    backgrounds: Tensor | None = None,
+    absgrad: bool = False,
+    rasterize_mode: Literal["classic", "antialiased"] = "classic",
 ) -> tuple[dict[str, Tensor], Tensor, dict[str, Any]]:
     """
     Performs a single-pass rasterization to render intrinsic properties of the scene.
@@ -90,14 +92,22 @@ def rasterize_intrinsics(
 
     if packed:
         (
-            batch_ids, camera_ids, gaussian_ids, radii,
-            means2d, depths, conics, compensations,
+            batch_ids,
+            camera_ids,
+            gaussian_ids,
+            radii,
+            means2d,
+            depths,
+            conics,
+            compensations,
         ) = proj_results
         opacities_proj = opacities.view(B, N)[batch_ids, gaussian_ids]
         image_ids = batch_ids * C + camera_ids
     else:
         radii, means2d, depths, conics, compensations = proj_results
-        opacities_proj = torch.broadcast_to(opacities[..., None, :], batch_dims + (C, N))
+        opacities_proj = torch.broadcast_to(
+            opacities[..., None, :], batch_dims + (C, N)
+        )
         batch_ids, camera_ids, gaussian_ids, image_ids = None, None, None, None
 
     if compensations is not None:
@@ -116,16 +126,20 @@ def rasterize_intrinsics(
         }
     )
 
-
     campos = torch.inverse(viewmats)[..., :3, 3]
     if packed:
-        dirs = means.view(B, N, 3)[batch_ids, gaussian_ids] - campos.view(B, C, 3)[batch_ids, camera_ids]
+        dirs = (
+            means.view(B, N, 3)[batch_ids, gaussian_ids]
+            - campos.view(B, C, 3)[batch_ids, camera_ids]
+        )
         masks = (radii > 0).all(dim=-1)
         shs = base_reflectance_sh.view(B, N, -1, 3)[batch_ids, gaussian_ids]
     else:
         dirs = means[..., None, :, :] - campos[..., None, :]
         masks = (radii > 0).all(dim=-1)
-        shs = torch.broadcast_to(base_reflectance_sh[..., None, :, :, :], batch_dims + (C, N, -1, 3))
+        shs = torch.broadcast_to(
+            base_reflectance_sh[..., None, :, :, :], batch_dims + (C, N, -1, 3)
+        )
 
     base_reflectance_rgb = spherical_harmonics(sh_degree, dirs, shs, masks=masks)
     base_reflectance_rgb = torch.clamp_min(base_reflectance_rgb + 0.5, 0.0)
@@ -135,29 +149,39 @@ def rasterize_intrinsics(
         _, min_scale_idx = torch.min(scales, dim=-1)
 
         original_shape = min_scale_idx.shape
-        idx = min_scale_idx.view(-1, 1, 1).expand(-1, 3, 1) # Shape: [Prod(...), 3, 1]
+        idx = min_scale_idx.view(-1, 1, 1).expand(-1, 3, 1)  # Shape: [Prod(...), 3, 1]
         all_rots = rot_mats.view(-1, 3, 3)
-        normals = torch.gather(all_rots, 2, idx).squeeze(-1) # Shape: [Prod(...), 3]
+        normals = torch.gather(all_rots, 2, idx).squeeze(-1)  # Shape: [Prod(...), 3]
         normals = normals.view(original_shape + (3,))
 
     if packed:
         world_positions = means.view(B, N, 3)[batch_ids, gaussian_ids]
         splat_normals = normals.view(B, N, 3)[batch_ids, gaussian_ids]
     else:
-        world_positions = torch.broadcast_to(means[..., None, :, :], batch_dims + (C, N, 3))
-        splat_normals = torch.broadcast_to(normals[..., None, :, :], batch_dims + (C, N, 3))
-
+        world_positions = torch.broadcast_to(
+            means[..., None, :, :], batch_dims + (C, N, 3)
+        )
+        splat_normals = torch.broadcast_to(
+            normals[..., None, :, :], batch_dims + (C, N, 3)
+        )
 
     properties_to_render = torch.cat(
         [base_reflectance_rgb, world_positions, depths.unsqueeze(-1), splat_normals],
-        dim=-1
+        dim=-1,
     )
 
     tile_width = math.ceil(width / float(tile_size))
     tile_height = math.ceil(height / float(tile_size))
     tiles_per_gauss, isect_ids, flatten_ids = isect_tiles(
-        means2d, radii, depths, tile_size, tile_width, tile_height,
-        packed=packed, n_images=I, image_ids=image_ids
+        means2d,
+        radii,
+        depths,
+        tile_size,
+        tile_width,
+        tile_height,
+        packed=packed,
+        n_images=I,
+        image_ids=image_ids,
     )
     isect_offsets = isect_offset_encode(isect_ids, I, tile_width, tile_height)
     isect_offsets = isect_offsets.reshape(batch_dims + (C, tile_height, tile_width))
@@ -209,6 +233,6 @@ def rasterize_intrinsics(
         }
     )
 
-    meta.update({ "flatten_ids": flatten_ids })
+    meta.update({"flatten_ids": flatten_ids})
 
     return intrinsic_maps, render_alpha, meta

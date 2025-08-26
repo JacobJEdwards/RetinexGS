@@ -8,7 +8,17 @@ import torch.nn.functional as F
 
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int = 1, padding: int = 0, dilation: int = 1, bias: bool = False, padding_mode: str = 'replicate'):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        bias: bool = False,
+        padding_mode: str = "replicate",
+    ):
         super().__init__()
         self.depthwise = nn.Conv2d(
             in_channels,
@@ -19,7 +29,7 @@ class DepthwiseSeparableConv(nn.Module):
             dilation=dilation,
             groups=in_channels,
             bias=bias,
-            padding_mode=padding_mode
+            padding_mode=padding_mode,
         )
         self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=bias)
 
@@ -28,20 +38,26 @@ class DepthwiseSeparableConv(nn.Module):
         x = self.pointwise(x)
         return x
 
+
 class RetinexBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, stride: int = 1):
         super().__init__()
-        self.conv = DepthwiseSeparableConv(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
+        self.conv = DepthwiseSeparableConv(
+            in_channels, out_channels, kernel_size=3, stride=stride, padding=1
+        )
         self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
         self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:
         return self.act(self.norm(self.conv(x)))
 
+
 class UpBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
-        self.conv = DepthwiseSeparableConv(in_channels, out_channels * 4, kernel_size=3, padding=1)
+        self.conv = DepthwiseSeparableConv(
+            in_channels, out_channels * 4, kernel_size=3, padding=1
+        )
         self.shuffle = nn.PixelShuffle(2)
         self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
         self.act = nn.SiLU()
@@ -56,7 +72,9 @@ class ECALayer(nn.Module):
         kernel_size = int(abs((math.log(channel, 2) + b) / gamma))
         kernel_size = kernel_size if kernel_size % 2 else kernel_size + 1
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, bias=False)
+        self.conv = nn.Conv1d(
+            1, 1, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, bias=False
+        )
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: Tensor) -> Tensor:
@@ -67,10 +85,13 @@ class ECALayer(nn.Module):
         y = self.sigmoid(y)
         return x * y.expand_as(x)
 
+
 class SpatialAttentionModule(nn.Module):
     def __init__(self, kernel_size: int = 7) -> None:
         super().__init__()
-        self.conv = DepthwiseSeparableConv(2, 1, kernel_size=kernel_size, padding=kernel_size // 2)
+        self.conv = DepthwiseSeparableConv(
+            2, 1, kernel_size=kernel_size, padding=kernel_size // 2
+        )
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: Tensor) -> Tensor:
@@ -114,6 +135,7 @@ class SimpleSSM(nn.Module):
         y = y + skip
         return y
 
+
 class SSMBlock(nn.Module):
     def __init__(self, channels: int):
         super().__init__()
@@ -132,6 +154,7 @@ class SSMBlock(nn.Module):
         out = out.transpose(1, 2).reshape(b, c, h, w)
         return out
 
+
 class SEBlock(nn.Module):
     def __init__(self, channel: int, reduction: int = 16) -> None:
         super().__init__()
@@ -149,6 +172,7 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
+
 class CBAM(nn.Module):
     def __init__(self, channel: int, reduction: int = 16, kernel_size: int = 7):
         super().__init__()
@@ -160,14 +184,17 @@ class CBAM(nn.Module):
         x = self.spatial_attention(x)
         return x
 
+
 class SpatiallyFiLMLayer(nn.Module):
     def __init__(self, feature_channels: int, embed_dim: int):
         super().__init__()
         conditioning_channels = feature_channels + embed_dim
         self.param_predictor = nn.Sequential(
-            DepthwiseSeparableConv(conditioning_channels, feature_channels, kernel_size=3, padding=1),
+            DepthwiseSeparableConv(
+                conditioning_channels, feature_channels, kernel_size=3, padding=1
+            ),
             nn.SiLU(),
-            nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1)
+            nn.Conv2d(feature_channels, feature_channels * 2, kernel_size=1),
         )
         nn.init.zeros_(self.param_predictor[-1].weight)
         nn.init.zeros_(self.param_predictor[-1].bias)
@@ -181,6 +208,7 @@ class SpatiallyFiLMLayer(nn.Module):
         gamma, beta = torch.chunk(mod_params, 2, dim=1)
 
         return (1 + gamma) * x + beta
+
 
 class FiLMLayer(nn.Module):
     def __init__(self, embed_dim: int, feature_channels: int):
@@ -198,24 +226,36 @@ class FiLMLayer(nn.Module):
 class RefinementNet(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, embed_dim: int):
         super(RefinementNet, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1, padding_mode='replicate')
+        self.conv1 = nn.Conv2d(
+            in_channels, 64, kernel_size=3, padding=1, padding_mode="replicate"
+        )
         self.bn1 = nn.InstanceNorm2d(64)
-        self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, padding=1, padding_mode='replicate')
+        self.conv1_2 = nn.Conv2d(
+            64, 64, kernel_size=3, padding=1, padding_mode="replicate"
+        )
         self.bn1_2 = nn.InstanceNorm2d(64)
 
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2, padding_mode='replicate')
+        self.conv2 = nn.Conv2d(
+            64, 128, kernel_size=3, padding=1, stride=2, padding_mode="replicate"
+        )
         self.bn2 = nn.InstanceNorm2d(128)
-        self.conv2_2 = nn.Conv2d(128, 128, kernel_size=3, padding=1, stride=2, padding_mode='replicate')
+        self.conv2_2 = nn.Conv2d(
+            128, 128, kernel_size=3, padding=1, stride=2, padding_mode="replicate"
+        )
         self.bn2_2 = nn.InstanceNorm2d(128)
 
         self.film_bottleneck = FiLMLayer(embed_dim=embed_dim, feature_channels=128)
 
         self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
         self.bn3 = nn.InstanceNorm2d(64)
-        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1, padding_mode='replicate')
+        self.conv3 = nn.Conv2d(
+            128, 64, kernel_size=3, padding=1, padding_mode="replicate"
+        )
         self.bn3_2 = nn.InstanceNorm2d(64)
 
-        self.output_layer = nn.Conv2d(64, out_channels, kernel_size=3, padding=1, padding_mode='replicate')
+        self.output_layer = nn.Conv2d(
+            64, out_channels, kernel_size=3, padding=1, padding_mode="replicate"
+        )
 
         self.relu = nn.SiLU()
 
@@ -242,7 +282,7 @@ class RefinementNet(nn.Module):
 
 class RetinexNet(nn.Module):
     def __init__(
-            self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
+        self, in_channels: int = 3, out_channels: int = 1, embed_dim: int = 32
     ) -> None:
         super(RetinexNet, self).__init__()
 
@@ -259,7 +299,9 @@ class RetinexNet(nn.Module):
 
         self.relu = nn.SiLU()
 
-    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+    def forward(
+        self, x: Tensor, embedding: Tensor
+    ) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         c1 = self.relu(self.conv1(x))
 
         c1_modulated = self.film1(c1, embedding)
@@ -285,11 +327,11 @@ class RetinexNet(nn.Module):
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
-            self,
-            in_channels: int = 3,
-            out_channels: int = 3,
-            embed_dim: int = 32,
-            num_weight_scales: int = 11,
+        self,
+        in_channels: int = 3,
+        out_channels: int = 3,
+        embed_dim: int = 32,
+        num_weight_scales: int = 11,
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
         self.in_conv = RetinexBlock(in_channels, 16)
@@ -299,9 +341,7 @@ class MultiScaleRetinexNet(nn.Module):
         self.enc2 = RetinexBlock(32, 64, stride=2)
 
         self.bottleneck = nn.Sequential(
-            RetinexBlock(64, 64),
-            SSMBlock(64),
-            ECALayer(64)
+            RetinexBlock(64, 64), SSMBlock(64), ECALayer(64)
         )
 
         self.dec2 = UpBlock(64, 32)
@@ -310,24 +350,28 @@ class MultiScaleRetinexNet(nn.Module):
         self.dec1 = UpBlock(32, 16)
         self.dec1_conv = RetinexBlock(32, 16)
 
-        self.out_conv = DepthwiseSeparableConv(16, out_channels, kernel_size=3, padding=1)
+        self.out_conv = DepthwiseSeparableConv(
+            16, out_channels, kernel_size=3, padding=1
+        )
 
         self.adaptive_curve_head = nn.Sequential(
             DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
             nn.SiLU(),
-            nn.Conv2d(8, 2, kernel_size=1)
+            nn.Conv2d(8, 2, kernel_size=1),
         )
 
         self.predicted_local_mean_head = nn.Sequential(
             DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
             nn.SiLU(),
             nn.Conv2d(8, 1, kernel_size=1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
         nn.init.zeros_(self.adaptive_curve_head[-1].weight)
         nn.init.zeros_(self.adaptive_curve_head[-1].bias)
 
-        self.log_vars = nn.Parameter(torch.zeros(num_weight_scales, dtype=torch.float32))
+        self.log_vars = nn.Parameter(
+            torch.zeros(num_weight_scales, dtype=torch.float32)
+        )
         self.apply(self._init_weights)
         nn.init.zeros_(self.adaptive_curve_head[-1].weight)
         nn.init.zeros_(self.adaptive_curve_head[-1].bias)
@@ -335,14 +379,16 @@ class MultiScaleRetinexNet(nn.Module):
     @staticmethod
     def _init_weights(m: nn.Module) -> None:
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
-            init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
             if m.bias is not None:
                 init.constant_(m.bias, 0)
         elif isinstance(m, nn.GroupNorm):
             init.constant_(m.weight, 1)
             init.constant_(m.bias, 0)
 
-    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def forward(
+        self, x: Tensor, embedding: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         e0 = self.in_conv(x)
         e0_modulated = self.film1(e0, embedding)
 
@@ -369,8 +415,16 @@ class MultiScaleRetinexNet(nn.Module):
         beta_map = base_beta + scale * torch.tanh(beta_map_raw)
 
         predicted_local_mean_map = self.predicted_local_mean_head(d1)
-        predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_map, output_size=8)
+        predicted_local_mean_val = F.adaptive_avg_pool2d(
+            predicted_local_mean_map, output_size=8
+        )
 
         dynamic_weights = torch.exp(-self.log_vars)
 
-        return final_illumination, alpha_map, beta_map, predicted_local_mean_val, dynamic_weights
+        return (
+            final_illumination,
+            alpha_map,
+            beta_map,
+            predicted_local_mean_val,
+            dynamic_weights,
+        )

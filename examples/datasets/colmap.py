@@ -57,12 +57,12 @@ class Parser:
     """COLMAP parser."""
 
     def __init__(
-            self,
-            data_dir: str,
-            # factor: int = 1,
-            normalize: bool = False,
-            test_every: int = 8,
-            postfix: str = "_variance",
+        self,
+        data_dir: str,
+        # factor: int = 1,
+        normalize: bool = False,
+        test_every: int = 8,
+        postfix: str = "_variance",
     ):
         self.data_dir = data_dir
         self.factor = 8
@@ -76,9 +76,9 @@ class Parser:
             colmap_dir = os.path.join(data_dir, "sparse/0/")
         if not os.path.exists(colmap_dir):
             colmap_dir = os.path.join(data_dir, "sparse")
-        assert os.path.exists(
-            colmap_dir
-        ), f"COLMAP directory {colmap_dir} does not exist."
+        assert os.path.exists(colmap_dir), (
+            f"COLMAP directory {colmap_dir} does not exist."
+        )
 
         manager = SceneManager(colmap_dir)
         manager.load_cameras()
@@ -132,12 +132,15 @@ class Parser:
             elif type_ == 5 or type_ == "OPENCV_FISHEYE":
                 params = np.array([cam.k1, cam.k2, cam.k3, cam.k4], dtype=np.float32)
                 camtype = "fisheye"
-            assert (
-                    camtype == "perspective" or camtype == "fisheye"
-            ), f"Only perspective and fisheye cameras are supported, got {type_}"
+            assert camtype == "perspective" or camtype == "fisheye", (
+                f"Only perspective and fisheye cameras are supported, got {type_}"
+            )
 
             params_dict[camera_id] = params
-            imsize_dict[camera_id] = (cam.width // self.factor, cam.height // self.factor)
+            imsize_dict[camera_id] = (
+                cam.width // self.factor,
+                cam.height // self.factor,
+            )
             mask_dict[camera_id] = None
         print(
             f"[Parser] {len(imdata)} images, taken by {len(set(camera_ids))} cameras."
@@ -287,9 +290,9 @@ class Parser:
             if len(params) == 0:
                 continue  # no distortion
             assert camera_id in self.Ks_dict, f"Missing K for camera {camera_id}"
-            assert (
-                    camera_id in self.params_dict
-            ), f"Missing params for camera {camera_id}"
+            assert camera_id in self.params_dict, (
+                f"Missing params for camera {camera_id}"
+            )
             K = self.Ks_dict[camera_id]
             width, height = self.imsize_dict[camera_id]
 
@@ -315,11 +318,11 @@ class Parser:
                 y1 = (grid_y - cy) / fy
                 theta = np.sqrt(x1**2 + y1**2)
                 r = (
-                        1.0
-                        + params[0] * theta**2
-                        + params[1] * theta**4
-                        + params[2] * theta**6
-                        + params[3] * theta**8
+                    1.0
+                    + params[0] * theta**2
+                    + params[1] * theta**4
+                    + params[2] * theta**6
+                    + params[3] * theta**8
                 )
                 mapx = (fx * x1 * r + width // 2).astype(np.float32)
                 mapy = (fy * y1 * r + height // 2).astype(np.float32)
@@ -358,11 +361,11 @@ class Dataset:
     """A simple dataset class."""
 
     def __init__(
-            self,
-            parser: Parser,
-            split: str = "train",
-            patch_size: Optional[int] = None,
-            load_depths: bool = False,
+        self,
+        parser: Parser,
+        split: str = "train",
+        patch_size: Optional[int] = None,
+        load_depths: bool = False,
     ):
         self.parser = parser
         self.split = split
@@ -381,8 +384,10 @@ class Dataset:
     def __getitem__(self, item: int) -> Dict[str, Any]:
         index = self.indices[item]
 
-        if self.split == 'val':
-            image = imageio.imread(self.parser.image_paths[index].replace(self.postfix,''))[..., :3]
+        if self.split == "val":
+            image = imageio.imread(
+                self.parser.image_paths[index].replace(self.postfix, "")
+            )[..., :3]
         else:
             image = imageio.imread(self.parser.image_paths[index])[..., :3]
 
@@ -432,11 +437,11 @@ class Dataset:
             depths = points_cam[:, 2]  # (M,)
             # filter out points outside the image
             selector = (
-                    (points[:, 0] >= 0)
-                    & (points[:, 0] < image.shape[1])
-                    & (points[:, 1] >= 0)
-                    & (points[:, 1] < image.shape[0])
-                    & (depths > 0)
+                (points[:, 0] >= 0)
+                & (points[:, 0] < image.shape[1])
+                & (points[:, 1] >= 0)
+                & (points[:, 1] < image.shape[0])
+                & (depths > 0)
             )
             points = points[selector]
             depths = depths[selector]
