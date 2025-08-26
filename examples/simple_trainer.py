@@ -773,19 +773,20 @@ class Runner:
                         "w",
                 ) as f:
                     json.dump(stats_save, f)
-                data_save = {"step": step, "splats": self.splats.state_dict(),
-                             "illumination_field": self.illumination_field.state_dict(),
-                             "stats": stats_save}
+                if cfg.save_ckpt:
+                    data_save = {"step": step, "splats": self.splats.state_dict(),
+                                 "illumination_field": self.illumination_field.state_dict(),
+                                 "stats": stats_save}
 
-                if cfg.appearance_embeddings:
-                    data_save["appearance_embeds"] = self.appearance_embeds.state_dict()
+                    if cfg.appearance_embeddings:
+                        data_save["appearance_embeds"] = self.appearance_embeds.state_dict()
 
-                if cfg.use_camera_response_network:
-                    data_save["camera_reponse_net"] = self.camera_response_net.state_dict()
+                    if cfg.use_camera_response_network:
+                        data_save["camera_reponse_net"] = self.camera_response_net.state_dict()
 
-                torch.save(
-                    data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
-                )
+                    torch.save(
+                        data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
+                    )
             if (
                     step in [i - 1 for i in cfg.ply_steps] or step == max_steps - 1
             ) and cfg.save_ply:
@@ -948,40 +949,41 @@ class Runner:
                 colors_p = colors_low.permute(0, 3, 1, 2)
                 colors_enh_p = colors_enh.permute(0, 3, 1, 2)
 
-                canvas_list_low = [pixels, colors_low]
+                if cfg.save_images:
+                    canvas_list_low = [pixels, colors_low]
 
-                canvas_eval_low = (
-                    torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
-                )
-                canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
+                    canvas_eval_low = (
+                        torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
+                    )
+                    canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
 
-                canvas_list_enh = [pixels, colors_enh]
-                canvas_eval_enh = (
-                    torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
-                )
+                    canvas_list_enh = [pixels, colors_enh]
+                    canvas_eval_enh = (
+                        torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
+                    )
 
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_step{step}_low_{i:04d}.png",
-                    canvas_eval_low,
-                )
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_step{step}_low_{i:04d}.png",
+                        canvas_eval_low,
+                    )
 
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
-                    (canvas_eval_enh * 255).astype(np.uint8),
-                )
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
+                        (canvas_eval_enh * 255).astype(np.uint8),
+                    )
 
-                colors_low_np = colors_low.squeeze(0).cpu().numpy()
-                colors_enh_np = colors_enh.squeeze(0).cpu().numpy()
+                    colors_low_np = colors_low.squeeze(0).cpu().numpy()
+                    colors_enh_np = colors_enh.squeeze(0).cpu().numpy()
 
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_low_{i:04d}.png",
-                    (colors_low_np * 255).astype(np.uint8),
-                )
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_low_{i:04d}.png",
+                        (colors_low_np * 255).astype(np.uint8),
+                    )
 
-                imageio.imwrite(
-                    f"{self.render_dir}/{stage}_enh_{i:04d}.png",
-                    (colors_enh_np * 255).astype(np.uint8),
-                )
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_enh_{i:04d}.png",
+                        (colors_enh_np * 255).astype(np.uint8),
+                    )
 
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))

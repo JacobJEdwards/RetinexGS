@@ -1,6 +1,6 @@
 SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
-POSTFIXES="_contrast _variance _multiexposure"
+POSTFIXES="_variance _multiexposure" # todo:  repo or continue some contrast that didnt finish
 CONFIG_OPTIONS=(
     "--no-appearance-embeddings"
     "--no-use-view-dirs"
