@@ -1,5 +1,5 @@
-SCENE_DIR="../../360_v2"
-RESULT_DIR="../../2d/multiexposure/results/benchmarks"
+SCENE_DIR="/workspace/360_v2"
+RESULT_DIR="/workspace/2d/multiexposure"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 RENDER_TRAJ_PATH="ellipse"
 
