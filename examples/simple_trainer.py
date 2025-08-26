@@ -428,7 +428,7 @@ class Runner:
 
         if cfg.loss_smooth_edge_aware:
             loss_smooth_edge_aware = self.loss_edge_aware_smooth(
-                illumination_map, input_image_for_net, image_id=images_ids
+                illumination_map, input_image_for_net
             )
         else:
             loss_smooth_edge_aware = torch.tensor(0.0, device=device)
