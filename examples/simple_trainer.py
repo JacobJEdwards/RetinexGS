@@ -187,10 +187,8 @@ class Runner:
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=cfg.exposure_loss_patch_size,
-                                          mean_val=cfg.exposure_mean_val)
-        self.loss_spatial = SpatialLoss(
-            num_images=len(self.trainset),
-        ).to(self.device)
+                                          mean_val=cfg.exposure_mean_val).to(self.device)
+        self.loss_spatial = SpatialLoss().to(self.device)
         self.loss_adaptive_curve = AdaptiveCurveLoss(
             learn_lambdas=cfg.learn_adaptive_curve_lambdas,
         ).to(self.device)
@@ -420,7 +418,7 @@ class Runner:
 
         con_degree = (0.5 / torch.mean(pixels))
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
-            input_image_for_net, reflectance_map, contrast=con_degree, image_id=images_ids
+            input_image_for_net, reflectance_map, contrast=con_degree
         )
 
         if cfg.loss_reflectance_spa:
