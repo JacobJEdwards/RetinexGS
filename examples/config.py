@@ -27,10 +27,10 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 10_000
-    eval_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
-    save_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    eval_steps: list[int] = field(default_factory=lambda: [10_000])
+    save_steps: list[int] = field(default_factory=lambda: [10_000])
     save_ply: bool = False
-    ply_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    ply_steps: list[int] = field(default_factory=lambda: [10_000])
     disable_video: bool = True
 
     init_type: str = "sfm"
@@ -57,8 +57,8 @@ class Config:
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 
-    tb_every: int = 100
-    tb_save_image: bool = True
+    tb_every: int = 1000
+    tb_save_image: bool = False
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
@@ -75,7 +75,6 @@ class Config:
 
     use_yuv_colourspace: bool = False
 
-
     lambda_illum_smoothness: float = 0.005
     lambda_exclusion: float = 0.3
     lambda_shn_reg: float = 0.8
@@ -91,7 +90,6 @@ class Config:
     illumination_field_lr: float = 6e-5
 
     learning_steps: int = 2800
-
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]

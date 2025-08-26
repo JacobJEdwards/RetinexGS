@@ -10,10 +10,6 @@ CONFIG_OPTIONS=(
     "--lambda_exclusion 0.0"
     "--lambda_shn_reg 0.0"
     "--lambda_tv_loss 0.0"
-    "--learning_steps 2000"
-    "--learning_steps 5000"
-    "--learning_steps 8000"
-    "--learning_steps 10000"
 )
 CONFIG_NAMES=(
     "no_appearance"
@@ -24,10 +20,6 @@ CONFIG_NAMES=(
     "no_exclusion"
     "no_shn_reg"
     "no_tv_loss"
-    "steps_2k"
-    "steps_5k"
-    "steps_8k"
-    "steps_10k"
 )
 
 for POSTFIX in $POSTFIXES; do

@@ -1039,8 +1039,8 @@ class Runner:
 
             with open(f"{self.stats_dir}/{stage}_step{step:04d}.json", "w") as f:
                 json.dump(stats_eval, f)
-            with open(f"{self.stats_dir}/{stage}_raw_step{step:04d}.json", "w") as f:
-                json.dump(raw_metrics, f)
+            # with open(f"{self.stats_dir}/{stage}_raw_step{step:04d}.json", "w") as f:
+            #     json.dump(raw_metrics, f)
             for k_stat, v_stat in stats_eval.items():
                 self.writer.add_scalar(f"{stage}/{k_stat}", v_stat, step)
             self.writer.flush()
