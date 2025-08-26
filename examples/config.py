@@ -27,10 +27,10 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 10_000
-    eval_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
-    save_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    eval_steps: list[int] = field(default_factory=lambda: [10_000])
+    save_steps: list[int] = field(default_factory=lambda: [10_000])
     save_ply: bool = False
-    ply_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    ply_steps: list[int] = field(default_factory=lambda: [10_000])
     disable_video: bool = True
 
     init_type: str = "sfm"
@@ -57,8 +57,8 @@ class Config:
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 
-    tb_every: int = 100
-    tb_save_image: bool = True
+    tb_every: int = 1000
+    tb_save_image: bool = False
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
@@ -96,6 +96,8 @@ class Config:
     loss_white_preservation: bool = True
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
+
+    save_images: bool = False
 
     postfix: str = "_multiexposure"
 
