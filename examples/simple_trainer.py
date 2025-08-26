@@ -1,16 +1,12 @@
-import gc
 import json
 import math
 import os
 import time
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
 import imageio
-import kornia.color
 import numpy as np
-import optuna
 import torch
 import torch.nn.functional as F
 import tqdm
@@ -45,7 +41,6 @@ from losses import (
     ExposureLoss,
     SpatialLoss,
     AdaptiveCurveLoss,
-    LocalExposureLoss,
     ExclusionLoss, EdgeAwareSmoothingLoss
 )
 from gsplat import export_splats, rasterization
@@ -57,7 +52,6 @@ from utils import (
     set_random_seed,
 )
 from retinex import MultiScaleRetinexNet
-from retinex_old import MultiScaleRetinexNet as MultiScaleRetinexNetOld
 
 
 def create_splats_with_optimizers(
@@ -193,28 +187,20 @@ class Runner:
         self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=cfg.exposure_loss_patch_size,
-                                          learn_global_exposure=cfg.learn_global_exposure,
-                                          mean_val=cfg.exposure_mean_val,
-                                          use_embeddings=cfg.exposure_loss_use_embedding, num_images=len(self.trainset)).to(self.device)
+                                          mean_val=cfg.exposure_mean_val)
         self.loss_spatial = SpatialLoss(
-            learn_contrast=cfg.learn_spatial_contrast,
             num_images=len(self.trainset),
         ).to(self.device)
         self.loss_adaptive_curve = AdaptiveCurveLoss(
-            learn_lambdas=cfg.learn_adaptive_curve_lambdas, learn_thresholds=cfg.learn_adaptive_curve_thresholds,
+            learn_lambdas=cfg.learn_adaptive_curve_lambdas,
         ).to(self.device)
-        self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss(learn_gamma=cfg.learn_edge_aware_gamma,
-                                                             num_images=len(self.trainset)).to(self.device)
-        self.loss_exposure_local = LocalExposureLoss(
-            patch_size=64, patch_grid_size=8
-        ).to(self.device)
+        self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.histogram_loss = HistogramLoss().to(self.device)
         self.loss_white_preservation = WhitePreservationLoss(
             luminance_threshold=cfg.luminance_threshold,
             chroma_tolerance=cfg.chroma_tolerance,
             gain=cfg.gain,
-            learnable=cfg.learn_white_preservation,
         ).to(self.device)
 
         mean_val = 128
@@ -225,45 +211,17 @@ class Runner:
 
         self.target_histogram_dist = nn.Parameter(target_hist)
 
-        retinex_in_channels = 1 if cfg.use_lab_color_space else 3
-        retinex_out_channels = 1 if cfg.use_lab_color_space else 3
-
-        # self.retinex_net = MultiScaleRetinexNetOld(
-        #     in_channels=retinex_in_channels,
-        #     out_channels=retinex_out_channels,
-        #     embed_dim=cfg.retinex_embedding_dim,
-        #     predictive_adaptive_curve=cfg.predictive_adaptive_curve,
-        #     use_dilated_convs=True,
-        #     use_se_blocks=True,
-        #     use_pixel_shuffle=True,
-        #     use_stride_conv=True,
-        # ).to(self.device)
+        retinex_in_channels = 3
+        retinex_out_channels = 3
 
         self.retinex_net = MultiScaleRetinexNet(
             in_channels=retinex_in_channels,
             out_channels=retinex_out_channels,
             embed_dim=cfg.retinex_embedding_dim,
-            predictive_adaptive_curve=cfg.predictive_adaptive_curve,
-            learn_local_exposure=cfg.learn_local_exposure,
-            use_enhancement_gate=cfg.use_enhancement_gate,
         ).to(self.device)
 
         if world_size > 1:
             self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
-
-
-        self.log_sigmas = nn.ParameterDict({
-            "reflect_spa": nn.Parameter(torch.zeros(1)),
-            "color_val": nn.Parameter(torch.zeros(1)),
-            "perceptual_color": nn.Parameter(torch.zeros(1)),
-            "exposure_val": nn.Parameter(torch.zeros(1)),
-            "adaptive_curve": nn.Parameter(torch.zeros(1)),
-            "smooth_edge_aware": nn.Parameter(torch.zeros(1)),
-            "exposure_local": nn.Parameter(torch.zeros(1)),
-            "exclusion_val": nn.Parameter(torch.zeros(1)),
-            "white_preservation": nn.Parameter(torch.zeros(1)),
-            "histogram_loss": nn.Parameter(torch.zeros(1)),
-        }).to(self.device)
 
         self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
@@ -287,18 +245,8 @@ class Runner:
         )
 
         loss_params = []
-        if cfg.learn_edge_aware_gamma:
-            loss_params += self.loss_edge_aware_smooth.parameters()
-        if cfg.predictive_adaptive_curve or cfg.learn_adaptive_curve_thresholds or cfg.learn_adaptive_curve_lambdas:
+        if cfg.learn_adaptive_curve_lambdas:
             loss_params += self.loss_adaptive_curve.parameters()
-        if cfg.learn_spatial_contrast:
-            loss_params += self.loss_spatial.parameters()
-        if cfg.dynamic_weights:
-            loss_params += self.log_sigmas.parameters()
-        if cfg.learn_white_preservation:
-            loss_params += self.loss_white_preservation.parameters()
-        if cfg.learn_global_exposure:
-            loss_params += self.loss_exposure.parameters()
 
         loss_params.append(self.target_histogram_dist)
 
@@ -419,19 +367,12 @@ class Runner:
 
     def get_retinex_output(
             self, images_ids: Tensor, pixels: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
-        if self.cfg.use_lab_color_space:
-            pixels_nchw = pixels.permute(0, 3, 1, 2)
-            pixels_lab = kornia.color.rgb_to_lab(pixels_nchw)
-            l_channel = pixels_lab[:, 0:1, :, :] / 100.0
-            input_image_for_net = l_channel
-        else:
-            pixels_lab = torch.tensor(0.0, device=self.device)
-            input_image_for_net = pixels.permute(0, 3, 1, 2)
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        input_image_for_net = pixels.permute(0, 3, 1, 2)
 
         retinex_embedding = self.retinex_embeds(images_ids)
 
-        log_illumination_map, alpha, beta, local_exposure = checkpoint(
+        log_illumination_map = checkpoint(
             self.retinex_net,
             input_image_for_net,
             retinex_embedding,
@@ -440,23 +381,10 @@ class Runner:
         illumination_map = torch.exp(log_illumination_map)
         illumination_map = torch.clamp(illumination_map, min=1e-5)
         illumination_map = illumination_map.nan_to_num()
+        illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-        if not self.cfg.use_lab_color_space:
-            illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
+        reflectance_map = input_image_for_net / illumination_map
 
-        reflectance_target = input_image_for_net / illumination_map
-
-        if self.cfg.use_lab_color_space:
-            a_channel = pixels_lab[:, 1:2, :, :]
-            b_channel = pixels_lab[:, 2:3, :, :]
-
-            reflectance_lab_target = torch.cat(
-                [reflectance_target * 100.0, a_channel, b_channel], dim=1
-            )
-
-            reflectance_map = kornia.color.lab_to_rgb(reflectance_lab_target)
-        else:
-            reflectance_map = reflectance_target
 
         reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
         reflectance_map = reflectance_map.nan_to_num()
@@ -465,13 +393,10 @@ class Runner:
             input_image_for_net,
             illumination_map,
             reflectance_map,
-            alpha,
-            beta,
-            local_exposure,
         )
 
-    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int, is_pretrain: bool = True) -> tuple[
-        Tensor, Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
+    def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int) -> tuple[
+        Tensor, Tensor, Tensor, Tensor]:
         cfg = self.cfg
         device = self.device
 
@@ -479,17 +404,12 @@ class Runner:
             input_image_for_net,
             illumination_map,
             reflectance_map,
-            alpha,
-            beta,
-            local_exposure_mean,
         ) = self.get_retinex_output(images_ids=images_ids, pixels=pixels)
         loss_color_val = (
             self.loss_color(illumination_map)
-            if not cfg.use_lab_color_space
-            else torch.tensor(0.0, device=device)
         )
         if cfg.loss_adaptive_curve:
-            loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map, alpha, beta)
+            loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map)
         else:
             loss_adaptive_curve = torch.tensor(0.0, device=device)
 
@@ -497,7 +417,6 @@ class Runner:
             loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
         else:
             loss_exposure_val = torch.tensor(0.0, device=device)
-
 
         con_degree = (0.5 / torch.mean(pixels))
         org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
@@ -515,11 +434,6 @@ class Runner:
             )
         else:
             loss_smooth_edge_aware = torch.tensor(0.0, device=device)
-
-        if cfg.loss_exposure_local:
-            loss_exposure_local = self.loss_exposure_local(reflectance_map, local_exposure_mean if cfg.learn_local_exposure else None)
-        else:
-            loss_exposure_local = torch.tensor(0.0, device=device)
 
         if cfg.loss_exclusion:
             loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
@@ -552,7 +466,6 @@ class Runner:
             "exposure_val": loss_exposure_val,
             "adaptive_curve": loss_adaptive_curve,
             "smooth_edge_aware": loss_smooth_edge_aware,
-            "exposure_local": loss_exposure_local,
             "exclusion_val": loss_exclusion_val,
             "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
@@ -565,7 +478,6 @@ class Runner:
             "exposure_val": cfg.lambda_illum_exposure,
             "adaptive_curve": cfg.lambda_illum_curve,
             "smooth_edge_aware": cfg.lambda_edge_aware_smooth,
-            "exposure_local": cfg.lambda_illum_exposure_local,
             "exclusion_val": cfg.lambda_illum_exclusion,
             "white_preservation": cfg.lambda_white_preservation,
             "histogram_loss": cfg.lambda_histogram,
@@ -576,11 +488,7 @@ class Runner:
         loss_names = individual_losses.keys()
         for name in loss_names:
             loss = individual_losses[name]
-            if cfg.dynamic_weights:
-                log_sigma = self.log_sigmas[name]
-                total_loss += 0.5 * torch.exp(-log_sigma) * loss + 0.5 * log_sigma
-            else:
-                total_loss += fallback_lambdas[name] * loss
+            total_loss += fallback_lambdas[name] * loss
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)
@@ -591,36 +499,17 @@ class Runner:
                 "exposure_val",
                 "adaptive_curve",
                 "smooth_edge_aware",
-                "exposure_local",
                 "exclusion_val",
                 "white_preservation",
                 "histogram_loss",
             ]
 
-            title = "retinex_net" if is_pretrain else "train"
+            title = "train"
 
             for name in loss_names:
                 unweighted_loss = individual_losses[name].item()
-                learned_weight = torch.exp(-self.log_sigmas[name]).item()
                 self.writer.add_scalar(
                     f"{title}/loss_{name}_unweighted", unweighted_loss, step
-                )
-                self.writer.add_scalar(
-                    f"{title}/learned_weight_{name}", learned_weight, step
-                )
-
-            # if cfg.learn_edge_aware_gamma:
-            #     self.writer.add_scalar(
-            #         f"{title}/edge_aware_gamma_adjustment",
-            #         self.loss_edge_aware_smooth.gamma_adjustment.item(),
-            #         step,
-            #     )
-
-            if cfg.learn_local_exposure:
-                self.writer.add_scalar(
-                    f"{title}/local_mean_val_param",
-                    local_exposure_mean.mean().item(),
-                    step,
                 )
 
             if cfg.learn_adaptive_curve_lambdas:
@@ -664,102 +553,7 @@ class Runner:
                 )
 
 
-        return total_loss, input_image_for_net, illumination_map, reflectance_map, alpha, beta, local_exposure_mean
-
-
-    def pre_train_retinex(self) -> None:
-        cfg = self.cfg
-        device = self.device
-
-        trainloader = torch.utils.data.DataLoader(
-            self.trainset,
-            batch_size=cfg.batch_size,
-            shuffle=True,
-            num_workers=4,
-            persistent_workers=True,
-            pin_memory=True,
-        )
-
-        trainloader_iter = iter(trainloader)
-
-        initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
-        initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
-        initial_loss_lr = self.loss_optimizer.param_groups[0]["lr"]
-        schedulers = [
-            CosineAnnealingLR(
-                self.retinex_optimizer,
-                T_max=cfg.pretrain_steps + cfg.freeze_step,
-                eta_min=initial_retinex_lr * 0.01,
-            ),
-            CosineAnnealingLR(
-                self.retinex_embed_optimizer,
-                T_max=cfg.pretrain_steps + cfg.freeze_step,
-                eta_min=initial_embed_lr * 0.01,
-            ),
-            CosineAnnealingLR(
-                self.loss_optimizer,
-                T_max=cfg.pretrain_steps + cfg.freeze_step,
-                eta_min=initial_loss_lr * 0.01,
-            )
-        ]
-
-        pbar = tqdm.tqdm(range(self.cfg.pretrain_steps), desc="Pre-training RetinexNet")
-        for step in pbar:
-            try:
-                data = next(trainloader_iter)
-            except StopIteration:
-                trainloader_iter = iter(trainloader)
-                data = next(trainloader_iter)
-
-            with torch.autocast(enabled=False, device_type=device):
-                images_ids = data["image_id"].to(device)
-                pixels = data["image"].to(device) / 255.0
-
-
-                loss = self.retinex_train_step(
-                    images_ids=images_ids, pixels=pixels, step=step
-                )[0]
-
-            if loss.isnan():
-                raise RuntimeError("Loss is NaN")
-
-            self.scaler.scale(loss).backward()
-
-            torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
-
-            if self.loss_edge_aware_smooth.parameters():
-                torch.nn.utils.clip_grad_norm_(self.loss_edge_aware_smooth.parameters(), max_norm=1.0)
-            if self.loss_adaptive_curve.parameters():
-                torch.nn.utils.clip_grad_norm_(self.loss_adaptive_curve.parameters(), max_norm=1.0)
-            if self.loss_spatial.parameters():
-                torch.nn.utils.clip_grad_norm_(self.loss_spatial.parameters(), max_norm=1.0)
-            if self.loss_white_preservation.parameters():
-                torch.nn.utils.clip_grad_norm_(self.loss_white_preservation.parameters(), max_norm=1.0)
-            if self.target_histogram_dist.requires_grad:
-                torch.nn.utils.clip_grad_norm_(
-                    [self.target_histogram_dist], max_norm=1.0
-                )
-            if self.retinex_embeds.parameters():
-                torch.nn.utils.clip_grad_norm_(self.retinex_embeds.parameters(), max_norm=1.0)
-
-
-            # self.retinex_optimizer.step()
-            # self.retinex_embed_optimizer.step()
-            self.scaler.step(self.retinex_optimizer)
-            self.scaler.step(self.retinex_embed_optimizer)
-            self.scaler.step(self.loss_optimizer)
-
-            self.scaler.update()
-
-            self.retinex_optimizer.zero_grad()
-            self.retinex_embed_optimizer.zero_grad()
-            self.loss_optimizer.zero_grad()
-
-            for scheduler in schedulers:
-                scheduler.step()
-
-            pbar.set_postfix({"loss": loss.item()})
-
+        return total_loss, input_image_for_net, illumination_map, reflectance_map
 
     def train(self):
         cfg = self.cfg
@@ -776,12 +570,6 @@ class Runner:
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
-
-
-        if cfg.pretrain_retinex:
-            self.pre_train_retinex()
-            psnr, ssim, lpips = self.eval_retinex()
-            print(f"Pre-trained RetinexNet: PSNR={psnr:.4f}, SSIM={ssim:.4f}, LPIPS={lpips:.4f}")
 
         initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
         initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
@@ -864,11 +652,10 @@ class Runner:
 
                 info["means2d"].retain_grad()
 
-                retinex_loss, _, gt_illumination_map, gt_reflectance_target, _, _, _ = self.retinex_train_step(
+                retinex_loss, _, gt_illumination_map, gt_reflectance_target = self.retinex_train_step(
                     images_ids=image_ids,
                     pixels=pixels,
                     step=step,
-                    is_pretrain=False
                 )
 
                 # gt_illumination_map = gt_illumination_map.detach()
@@ -1031,109 +818,6 @@ class Runner:
                 self.render_traj(step)
 
     @torch.no_grad()
-    def eval_get_stats(self, step: int, stage: str = "val"):
-        print(f"Running evaluation for step {step} on '{stage}' set...")
-        cfg = self.cfg
-        device = self.device
-        world_rank = self.world_rank
-
-        valloader = torch.utils.data.DataLoader(
-            self.valset, shuffle=False, num_workers=1
-        )
-        ellipse_time_total = 0
-        metrics = defaultdict(list)
-        for i, data in enumerate(tqdm.tqdm(valloader, desc=f"Eval {stage}")):
-            camtoworlds = data["camtoworld"].to(device)
-            Ks = data["K"].to(device)
-
-            pixels = data["image"].to(device) / 255.0
-            image_id = data["image_id"].to(device)
-
-            masks = data["mask"].to(device) if "mask" in data else None
-            height, width = pixels.shape[1:3]
-
-            torch.cuda.synchronize()
-            tic = time.time()
-
-            out = self.rasterize_splats(
-                camtoworlds=camtoworlds,
-                Ks=Ks,
-                width=width,
-                height=height,
-                sh_degree=cfg.sh_degree,
-                near_plane=cfg.near_plane,
-                far_plane=cfg.far_plane,
-                masks=masks,
-            )
-
-            colors_enh, alphas_enh, info = out
-            retinex_output = self.get_retinex_output(
-                images_ids=image_id, pixels=pixels
-            )
-            (
-                _,
-                illumination_map,
-                _,
-                _,
-                _,
-                _,
-            ) = retinex_output
-
-            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1)
-            colors_low = torch.clamp(colors_low, 0.0, 1.0)
-
-            torch.cuda.synchronize()
-            ellipse_time_total += max(time.time() - tic, 1e-10)
-
-            colors_low = torch.clamp(colors_low, 0.0, 1.0)
-            colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
-
-            if world_rank == 0:
-                pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_p = colors_low.permute(0, 3, 1, 2)
-
-                metrics["psnr"].append(self.psnr(colors_p, pixels_p))
-                metrics["ssim"].append(self.ssim(colors_p, pixels_p))
-                metrics["lpips"].append(self.lpips(colors_p, pixels_p))
-
-                colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-
-                metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
-                metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
-                metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
-
-        if world_rank == 0:
-            stats_eval = {}
-            for k, v_list in metrics.items():
-                if v_list:
-                    if isinstance(v_list[0], torch.Tensor):
-                        stats_eval[k] = torch.stack(v_list).mean().item()
-                    else:
-                        stats_eval[k] = sum(v_list) / len(v_list)
-                else:
-                    stats_eval[k] = 0
-
-            print_parts_eval = [
-                f"PSNR: {stats_eval.get('psnr', 0):.3f}",
-                f"SSIM: {stats_eval.get('ssim', 0):.4f}",
-                f"LPIPS: {stats_eval.get('lpips', 0):.3f}",
-                f"PSNR Enh: {stats_eval.get('psnr_enh', 0):.3f}",
-                f"SSIM Enh: {stats_eval.get('ssim_enh', 0):.4f}",
-                f"LPIPS Enh: {stats_eval.get('lpips_enh', 0):.3f}",
-            ]
-            print_parts_eval.extend(
-                [
-                    f"Time: {stats_eval.get('ellipse_time', 0):.3f}s/image",
-                    f"GS: {stats_eval.get('num_GS', 0)}",
-                ]
-            )
-            print(f"Eval {stage} Step {step}: " + " | ".join(print_parts_eval))
-
-            return stats_eval["psnr_enh"], stats_eval["ssim_enh"], stats_eval["lpips_enh"]
-
-
-
-    @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
         print(f"Running evaluation for step {step} on '{stage}' set...")
         cfg = self.cfg
@@ -1176,9 +860,6 @@ class Runner:
             (
                 _,
                 illumination_map,
-                _,
-                _,
-                _,
                 _,
             ) = retinex_output
 
@@ -1408,39 +1089,20 @@ class Runner:
 
     @torch.no_grad()
     def eval_retinex(self):
-        """
-        Performs a sophisticated evaluation of the Retinex model.
-
-        This method loads pairs of images from the training set: the multi-exposure
-        input and its corresponding ground truth. It applies the Retinex model to the
-        multi-exposure image to obtain the reflectance map (the enhanced image) and
-        then computes PSNR, SSIM, and LPIPS metrics by comparing this output
-        against the ground truth image.
-        """
         device = self.device
         world_rank = self.world_rank
 
-        # 1. Create a dataset for loading the multi-exposure training images
-        train_dataset_multiexposure = Dataset(
-            self.parser, split="train"
-        )
-        # Ensure it loads images with the postfix (e.g., image_001_multiexposure.png)
+        train_dataset_multiexposure = Dataset(self.parser)
         train_dataset_multiexposure.is_val = False
 
-        # 2. Create a dataset for loading the corresponding ground truth images
-        train_dataset_groundtruth = Dataset(
-            self.parser, split="train"
-        )
-        # This flag makes the loader replace the postfix, loading the clean image
+        train_dataset_groundtruth = Dataset(self.parser)
         train_dataset_groundtruth.is_val = True
 
-        # 3. Create DataLoaders for both datasets
         trainloader_multiexposure = torch.utils.data.DataLoader(
             train_dataset_multiexposure,
             batch_size=self.cfg.batch_size,
-            shuffle=False, # Must be False to correctly pair images
+            shuffle=False,
             num_workers=1,
-            persistent_workers=False,
             pin_memory=True,
         )
 
@@ -1449,7 +1111,6 @@ class Runner:
             batch_size=self.cfg.batch_size,
             shuffle=False,
             num_workers=1,
-            persistent_workers=False,
             pin_memory=True,
         )
 
@@ -1471,7 +1132,6 @@ class Runner:
                 _, # input_image_for_net
                 _, # illumination_map
                 reflectance_output,
-                _, _, _
             ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels_multiexposure)
 
             pixels_groundtruth_chw = pixels_groundtruth.permute(0, 3, 1, 2)
@@ -1541,212 +1201,6 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
     else:
         runner.train()
 
-def objective_train(trial: optuna.Trial):
-    cfg = Config()
-
-    cfg.lambda_low = trial.suggest_float("lambda_low", 0.0, 1.0)
-    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.0, 5.0)
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
-    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-5, 1e-2, log=True)
-
-    cfg.freeze_step = 3000
-    cfg.max_steps = 3000
-    cfg.eval_steps = [3000]
-    cfg.pretrain_retinex = False
-
-    runner = Runner(0, 0, 1, cfg)
-    runner.trial = trial
-    runner.train()
-
-    with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
-        stats = json.load(f)
-
-    avg_psnr = stats.get("psnr_enh", 0)
-    avg_ssim = stats.get("ssim_enh", 0)
-    avg_lpips = stats.get("lpips_enh", 0)
-
-    torch.cuda.empty_cache()
-
-    return avg_psnr, avg_ssim, avg_lpips
-
-def objective1(trial: optuna.Trial):
-    cfg = Config()
-
-    cfg.data_dir = Path("/workspace/360_v2/room")
-
-    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1.0, 100.0, log=True)
-    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 100.0, log=True)
-    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 5.0)
-    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
-    cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 1e-3, 10.0, log=True)
-    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
-
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-6, 1e-2, log=True)
-    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-2, log=True)
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
-
-    cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical(
-        "learn_adaptive_curve_lambdas", [True, False]
-    )
-    cfg.learn_spatial_contrast = trial.suggest_categorical(
-        "learn_spatial_contrast", [True, False]
-    )
-    cfg.learn_global_exposure = trial.suggest_categorical(
-        "learn_global_exposure", [True, False]
-    )
-    cfg.learn_local_exposure = trial.suggest_categorical(
-        "learn_local_exposure", [True, False]
-    )
-    cfg.learn_edge_aware_gamma = trial.suggest_categorical(
-        "learn_edge_aware_gamma", [True, False]
-    )
-    cfg.predictive_adaptive_curve = trial.suggest_categorical(
-        "predictive_adaptive_curve", [True, False]
-    )
-    cfg.use_enhancement_gate = trial.suggest_categorical(
-        "use_enhancement_gate", [True, False]
-    )
-
-    cfg.max_steps = 3000
-    cfg.eval_steps = [3000]
-    cfg.pretrain_steps = 2000
-
-    runner = None
-    try:
-        runner = Runner(0, 0, 1, cfg)
-        runner.pre_train_retinex()
-
-        return runner.eval_retinex()
-    finally:
-        if runner is not None:
-            del runner
-
-        gc.collect()
-        torch.cuda.empty_cache()
-
-def objective2(trial: optuna.Trial):
-    cfg = Config()
-
-    cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.0, 5.0)
-    cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 1e-2, 10.0, log=True)
-    cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.0, 5.0)
-    cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1, 100.0, log=True)
-    cfg.lambda_illum_exposure_local = trial.suggest_float("lambda_illum_exposure_local", 0.0, 5.0)
-    cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1e-3, 10.0, log=True)
-    cfg.lambda_histogram = trial.suggest_float(
-        "lambda_histogram", 1e-3, 10.0, log=True)
-    cfg.lambda_illum_exclusion = trial.suggest_float("lambda_illum_exclusion", 0.0, 5.0)
-    cfg.lambda_perceptual_color = trial.suggest_float("lambda_perceptual_color", 0.0, 5.0)
-
-    cfg.luminance_threshold = trial.suggest_float("luminance_threshold", 70.0, 99.0)
-    cfg.chroma_tolerance = trial.suggest_float("chroma_tolerance", 0.1, 50.0, log=True)
-    cfg.gain = trial.suggest_float("gain", 0.1, 10.0, log=True)
-
-    cfg.max_steps = 3000
-    cfg.freeze_step = 1000
-    cfg.eval_steps = [3000]
-    cfg.pretrain_retinex = False
-
-    average_psnr = 0.0
-    average_ssim = 0.0
-    average_lpips = 0.0
-
-    datasets_to_run = [Path("/workspace/360_v2/bonsai"), Path("/workspace/360_v2/kitchen"),
-                       Path("/workspace/360_v2/garden"), Path("/workspace/360_v2/bicycle")]
-
-    for dataset in datasets_to_run:
-        cfg.data_dir = dataset
-        runner = None
-        try:
-            runner = Runner(0, 0, 1, cfg)
-            runner.trial = trial
-            runner.train()
-
-            with open(f"{runner.stats_dir}/val_step{3000 - 1:04d}.json") as f:
-                stats = json.load(f)
-
-            psnr = stats.get("psnr_enh", 0)
-            ssim = stats.get("ssim_enh", 0)
-            lpips = stats.get("lpips_enh", 0)
-
-            average_psnr += psnr
-            average_ssim += ssim
-            average_lpips += lpips
-        finally:
-            if runner is not None:
-                del runner
-
-            gc.collect()
-            torch.cuda.empty_cache()
-
-    num_datasets = len(datasets_to_run)
-
-    return average_psnr / num_datasets, average_ssim / num_datasets, average_lpips / num_datasets
-
-def objective(trial: optuna.Trial):
-    cfg = Config()
-
-    cfg.exposure_loss_patch_size = trial.suggest_categorical(
-        "exposure_loss_patch_size", [16, 32, 64, 128, 256, 512, 1024]
-    )
-    cfg.exposure_mean_val = trial.suggest_float("exposure_mean_val", 0.2, 0.8)
-    cfg.exposure_loss_use_embedding = trial.suggest_categorical(
-        "exposure_loss_use_embedding", [True, False]
-    )
-    cfg.learn_global_exposure = trial.suggest_categorical(
-        "learn_global_exposure", [True, False]
-    )
-    cfg.learn_white_preservation = trial.suggest_categorical(
-        "learn_white_preservation", [True, False]
-    )
-    cfg.use_enhancement_gate = trial.suggest_categorical(
-        "use_enhancement_gate", [True, False]
-    )
-    cfg.learn_adaptive_curve_thresholds = trial.suggest_categorical(
-        "learn_adaptive_curve_thresholds", [True, False]
-    )
-
-    cfg.pretrain_steps = trial.suggest_categorical(
-        "pretrain_steps", [1000, 2000, 3000]
-    )
-
-    cfg.max_steps = 3000
-    cfg.eval_steps = [3000]
-    cfg.pretrain_retinex = True
-
-    average_psnr = 0.0
-    average_ssim = 0.0
-    average_lpips = 0.0
-
-    datasets_to_run = [Path("/workspace/360_v2/bonsai"), Path("/workspace/360_v2/kitchen"),
-                       Path("/workspace/360_v2/garden"), Path("/workspace/360_v2/bicycle")]
-
-    for dataset in datasets_to_run:
-        cfg.data_dir = dataset
-        runner = None
-        try:
-            runner = Runner(0, 0, 1, cfg)
-            runner.trial = trial
-            runner.pre_train_retinex()
-
-            psnr, ssim, lpips = runner.eval_retinex()
-            average_psnr += psnr
-            average_ssim += ssim
-            average_lpips += lpips
-        finally:
-            if runner is not None:
-                del runner
-
-            gc.collect()
-            torch.cuda.empty_cache()
-
-    num_datasets = len(datasets_to_run)
-
-    return average_psnr / num_datasets, average_ssim / num_datasets, average_lpips / num_datasets
-
-
 BilateralGrid = None
 color_correct = None
 slice_func = None
@@ -1778,33 +1232,3 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     cli(main, config, verbose=True)
-
-    # study = optuna.create_study(directions=["maximize", "maximize", "minimize"])
-
-    # study.optimize(objective, n_trials=60, catch=(RuntimeError, ValueError))
-    #
-    # print("Study statistics: ")
-    # print(f" Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f" Trial {i}:")
-    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print(" Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f" {key}: {value}")
-    #
-    # print("objective 2")
-    #
-    # study.optimize(objective2, n_trials=30, catch=(RuntimeError, ValueError))
-    #
-    # print("Study statistics: ")
-    # print(f" Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f" Trial {i}:")
-    #     print(f" Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print(" Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f" {key}: {value}")

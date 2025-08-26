@@ -169,9 +169,6 @@ class MultiScaleRetinexNet(nn.Module):
             in_channels: int = 3,
             out_channels: int = 3,
             embed_dim: int = 64,
-            predictive_adaptive_curve: bool = False,
-            learn_local_exposure: bool = False,
-            use_enhancement_gate: bool = True
     ) -> None:
         super(MultiScaleRetinexNet, self).__init__()
         self.embed_dim = embed_dim
@@ -179,7 +176,6 @@ class MultiScaleRetinexNet(nn.Module):
         self.in_conv = RetinexBlock(in_channels, 16)
 
         self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
-        # self.film1 = FiLMLayer(embed_dim=embed_dim, feature_channels=16)
 
         self.enc1 = RetinexBlock(16, 32, stride=2)
         self.enc2 = RetinexBlock(32, 64, stride=2)
@@ -187,7 +183,6 @@ class MultiScaleRetinexNet(nn.Module):
         self.bottleneck = nn.Sequential(
             RetinexBlock(64, 64),
             CBAM(64),
-            # RetinexBlock(64, 64),
         )
 
         self.dec2 = UpBlock(64, 32)
@@ -202,36 +197,6 @@ class MultiScaleRetinexNet(nn.Module):
 
         self.nested_dec = RetinexBlock(32, 16)
 
-        self.predictive_adaptive_curve = predictive_adaptive_curve
-        self.learn_local_exposure = learn_local_exposure
-
-        if self.predictive_adaptive_curve:
-            self.adaptive_curve_head = nn.Sequential(
-                DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-                nn.SiLU(inplace=True),
-                nn.Conv2d(8, 2, kernel_size=1)
-            )
-            nn.init.zeros_(self.adaptive_curve_head[-1].weight)
-            nn.init.zeros_(self.adaptive_curve_head[-1].bias)
-
-        if self.learn_local_exposure:
-            self.predicted_local_mean_head = nn.Sequential(
-                DepthwiseSeparableConv(16, 8, kernel_size=3, padding=1),
-                nn.SiLU(inplace=True),
-                nn.Conv2d(8, 1, kernel_size=1),
-                nn.Sigmoid()
-            )
-
-        self.use_enhancement_gate = use_enhancement_gate
-        if self.use_enhancement_gate:
-            gate_input_channels = 16 + self.embed_dim
-            self.gate_conv_head = nn.Sequential(
-                DepthwiseSeparableConv(gate_input_channels, 16, kernel_size=3, padding=1),
-                nn.SiLU(inplace=True),
-                nn.Conv2d(16, 1, kernel_size=1),
-                nn.Sigmoid()
-            )
-            init.constant_(self.gate_conv_head[-2].bias, 2.0)
         self.apply(self._init_weights)
 
     @staticmethod
@@ -244,7 +209,7 @@ class MultiScaleRetinexNet(nn.Module):
             init.constant_(m.weight, 1)
             init.constant_(m.bias, 0)
 
-    def forward(self, x: Tensor, embedding: Tensor) -> tuple[Tensor, Tensor | None, Tensor | None, Tensor | None]:
+    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
         b, _ = embedding.shape
 
         e0 = self.in_conv(x)
@@ -271,46 +236,8 @@ class MultiScaleRetinexNet(nn.Module):
         d1 = self.dec1_conv(d1)
         d1 = self.dec1_attn(d1)
 
-        if self.use_enhancement_gate:
-            b_d1, _, h_d1, w_d1 = d1.shape
-            tiled_embedding = embedding.view(b_d1, -1, 1, 1).expand(b_d1, -1, h_d1, w_d1)
-
-            gate_head_input = torch.cat([d1, tiled_embedding], dim=1)
-
-            enhancement_gate_map = self.gate_conv_head(gate_head_input)
-
         d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
 
         final_illumination = self.out_conv(d1_nested)
 
-        if self.learn_local_exposure:
-            predicted_local_mean_map = self.predicted_local_mean_head(d1)
-            predicted_local_mean_val = F.adaptive_avg_pool2d(predicted_local_mean_map, output_size=8)
-        else:
-            predicted_local_mean_val = None
-
-        if self.use_enhancement_gate:
-            identity_map = torch.zeros_like(final_illumination)
-            final_illumination = enhancement_gate_map * final_illumination + (1 - enhancement_gate_map) * identity_map
-
-        if self.predictive_adaptive_curve:
-            adaptive_params = self.adaptive_curve_head(d1)
-            alpha_map_raw, beta_map_raw = torch.chunk(adaptive_params, 2, dim=1)
-            base_alpha, base_beta, scale = 0.4, 0.7, 0.1
-            illum_level = torch.sigmoid(final_illumination).mean(dim=[1,2,3], keepdim=True)
-            alpha_map = base_alpha + scale * torch.tanh(alpha_map_raw)
-            alpha_map *= 1.0 - 0.5 * illum_level
-
-            beta_map  = base_beta  + scale * torch.tanh(beta_map_raw)
-            beta_map *= 1.0 - 0.5 * illum_level
-            if self.learn_local_exposure:
-                local_mean = F.interpolate(predicted_local_mean_val, size=final_illumination.shape[2:], mode='bilinear')
-                alpha_map *= (1 - local_mean)
-                beta_map *= local_mean
-
-        else:
-            alpha_map = None
-            beta_map = None
-
-
-        return final_illumination, alpha_map, beta_map, predicted_local_mean_val
+        return final_illumination
