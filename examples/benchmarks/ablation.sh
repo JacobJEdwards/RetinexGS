@@ -2,12 +2,12 @@ SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 POSTFIXES="_variance _multiexposure _contrast"
 CONFIG_OPTIONS=(
-    "--no-use-view-dirs"
     "--no-use-normals"
+    "--no-use-view-dirs"
 )
 CONFIG_NAMES=(
-    "no_view_dirs"
     "no_normals"
+    "no_view_dirs"
 )
 
 for POSTFIX in $POSTFIXES; do
