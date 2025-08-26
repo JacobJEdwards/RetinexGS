@@ -412,7 +412,7 @@ class Runner:
             loss_adaptive_curve = torch.tensor(0.0, device=device)
 
         if cfg.loss_exposure:
-            loss_exposure_val = self.loss_exposure(reflectance_map, images_ids)
+            loss_exposure_val = self.loss_exposure(reflectance_map)
         else:
             loss_exposure_val = torch.tensor(0.0, device=device)
 
