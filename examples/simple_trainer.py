@@ -416,13 +416,13 @@ class Runner:
         else:
             loss_exposure_val = torch.tensor(0.0, device=device)
 
-        con_degree = (0.5 / torch.mean(pixels))
-        org_loss_reflectance_spa_map = self.loss_spatial.forward_per_pixel(
-            input_image_for_net, reflectance_map, contrast=con_degree
-        )
 
         if cfg.loss_reflectance_spa:
-            loss_reflectance_spa = org_loss_reflectance_spa_map.mean()
+            con_degree = (0.5 / torch.mean(pixels))
+
+            loss_reflectance_spa = self.loss_spatial(
+                input_image_for_net, reflectance_map, contrast=con_degree
+            )
         else:
             loss_reflectance_spa = torch.tensor(0.0, device=device)
 

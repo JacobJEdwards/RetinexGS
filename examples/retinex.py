@@ -85,13 +85,8 @@ class UpBlock(nn.Module):
         super().__init__()
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
         self.conv = DepthwiseSeparableConv(in_channels, out_channels, kernel_size=3, padding=1)
-        # self.conv = DepthwiseSeparableConv(in_channels, out_channels * 4, kernel_size=3, padding=1)
-        # self.shuffle = nn.PixelShuffle(2)
-        # self.norm = nn.GroupNorm(num_groups=8, num_channels=out_channels)
-        # self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> Tensor:
-        # return self.act(self.norm(self.shuffle(self.conv(x))))
         x = self.upsample(x)
         x = self.conv(x)
         return x
@@ -111,23 +106,6 @@ class ECALayer(nn.Module):
         y = self.sigmoid(y)
         return x * y.expand_as(x)
 
-
-class SEBlock(nn.Module):
-    def __init__(self, channel: int, reduction: int = 16) -> None:
-        super().__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.SiLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
 
 class SpatiallyFiLMLayer(nn.Module):
     def __init__(self, feature_channels: int, embed_dim: int):
@@ -150,18 +128,6 @@ class SpatiallyFiLMLayer(nn.Module):
         gamma, beta = torch.chunk(mod_params, 2, dim=1)
 
         return (1 + gamma) * x + beta
-
-class FiLMLayer(nn.Module):
-    def __init__(self, embed_dim: int, feature_channels: int):
-        super(FiLMLayer, self).__init__()
-        self.layer = nn.Linear(embed_dim, feature_channels * 2)
-
-    def forward(self, x: Tensor, embedding: Tensor) -> Tensor:
-        gamma_beta = self.layer(embedding)
-        gamma_beta = gamma_beta.view(gamma_beta.size(0), -1, 1, 1)
-        gamma, beta = torch.chunk(gamma_beta, 2, dim=1)
-
-        return gamma * x + beta
 
 class MultiScaleRetinexNet(nn.Module):
     def __init__(
