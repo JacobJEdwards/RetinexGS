@@ -54,11 +54,9 @@ class HistogramPriorLoss(nn.Module):
     def __init__(self, lambda_smooth=0.1):
         super(HistogramPriorLoss, self).__init__()
         self.lambda_smooth = lambda_smooth
-        # self.lambda_reg = lambda_reg
 
     @staticmethod
     def compute_histogram_equalization(inp):
-        # Resize Images
         inp = torch.mean(
             nn.functional.interpolate(inp.permute(0, 3, 1, 2), scale_factor=0.25),
             dim=1,
@@ -106,7 +104,6 @@ class AdaptiveCurveLoss(nn.Module):
             lambda2: float = 1.0,
             lambda3: float = 1.0,
             learn_lambdas: bool = False,
-            learn_thresholds: bool = False,
     ):
         """
         Custom loss function for controlling curve enhancement and compression.
@@ -122,13 +119,8 @@ class AdaptiveCurveLoss(nn.Module):
         self.alpha = alpha
         self.beta = beta
 
-        self.learn_thresholds = learn_thresholds
-        if self.learn_thresholds:
-            self.low_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_low_thresh, dtype=torch.float32))]))
-            self.high_thresh = nn.Parameter(torch.tensor([torch.logit(torch.tensor(initial_high_thresh, dtype=torch.float32))]))
-        else:
-            self.low_thresh = initial_low_thresh
-            self.high_thresh = initial_high_thresh
+        self.low_thresh = initial_low_thresh
+        self.high_thresh = initial_high_thresh
 
         self.learn_lambdas = learn_lambdas
         if self.learn_lambdas:
@@ -140,56 +132,9 @@ class AdaptiveCurveLoss(nn.Module):
             self.register_buffer("lambda2", torch.tensor([lambda2], dtype=torch.float32))
             self.register_buffer("lambda3", torch.tensor([lambda3], dtype=torch.float32))
 
-    def forward_with_maps(
-            self,
-            output: Tensor,
-            alpha_map: Tensor,
-            beta_map: Tensor,
-    ) -> Tensor:
-        if alpha_map.shape[2:] != output.shape[2:]:
-            alpha_map = F.interpolate(alpha_map, size=output.shape[2:], mode='bilinear', align_corners=False)
-        if beta_map.shape[2:] != output.shape[2:]:
-            beta_map = F.interpolate(beta_map, size=output.shape[2:], mode='bilinear', align_corners=False)
-
-        if self.learn_thresholds:
-            low_thresh_val = torch.sigmoid(self.low_thresh)
-            high_thresh_val = torch.sigmoid(self.high_thresh)
-        else:
-            low_thresh_val = self.low_thresh
-            high_thresh_val = self.high_thresh
-
-        low_mask = (output < low_thresh_val).float()
-        low_light_loss = torch.mean(low_mask * torch.abs(output - alpha_map))
-
-        high_mask = (output > high_thresh_val).float()
-        high_light_loss = torch.mean(high_mask * torch.abs(output - beta_map))
-
-        grad_y = (output[:, :, 1:, :] - output[:, :, :-1, :]) ** 2
-        grad_x = (output[:, :, :, 1:] - output[:, :, :, :-1]) ** 2
-        smooth_loss = torch.mean(grad_x) + torch.mean(grad_y)
-
-        lambda1_val = F.softplus(self.lambda1) if self.learn_lambdas else self.lambda1
-        lambda2_val = F.softplus(self.lambda2) if self.learn_lambdas else self.lambda2
-        lambda3_val = F.softplus(self.lambda3) if self.learn_lambdas else self.lambda3
-
-        total_loss = (
-                lambda1_val * low_light_loss
-                + lambda2_val * high_light_loss
-                + lambda3_val * smooth_loss
-        )
-
-        return total_loss.squeeze()
-
-    def forward(self, output: Tensor, alpha_map: Tensor | None = None, beta_map: Tensor | None = None) -> Tensor:
-        if alpha_map is not None and beta_map is not None:
-            return self.forward_with_maps(output, alpha_map, beta_map)
-
-        if self.learn_thresholds:
-            low_thresh_val = torch.sigmoid(self.low_thresh)
-            high_thresh_val = torch.sigmoid(self.high_thresh)
-        else:
-            low_thresh_val = self.low_thresh
-            high_thresh_val = self.high_thresh
+    def forward(self, output: Tensor) -> Tensor:
+        low_thresh_val = self.low_thresh
+        high_thresh_val = self.high_thresh
 
         low_mask = (output < low_thresh_val).float()
         low_light_loss = torch.mean(low_mask * torch.abs(output - self.alpha))
@@ -235,33 +180,15 @@ class ColourConsistencyLoss(nn.Module):
 
 # Exposure Loss, control the generated image exposure
 class ExposureLoss(nn.Module):
-    def __init__(self, patch_size: int, mean_val: float = 0.5, learn_global_exposure: bool = False, use_embeddings: bool = False, num_images: int | None = None) -> None:
+    def __init__(self, patch_size: int, mean_val: float = 0.5) -> None:
         super(ExposureLoss, self).__init__()
         self.pool = nn.AvgPool2d(patch_size)
-        self.learn_global_exposure = learn_global_exposure
-        self.use_embeddings = use_embeddings and num_images is not None
+        self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
 
-        if self.learn_global_exposure:
-            if self.use_embeddings:
-                self.mean_val_tensor = nn.Embedding(num_images, 1)
-                self.mean_val_tensor.weight.data.fill_(mean_val)
-            else:
-                self.mean_val_tensor = nn.Parameter(torch.tensor([mean_val], dtype=torch.float32))
-        else:
-            self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
-
-    def forward(self, x: Tensor, image_ids: Tensor | None = None) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         x = torch.mean(x, 1, keepdim=True)
         mean = self.pool(x)
-        if self.learn_global_exposure:
-            if self.use_embeddings:
-                if image_ids is None:
-                    raise ValueError("image_ids must be provided when using embeddings for global exposure.")
-                mean_val = self.mean_val_tensor(image_ids).view(-1, 1, 1, 1)
-            else:
-                mean_val = torch.clamp(self.mean_val_tensor, 0.0, 1.0)
-        else:
-            mean_val = self.mean_val_tensor
+        mean_val = self.mean_val_tensor
 
         d = torch.mean(torch.pow(mean - mean_val, 2))
         return d
@@ -274,7 +201,7 @@ class SpatialLoss(nn.Module):
     weight_up: Tensor
     weight_down: Tensor
 
-    def __init__(self, learn_contrast: bool = False, initial_contrast: float = 8.0, num_images: int | None = None) -> \
+    def __init__(self) -> \
             None:
         super(SpatialLoss, self).__init__()
         kernel_left = torch.tensor(
@@ -297,15 +224,8 @@ class SpatialLoss(nn.Module):
 
         self.pool = nn.AvgPool2d(4)
 
-        self.learn_contrast = learn_contrast
-        if self.learn_contrast:
-            self.learnable_contrast = nn.Embedding(num_images, 1) if num_images is not None else nn.Parameter(torch.tensor([initial_contrast], dtype=torch.float32))
-            self.learnable_contrast.weight.data.fill_(initial_contrast)
-        else:
-            self.register_buffer("learnable_contrast", torch.tensor([initial_contrast], dtype=torch.float32))
 
-
-    def forward_per_pixel(self, org: Tensor, enhance: Tensor, contrast: int = 8, image_id: Tensor | None = None):
+    def forward_per_pixel(self, org: Tensor, enhance: Tensor, contrast: int = 8):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
 
@@ -323,15 +243,7 @@ class SpatialLoss(nn.Module):
         D_org_letf, D_org_right, D_org_up, D_org_down = p(org_pool)
         D_enhance_letf, D_enhance_right, D_enhance_up, D_enhance_down = p(enhance_pool)
 
-        if self.learn_contrast:
-            if image_id is None:
-                current_contrast = F.softplus(self.learnable_contrast) if self.learn_contrast else (contrast if contrast is not None else self.learnable_contrast)
-            else:
-                current_contrast = F.softplus(self.learnable_contrast(image_id))
-                current_contrast = current_contrast.view(-1, 1, 1, 1)
-        else:
-            current_contrast = contrast if contrast is not None else self.learnable_contrast
-
+        current_contrast = contrast
 
         D_left = torch.pow(D_org_letf * current_contrast - D_enhance_letf, 2)
         D_right = torch.pow(D_org_right * current_contrast - D_enhance_right, 2)
@@ -509,21 +421,11 @@ class IlluminationFrequencyLoss(nn.Module):
 class EdgeAwareSmoothingLoss(nn.Module):
     initial_gamma: Tensor
 
-    def __init__(self, initial_gamma: float = 0.2, learn_gamma: bool = True, num_images: int | None = None) -> None:
+    def __init__(self, initial_gamma: float = 0.2) -> None:
         super(EdgeAwareSmoothingLoss, self).__init__()
-        self.learn_gamma = learn_gamma
-        self.use_embedding = num_images is not None
-
         self.register_buffer("initial_gamma", torch.tensor(initial_gamma, dtype=torch.float32))
 
-        if self.learn_gamma:
-            if self.use_embedding:
-                self.gamma_adjustments_embedding = nn.Embedding(num_images, 1)
-                self.gamma_adjustments_embedding.weight.data.fill_(0.0)
-            else:
-                self.gamma_adjustment = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
-
-    def forward(self, img: Tensor, guide_img: Tensor, image_id: Tensor | None = None, gamma_gate: Tensor | None = None) -> Tensor:
+    def forward(self, img: Tensor, guide_img: Tensor) -> Tensor:
         if img.shape[1] > 1:
             img_gray = torch.mean(img, dim=1, keepdim=True)
         else:
@@ -540,16 +442,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
         dx_guide = guide_img_gray[:, :, :, 1:] - guide_img_gray[:, :, :, :-1]
         dy_guide = guide_img_gray[:, :, 1:, :] - guide_img_gray[:, :, :-1, :]
 
-        if self.learn_gamma:
-            if self.use_embedding:
-                if image_id is None:
-                    raise ValueError("image_id must be provided when using embedding for gamma.")
-                adjustment = self.gamma_adjustments_embedding(image_id).view(-1, 1, 1, 1)
-            else:
-                adjustment = self.gamma_adjustment
-            effective_gamma = self.initial_gamma + 0.1 * torch.tanh(adjustment)
-        else:
-            effective_gamma = self.initial_gamma
+        effective_gamma = self.initial_gamma
 
         effective_gamma += 1e-8
 
@@ -561,39 +454,7 @@ class EdgeAwareSmoothingLoss(nn.Module):
 
         total_loss = loss_x + loss_y
 
-        if gamma_gate is not None:
-            return gamma_gate * total_loss
-
         return total_loss
-
-class LocalExposureLoss(nn.Module):
-    def __init__(self, patch_size: int, mean_val: float = 0.5, patch_grid_size: int | tuple[int, int] | None = None) -> None:
-        super(LocalExposureLoss, self).__init__()
-        self.patch_size = patch_size
-        self.register_buffer("mean_val_tensor", torch.tensor([mean_val]))
-        self.patch_grid_size = patch_grid_size
-
-        if self.patch_grid_size is not None:
-            if isinstance(self.patch_grid_size, int):
-                self.patch_grid_size = (self.patch_grid_size, self.patch_grid_size)
-            self.patch_pool = nn.AdaptiveAvgPool2d(self.patch_grid_size)
-        else:
-            self.global_pool = nn.AvgPool2d(patch_size)
-
-
-    def forward(self, x: Tensor, mean_val: Tensor | None = None) -> Tensor:
-        if x.shape[1] > 1:
-            x = torch.mean(x, 1, keepdim=True)
-
-        mean_val = self.mean_val_tensor if mean_val is None else mean_val
-        if self.patch_grid_size is not None:
-            mean_patches = self.patch_pool(x)
-            d = torch.mean(torch.pow(mean_patches - mean_val, 2))
-        else:
-            mean = self.global_pool(x)
-            d = torch.mean(torch.pow(mean - mean_val, 2))
-
-        return d
 
 class ExclusionLoss(nn.Module):
 
@@ -607,7 +468,7 @@ class ExclusionLoss(nn.Module):
         self.avg_pool = torch.nn.AvgPool2d(2, stride=2)
         self.sigmoid = nn.Sigmoid()
 
-    def get_gradients(self, img1, img2):
+    def get_gradients(self, img1: Tensor, img2: Tensor) -> tuple[Tensor, Tensor, int]:
         img2 = img2.to(img1.device)
         self.avg_pool = self.avg_pool.to(img1.device)
         self.sigmoid = self.sigmoid.to(img1.device)
@@ -670,69 +531,12 @@ class ExclusionLoss(nn.Module):
         grady = img[:, :, :, 1:] - img[:, :, :, :-1]
         return gradx, grady
 
-class PatchConsistencyLoss(nn.Module):
-    """
-    Enforces that the rendered reflectance is consistent across different views.
-    It works by warping the reflectance map from a source view to a target view
-    and computing a photometric loss.
-    """
-    def __init__(self):
-        super(PatchConsistencyLoss, self).__init__()
-
-    def forward(self, reflectance_maps: Tensor, depth_maps: Tensor,
-                camtoworlds: Tensor, Ks: Tensor) -> Tensor:
-
-        if reflectance_maps.shape[0] <= 1:
-            return torch.tensor(0.0, device=reflectance_maps.device)
-
-        target_reflectance = reflectance_maps[0:1] # (1, C, H, W)
-        source_reflectance = reflectance_maps[1:2] # (1, C, H, W)
-
-        target_depth = depth_maps[0:1] # (1, 1, H, W)
-
-        T_target_to_world = camtoworlds[0:1] # (1, 4, 4)
-        T_source_to_world = camtoworlds[1:2] # (1, 4, 4)
-        K_target = Ks[0:1] # (1, 3, 3)
-        K_source = Ks[1:2] # (1, 3, 3)
-
-        T_world_to_target = torch.inverse(T_target_to_world)
-        T_world_to_source = torch.inverse(T_source_to_world)
-
-        T_target_to_source = T_world_to_source @ T_target_to_world
-
-        try:
-            warped_source_reflectance = kornia.geometry.warp_frame_depth(
-                image_src=source_reflectance,
-                depth_dst=target_depth,
-                src_trans_dst=T_target_to_source,
-                camera_matrix=K_source,
-            )
-
-            valid_mask = (target_depth > 0).float()
-
-            photometric_loss = F.l1_loss(
-                target_reflectance * valid_mask,
-                warped_source_reflectance * valid_mask
-            )
-        except Exception as e:
-            print(f"Kornia warping failed with error: {e}. Skipping patch consistency loss for this batch.")
-            return torch.tensor(0.0, device=reflectance_maps.device)
-
-        return photometric_loss
-
 class WhitePreservationLoss(nn.Module):
-    def __init__(self, luminance_threshold: float = 95.0, chroma_tolerance: float = 5.0, gain: float = 10.0, learnable: bool = False):
+    def __init__(self, luminance_threshold: float = 95.0, chroma_tolerance: float = 5.0, gain: float = 10.0):
         super(WhitePreservationLoss, self).__init__()
-        if learnable:
-            self.luminance_threshold = nn.Parameter(torch.tensor(luminance_threshold))
-            self.chroma_tolerance = nn.Parameter(torch.tensor(chroma_tolerance))
-            self.gain = nn.Parameter(torch.tensor(gain))
-        else:
-            self.register_buffer("luminance_threshold", torch.tensor(luminance_threshold))
-            self.register_buffer("chroma_tolerance", torch.tensor(chroma_tolerance))
-            self.register_buffer("gain", torch.tensor(gain))
-
-        self.learnable = learnable
+        self.register_buffer("luminance_threshold", torch.tensor(luminance_threshold))
+        self.register_buffer("chroma_tolerance", torch.tensor(chroma_tolerance))
+        self.register_buffer("gain", torch.tensor(gain))
 
     def forward(self, input_image: Tensor, reflectance_map: Tensor) -> Tensor:
         input_lab = kornia.color.rgb_to_lab(input_image.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
@@ -741,14 +545,9 @@ class WhitePreservationLoss(nn.Module):
         a = input_lab[..., 1]
         b = input_lab[..., 2]
 
-        if self.learnable:
-            luminance_threshold = 100.0 * torch.sigmoid(self.luminance_threshold)  # (0, 100)
-            chroma_tolerance = F.softplus(self.chroma_tolerance)  # > 0
-            gain = F.softplus(self.gain)  # > 0
-        else:
-            luminance_threshold = self.luminance_threshold
-            chroma_tolerance = self.chroma_tolerance
-            gain = self.gain
+        luminance_threshold = self.luminance_threshold
+        chroma_tolerance = self.chroma_tolerance
+        gain = self.gain
 
         luminance_mask = torch.sigmoid((L - luminance_threshold) * gain)
         chroma_mask = torch.exp(-(a.pow(2) + b.pow(2)) / (2 * chroma_tolerance**2))
@@ -758,81 +557,6 @@ class WhitePreservationLoss(nn.Module):
 
         loss = torch.mean(torch.abs(reflectance_map - input_image) * soft_white_mask)
 
-        return loss
-
-class DarkPreservationLoss(nn.Module):
-    def __init__(self, luminance_threshold: float = 20.0, chroma_tolerance: float = 5.0, gain: float = 10.0, learnable: bool = False):
-        super().__init__()
-        if learnable:
-            self.luminance_threshold = nn.Parameter(torch.tensor(luminance_threshold))
-            self.chroma_tolerance = nn.Parameter(torch.tensor(chroma_tolerance))
-            self.gain = nn.Parameter(torch.tensor(gain))
-        else:
-            self.register_buffer("luminance_threshold", torch.tensor(luminance_threshold))
-            self.register_buffer("chroma_tolerance", torch.tensor(chroma_tolerance))
-            self.register_buffer("gain", torch.tensor(gain))
-        self.learnable = learnable
-
-    def forward(self, input_image: Tensor, reflectance_map: Tensor) -> Tensor:
-        input_lab = kornia.color.rgb_to_lab(input_image.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-        L = input_lab[..., 0]
-        a = input_lab[..., 1]
-        b = input_lab[..., 2]
-
-        if self.learnable:
-            luminance_threshold = 100.0 * torch.sigmoid(self.luminance_threshold / 100.0)
-            chroma_tolerance = F.softplus(self.chroma_tolerance)
-            gain = F.softplus(self.gain)
-        else:
-            luminance_threshold = self.luminance_threshold
-            chroma_tolerance = self.chroma_tolerance
-            gain = self.gain
-
-        luminance_mask = torch.sigmoid((luminance_threshold - L) * gain)
-        chroma_mask = torch.exp(-(a.pow(2) + b.pow(2)) / (2 * chroma_tolerance**2))
-
-        soft_dark_mask = luminance_mask * chroma_mask
-        soft_dark_mask = soft_dark_mask.unsqueeze(-1)
-
-        diff = torch.clamp(reflectance_map - input_image, min=0.0)
-        loss = torch.mean(diff * soft_dark_mask)
-        return loss
-
-class SaturatedColorPreservationLoss(nn.Module):
-    def __init__(self, luminance_threshold: float = 50.0, chroma_threshold: float = 20.0, gain: float = 5.0, learnable: bool = False):
-        super().__init__()
-        if learnable:
-            self.luminance_threshold = nn.Parameter(torch.tensor(luminance_threshold))
-            self.chroma_threshold = nn.Parameter(torch.tensor(chroma_threshold))
-            self.gain = nn.Parameter(torch.tensor(gain))
-        else:
-            self.register_buffer("luminance_threshold", torch.tensor(luminance_threshold))
-            self.register_buffer("chroma_threshold", torch.tensor(chroma_threshold))
-            self.register_buffer("gain", torch.tensor(gain))
-        self.learnable = learnable
-
-    def forward(self, input_image: Tensor, reflectance_map: Tensor) -> Tensor:
-        input_lab = kornia.color.rgb_to_lab(input_image.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-        L = input_lab[..., 0]
-        a = input_lab[..., 1]
-        b = input_lab[..., 2]
-        chroma = torch.sqrt(a.pow(2) + b.pow(2))
-
-        if self.learnable:
-            luminance_threshold = 100.0 * torch.sigmoid(self.luminance_threshold / 100.0)
-            chroma_threshold = F.softplus(self.chroma_threshold)
-            gain = F.softplus(self.gain)
-        else:
-            luminance_threshold = self.luminance_threshold
-            chroma_threshold = self.chroma_threshold
-            gain = self.gain
-
-        luminance_mask = torch.sigmoid((L - luminance_threshold) * gain)
-        chroma_mask = torch.sigmoid((chroma - chroma_threshold) * gain)
-        soft_saturated_mask = luminance_mask * chroma_mask
-        soft_saturated_mask = soft_saturated_mask.unsqueeze(-1)
-
-        loss = torch.mean(torch.abs(reflectance_map - input_image) * soft_saturated_mask)
         return loss
 
 def interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
@@ -886,22 +610,6 @@ class PerceptualColorLoss(nn.Module):
         img2_ab = img2_lab[:, 1:3, :, :]
 
         return F.l1_loss(img1_ab, img2_ab)
-
-class ChromaticityFidelityLoss(nn.Module):
-    def __init__(self, illum_threshold: float = 0.3):
-        super().__init__()
-        self.illum_threshold = illum_threshold
-
-    def forward(self, input_image: Tensor, reflectance_map: Tensor, illumination_map: Tensor) -> Tensor:
-        eps = 1e-6
-        input_chroma = input_image / (input_image.sum(dim=1, keepdim=True) + eps)
-        reflect_chroma = reflectance_map / (reflectance_map.sum(dim=1, keepdim=True) + eps)
-
-        illum_mask = (illumination_map.mean(dim=1) > self.illum_threshold).float().unsqueeze(1)
-
-        loss = torch.mean(torch.abs(input_chroma - reflect_chroma) * illum_mask)
-        return loss
-
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
