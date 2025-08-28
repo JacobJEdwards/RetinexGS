@@ -7,6 +7,7 @@ from typing import Any
 
 import imageio
 import numpy as np
+import optuna
 import torch
 import torch.nn.functional as F
 import tqdm
@@ -201,11 +202,9 @@ class Runner:
             gain=cfg.gain,
         ).to(self.device)
 
-        mean_val = 128
-        std_dev = 40
-        x = np.arange(256)
-        pdf = stats.norm.pdf(x, mean_val, std_dev)
-        target_hist = torch.from_numpy(pdf / pdf.sum()).float().to(self.device)
+        target_hist = torch.tensor(stats.norm.pdf(
+            np.linspace(0, 1, 255), loc=0.5, scale=0.2
+        ), dtype=torch.float32, device=self.device)
 
         self.target_histogram_dist = nn.Parameter(target_hist)
 
@@ -1194,6 +1193,64 @@ BilateralGrid = None
 color_correct = None
 slice_func = None
 total_variation_loss = None
+
+def objective(trial: optuna.Trial) -> tuple[float, float, float]:
+    import gc
+
+    cfg = Config()
+
+    cfg.lambda_edge_aware_smooth = trial.suggest_float(
+        "lambda_edge_aware_smooth", 10.0, 35.0
+    )
+    cfg.lambda_illum_curve = trial.suggest_float(
+        "lambda_illum_curve", 0.5, 2.0
+    )
+
+    cfg.lambda_histogram = trial.suggest_float(
+        "lambda_histogram", 0.2, 1.2
+    )
+    cfg.lambda_illum_exposure = trial.suggest_float(
+        "lambda_illum_exposure", 0.2, 1.2
+    )
+
+    cfg.lambda_white_preservation = trial.suggest_float(
+        "lambda_white_preservation", 0.1, 1.0
+    )
+    cfg.lambda_reflect = trial.suggest_float(
+        "lambda_reflect", 0.05, 0.5
+    )
+
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
+
+    total_psnr = 0
+    total_ssim = 0
+    total_lpips = 0
+
+    for postfix in ["contrast", "multiexposure", "variance"]:
+        cfg.postfix = postfix
+        try:
+            runner = Runner(0, 0, 1, cfg)
+            runner.train()
+
+            with open(f"{cfg.result_dir}/stats/val_step{cfg.max_steps-1:04d}.json") as f:
+                stats = json.load(f)
+
+            psnr = stats.get("psnr", 0)
+            ssim = stats.get("ssim", 0)
+            lpips = stats.get("lpips", 0)
+
+            total_psnr += psnr
+            total_ssim += ssim
+            total_lpips += lpips
+
+        finally:
+            del runner
+            torch.cuda.empty_cache()
+            gc.collect()
+
+    return total_psnr, total_ssim, total_lpips
+
 
 if __name__ == "__main__":
     configs = {
