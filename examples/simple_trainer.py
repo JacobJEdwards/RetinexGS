@@ -1227,13 +1227,15 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     total_ssim = 0
     total_lpips = 0
 
+    count = 0
+
     for postfix in ["contrast", "multiexposure", "variance"]:
         cfg.postfix = postfix
         try:
             runner = Runner(0, 0, 1, cfg)
             runner.train()
 
-            with open(f"{cfg.result_dir}/stats/val_step{cfg.max_steps-1:04d}.json") as f:
+            with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
                 stats = json.load(f)
 
             psnr = stats.get("psnr", 0)
@@ -1244,12 +1246,14 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
             total_ssim += ssim
             total_lpips += lpips
 
+            count += 1
+
         finally:
             del runner
             torch.cuda.empty_cache()
             gc.collect()
 
-    return total_psnr, total_ssim, total_lpips
+    return total_psnr / count, total_ssim / count, total_lpips / count
 
 
 if __name__ == "__main__":
