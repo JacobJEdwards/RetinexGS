@@ -78,10 +78,10 @@ class Config:
 
     use_yuv_colourspace: bool = False
 
-    lambda_illum_smoothness: float = 0.005
-    lambda_exclusion: float = 0.3
+    lambda_illum_smoothness: float = 0.001
+    lambda_exclusion: float = 0.1
     lambda_shn_reg: float = 0.8
-    lambda_tv_loss: float = 5000.0
+    lambda_tv_loss: float = 500.0
 
     lambda_reflectance_reg: float = 0
     lambda_gray_world: float = 0

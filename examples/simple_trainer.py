@@ -1300,67 +1300,50 @@ class Runner:
 
         self.writer.flush()
 
-
-def objective_lr(trial: optuna.Trial):
-    cfg = Config()
-
-    cfg.camera_net_lr = trial.suggest_float("camera_net_lr", 1e-6, 1e-2, log=True)
-    cfg.appearance_embedding_lr = trial.suggest_float(
-        "appearance_embeds_lr", 1e-6, 1e-2, log=True
-    )
-    cfg.illumination_field_lr = trial.suggest_float(
-        "illumination_field_lr", 1e-5, 1e-2, log=True
-    )
-
-    cfg.max_steps = 10_000
-    cfg.eval_steps = [10_000]
-    cfg.learning_steps = trial.suggest_categorical(
-        "learning_steps", [3000, 7000, 10000]
-    )
-
-    runner = Runner(0, 0, 1, cfg)
-    runner.trial = trial
-    runner.train()
-
-    with open(f"{runner.stats_dir}/val_step{10_000 - 1:04d}.json") as f:
-        stats = json.load(f)
-
-    avg_psnr = stats.get("psnr_enh", 0)
-    avg_ssim = stats.get("ssim_enh", 0)
-    avg_lpips = stats.get("lpips_enh", 0)
-
-    torch.cuda.empty_cache()
-
-    return avg_psnr, avg_ssim, avg_lpips
-
-
 def objective(trial: optuna.Trial):
+    import gc
+
     cfg = Config()
 
-    cfg.lambda_illum_smoothness = trial.suggest_float(
-        "lambda_illum_smoothness", 1e-3, 100, log=True
-    )
-    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0, 1.0)
-    cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0, 1.0)
-    cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 1e-3, 5000, log=True)
+    cfg.lambda_tv_loss = trial.suggest_categorical("lambda_tv_loss", [0,100,250,500,750,1000,2000])
+    cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0.1, 0.8)
+    cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 0.3)
+
+    cfg.appearance_embedding_lr = trial.suggest_float("appearance_embedding_lr", 1e-5, 6e-3)
 
     cfg.max_steps = 1500
     cfg.eval_steps = [1500]
 
-    runner = Runner(0, 0, 1, cfg)
-    runner.trial = trial
-    runner.train()
+    total_psnr = 0
+    total_ssim = 0
+    total_lpips = 0
 
-    with open(f"{runner.stats_dir}/val_step{1500 - 1:04d}.json") as f:
-        stats = json.load(f)
+    count = 0
 
-    total_psnr = stats.get("psnr_enh", 0)
-    total_ssim = stats.get("ssim_enh", 0)
-    total_lpips = stats.get("lpips_enh", 0)
+    for postfix in ["_multiexposure", "_variance", "_contrast"]:
+        cfg.postfix = postfix
 
-    torch.cuda.empty_cache()
+        try:
+            runner = Runner(0, 0, 1, cfg)
+            runner.trial = trial
+            runner.train()
 
-    return total_psnr, total_ssim, total_lpips
+            with open(f"{runner.stats_dir}/val_step{1500 - 1:04d}.json") as f:
+                stats = json.load(f)
+
+            total_psnr += stats.get("psnr_enh", 0)
+            total_ssim += stats.get("ssim_enh", 0)
+            total_lpips += stats.get("lpips_enh", 0)
+
+            count += 1
+
+        finally:
+            del runner
+            torch.cuda.empty_cache()
+            gc.collect()
+
+    return total_psnr / count, total_ssim / count, total_lpips / count
+
 
 
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
