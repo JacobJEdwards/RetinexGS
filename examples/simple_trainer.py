@@ -1328,7 +1328,7 @@ def objective(trial: optuna.Trial):
             runner.trial = trial
             runner.train()
 
-            with open(f"{runner.stats_dir}/val_step{1500 - 1:04d}.json") as f:
+            with open(f"{runner.stats_dir}/val_step{cfg.max_steps - 1:04d}.json") as f:
                 stats = json.load(f)
 
             total_psnr += stats.get("psnr_enh", 0)
