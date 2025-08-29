@@ -3,6 +3,7 @@ import math
 import os
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import imageio
@@ -1218,29 +1219,37 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     total_lpips = 0
 
     count = 0
+    datasets = [
+        Path("/workspace/360_v2/bicycle"),
+        Path("/workspace/360_v2/bonsai"),
+        Path("/workspace/360_v2/room"),
+        Path("/workspace/360_v2/kitchen"),
+    ]
 
     for postfix in ["contrast", "multiexposure", "variance"]:
         cfg.postfix = postfix
-        try:
-            runner = Runner(0, 0, 1, cfg)
-            runner.train()
+        for dataset in datasets:
+            cfg.data_dir = dataset
+            try:
+                runner = Runner(0, 0, 1, cfg)
+                runner.train()
 
-            with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
-                stats = json.load(f)
+                with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
+                    stats = json.load(f)
 
-            psnr = stats.get("psnr", 0)
-            ssim = stats.get("ssim", 0)
-            lpips = stats.get("lpips", 0)
+                psnr = stats.get("psnr", 0)
+                ssim = stats.get("ssim", 0)
+                lpips = stats.get("lpips", 0)
 
-            total_psnr += psnr
-            total_ssim += ssim
-            total_lpips += lpips
+                total_psnr += psnr
+                total_ssim += ssim
+                total_lpips += lpips
 
-            count += 1
+                count += 1
 
-        finally:
-            del runner
-            torch.cuda.empty_cache()
+            finally:
+                del runner
+                torch.cuda.empty_cache()
 
     return total_psnr / count, total_ssim / count, total_lpips / count
 
