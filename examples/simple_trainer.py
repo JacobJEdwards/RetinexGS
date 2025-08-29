@@ -221,8 +221,6 @@ class Runner:
         if world_size > 1:
             self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
-        self.retinex_net.compile()
-
         self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
             lr=cfg.retinex_opt_lr * math.sqrt(cfg.batch_size),
