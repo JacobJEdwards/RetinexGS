@@ -196,7 +196,7 @@ class Runner:
             )
 
         self.illum_field_optimizer = torch.optim.AdamW(
-            self.illumination_field.parameters(), lr=cfg.illumination_field_lr
+            self.illumination_field.parameters(), lr=cfg.illumination_field_lr, fused=True
         )
 
         if cfg.use_camera_response_network:
@@ -204,22 +204,25 @@ class Runner:
                 embedding_dim=cfg.appearance_embedding_dim
             ).to(self.device)
             self.camera_response_optimizer = torch.optim.AdamW(
-                self.camera_response_net.parameters(), lr=cfg.camera_net_lr
+                self.camera_response_net.parameters(), lr=cfg.camera_net_lr, weight_decay=0.0, fused=True
             )
 
-        if cfg.use_camera_response_network:
             num_train_images = len(self.trainset)
             self.appearance_embeds = torch.nn.Embedding(
                 num_train_images, cfg.appearance_embedding_dim
             ).to(self.device)
             self.appearance_embeds_optimizer = torch.optim.AdamW(
-                self.appearance_embeds.parameters(), lr=cfg.appearance_embedding_lr
+                self.appearance_embeds.parameters(), lr=cfg.appearance_embedding_lr, fused=True
             )
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.loss_tv = TotalVariationLoss().to(self.device)
 
-        self.awl = AutomaticWeightedLoss(5).to(self.device)
+        if cfg.uncertainty_weighting:
+            self.awl = AutomaticWeightedLoss(5).to(self.device)
+            self.awl_optimizer = torch.optim.AdamW(
+                self.awl.parameters(), lr=cfg.loss_lr, weight_decay=0.0, fused=True
+            )
 
         feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -534,6 +537,8 @@ class Runner:
                     1.0 - cfg.ssim_lambda
                 ) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
+                loss_terms_for_uncertainty = []
+
                 if cfg.lambda_illum_smoothness > 0:
                     with torch.no_grad():
                         rand_points = (
@@ -555,31 +560,13 @@ class Runner:
                     )
                     loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
-                    loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    loss_terms_for_uncertainty.append(loss_illum_smoothness)
+
+                    if not cfg.uncertainty_weighting:
+                        loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
                 illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
-
-                if cfg.lambda_reflectance_reg > 0.0:
-                    reflectance_reg_loss = torch.mean(
-                        torch.pow(torch.clamp(reflectance_map - 1.0, min=0.0), 2)
-                    )
-
-                    reflectance_reg_loss += torch.mean(
-                        torch.pow(torch.clamp(-reflectance_map, min=0.0), 2)
-                    )
-
-                    loss += cfg.lambda_reflectance_reg * reflectance_reg_loss
-
-                if cfg.lambda_illum_reg > 0.0:
-                    identity = torch.eye(3, device=illum_A.device).expand_as(illum_A)
-
-                    loss_A_reg = torch.mean((illum_A - identity) ** 2)
-
-                    loss_b_reg = torch.mean(illum_b**2)
-
-                    loss_illum_reg = loss_A_reg + loss_b_reg
-                    loss += cfg.lambda_illum_reg * loss_illum_reg
 
                 if cfg.lambda_exclusion > 0.0:
                     if (
@@ -589,22 +576,20 @@ class Runner:
                         loss_exclusion = self.loss_exclusion(
                             reflectance_map_for_loss, illum_map_for_loss
                         )
-                        loss += cfg.lambda_exclusion * loss_exclusion
+                        loss_terms_for_uncertainty.append(loss_exclusion)
+
+                        if not cfg.uncertainty_weighting:
+                            loss += cfg.lambda_exclusion * loss_exclusion
 
                 if cfg.lambda_tv_loss > 0.0:
                     loss_illum_tv = self.loss_tv(illum_map_for_loss)
-                    loss += cfg.lambda_tv_loss * loss_illum_tv
+                    loss_terms_for_uncertainty.append(loss_illum_tv)
+                    if not cfg.uncertainty_weighting:
+                        loss += cfg.lambda_tv_loss * loss_illum_tv
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss_shn_reg = self.splats["shN"].pow(2).mean()
                     loss += cfg.lambda_shn_reg * loss_shn_reg
-
-                if cfg.lambda_gray_world > 0.0:
-                    reflectance_dc_rgb = sh_to_rgb(self.splats["sh0"])  # [N, 3]
-                    loss_gray_world = (
-                        (torch.mean(reflectance_dc_rgb, dim=0) - 0.5).pow(2).sum()
-                    )
-                    loss += cfg.lambda_gray_world * loss_gray_world
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
@@ -617,10 +602,8 @@ class Runner:
                         * torch.abs(torch.exp(self.splats["scales"])).mean()
                     )
 
-                if cfg.use_camera_response_network and cfg.lambda_camera_reg > 0.0:
-                    loss += cfg.lambda_camera_reg * (
-                        (c - 1).pow(2).mean() + d.pow(2).mean()
-                    )
+                if cfg.uncertainty_weighting:
+                    loss += self.awl(loss_terms_for_uncertainty)
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
@@ -652,16 +635,6 @@ class Runner:
                         step,
                     )
 
-                if cfg.lambda_reflectance_reg > 0.0:
-                    self.writer.add_scalar(
-                        "train/loss_reflectance_reg", reflectance_reg_loss.item(), step
-                    )
-
-                if cfg.lambda_illum_reg > 0.0:
-                    self.writer.add_scalar(
-                        "train/loss_illum_reg", loss_illum_reg.item(), step
-                    )
-
                 if cfg.lambda_exclusion > 0.0:
                     self.writer.add_scalar(
                         "train/loss_exclusion", loss_exclusion.item(), step
@@ -675,11 +648,6 @@ class Runner:
                 if cfg.lambda_shn_reg > 0.0:
                     self.writer.add_scalar(
                         "train/loss_shn_reg", loss_shn_reg.item(), step
-                    )
-
-                if cfg.lambda_gray_world > 0.0:
-                    self.writer.add_scalar(
-                        "train/loss_gray_world", loss_gray_world.item(), step
                     )
 
                 if cfg.opacity_reg > 0.0:
@@ -697,14 +665,6 @@ class Runner:
                         "train/loss_scale_reg",
                         cfg.scale_reg
                         * torch.abs(torch.exp(self.splats["scales"])).mean().item(),
-                        step,
-                    )
-
-                if cfg.use_camera_response_network and cfg.lambda_camera_reg > 0.0:
-                    self.writer.add_scalar(
-                        "train/loss_camera_reg",
-                        cfg.lambda_camera_reg
-                        * ((c - 1).pow(2).mean() + d.pow(2).mean()).item(),
                         step,
                     )
 
