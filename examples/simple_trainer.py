@@ -131,7 +131,7 @@ def create_splats_with_optimizers(
     elif visible_adam:
         optimizer_class = SelectiveAdam
     else:
-        optimizer_class = torch.optim.AdamW
+        optimizer_class = torch.optim.Adam
 
     optimizers = {
         name: optimizer_class(
@@ -222,10 +222,9 @@ class Runner:
         if world_size > 1:
             self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
-        self.retinex_optimizer = torch.optim.AdamW(
+        self.retinex_optimizer = torch.optim.Adam(
             self.retinex_net.parameters(),
             lr=cfg.retinex_opt_lr * math.sqrt(cfg.batch_size),
-            weight_decay=0.0,
             fused=True
         )
         self.retinex_embed_dim = cfg.retinex_embedding_dim
@@ -236,10 +235,9 @@ class Runner:
         if world_size > 1:
             self.retinex_embeds = DDP(self.retinex_embeds, device_ids=[local_rank])
 
-        self.retinex_embed_optimizer = torch.optim.AdamW(
+        self.retinex_embed_optimizer = torch.optim.Adam(
             self.retinex_embeds.parameters(),
             lr=cfg.retinex_embedding_lr * math.sqrt(cfg.batch_size),
-            weight_decay=0.0,
             fused=True
         )
 
@@ -254,10 +252,9 @@ class Runner:
             self.awl = AutomaticWeightedLoss(9)
             loss_params.append(self.awl.parameters())
 
-        self.loss_optimizer = torch.optim.AdamW(
+        self.loss_optimizer = torch.optim.Adam(
             loss_params,
             lr=cfg.loss_opt_lr * math.sqrt(cfg.batch_size),
-            weight_decay=0.0,
             fused=True
         )
 
