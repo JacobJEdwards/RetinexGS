@@ -288,8 +288,6 @@ class Runner:
             )
         elif isinstance(self.cfg.strategy, MCMCStrategy):
             self.strategy_state = self.cfg.strategy.initialize_state()
-        else:
-            assert_never(self.cfg.strategy)
 
         self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
         self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
@@ -302,8 +300,6 @@ class Runner:
             self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="vgg").to(
                 self.device
             )
-        else:
-            raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
 
         # Running stats for prunning & growing.
         n_gauss = len(self.splats["means"])
@@ -802,8 +798,6 @@ class Runner:
                     info=info,
                     lr=schedulers[0].get_last_lr()[0],
                 )
-            else:
-                assert_never(self.cfg.strategy)
 
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.eval(step)
@@ -1278,14 +1272,19 @@ if __name__ == "__main__":
 
     # cli(main, config, verbose=True)
 
+    storage = optuna.storages.JournalStorage(
+        optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
+    )
+
     study = optuna.create_study(
         directions=["maximize", "maximize", "minimize"],
         study_name="retinex_optuna_study",
-        storage="sqlite:///retinex_optuna_study.db",
+        storage=storage,
         load_if_exists=True,
     )
 
-    study.optimize(objective, n_trials=20, gc_after_trial=True, catch=(RuntimeError, ValueError), show_progress_bar=True)
+    study.optimize(objective, n_trials=50, gc_after_trial=True, catch=(RuntimeError, ValueError),
+                   show_progress_bar=True)
 
     print("Number of finished trials: ", len(study.trials))
     print("Best trials (Pareto front):")
