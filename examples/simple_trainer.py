@@ -26,7 +26,7 @@ from torch.utils.checkpoint import checkpoint
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
-from typing_extensions import Literal, assert_never
+from typing_extensions import Literal
 
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
@@ -820,7 +820,6 @@ class Runner:
             Ks = data["K"].to(device)
 
             pixels = data["image"].to(device) / 255.0
-            image_id = data["image_id"].to(device)
 
             masks = data["mask"].to(device) if "mask" in data else None
             height, width = pixels.shape[1:3]
@@ -840,33 +839,15 @@ class Runner:
             )
 
             colors_enh, alphas_enh, info = out
-            retinex_output = self.get_retinex_output(
-                images_ids=image_id, pixels=pixels
-            )
-            (
-                _,
-                illumination_map,
-                _,
-            ) = retinex_output
-
-            colors_low = colors_enh * illumination_map.permute(0, 2, 3, 1)
-            colors_low = torch.clamp(colors_low, 0.0, 1.0)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
-            colors_low = torch.clamp(colors_low, 0.0, 1.0)
             colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
 
             if world_rank == 0:
                 if cfg.save_images:
-                    canvas_list_low = [pixels, colors_low]
                     canvas_list_enh = [pixels, colors_enh]
-
-                    canvas_eval_low = (
-                        torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
-                    )
-                    canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
 
                     canvas_eval_enh = (
                         torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
@@ -874,19 +855,7 @@ class Runner:
                     canvas_eval_enh = (canvas_eval_enh * 255).astype(np.uint8)
 
                     imageio.imwrite(
-                        f"{self.render_dir}/{stage}_step{step}_low_{i:04d}.png",
-                        canvas_eval_low,
-                    )
-
-                    colors_low_np = colors_low.squeeze(0).cpu().numpy()
-
-                    imageio.imwrite(
-                        f"{self.render_dir}/{stage}_low_{i:04d}.png",
-                        (colors_low_np * 255).astype(np.uint8),
-                    )
-
-                    imageio.imwrite(
-                        f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
+                        f"{self.render_dir}/{stage}_step{step}_{i:04d}.png",
                         canvas_eval_enh,
                     )
                     colors_enh_np = colors_enh.squeeze().cpu().numpy()
@@ -896,18 +865,11 @@ class Runner:
                     )
 
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_p = colors_low.permute(0, 3, 1, 2)
+                colors_enh_p = colors_enh.permute(0, 3, 1, 2)
 
-                metrics["psnr"].append(self.psnr(colors_p, pixels_p))
-                metrics["ssim"].append(self.ssim(colors_p, pixels_p))
-                metrics["lpips"].append(self.lpips(colors_p, pixels_p))
-
-                with torch.no_grad():
-                    colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-
-                    metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
-                    metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
-                    metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
+                metrics["lpips"].append(self.lpips(colors_enh_p, pixels_p))
+                metrics["ssim"].append(self.ssim(colors_enh_p, pixels_p))
+                metrics["psnr"].append(self.psnr(colors_enh_p, pixels_p))
 
         if world_rank == 0:
             avg_ellipse_time = (
