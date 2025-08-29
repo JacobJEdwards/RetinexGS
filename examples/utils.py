@@ -366,39 +366,30 @@ class IlluminationField(nn.Module):
         dir_num_freqs: int = 4,
         hidden_dim: int = 64,
         num_layers: int = 2,
-        use_hash_grid: bool = True,
         use_view_dirs: bool = True,
-        use_appearance_embeds: bool = False,
         use_normals: bool = True,
-        appearance_embedding_dim: int = 32,
     ):
         super().__init__()
         self.scene_scale = scene_scale
-        self.use_hash_grid = use_hash_grid
         self.use_view_dirs = use_view_dirs
-        self.use_appearance_embeds = use_appearance_embeds
         self.use_normals = use_normals
 
         self.hidden_dim = hidden_dim
 
-        if self.use_hash_grid:
-            per_level_scale = 1.4472692012786865
-            self.encoder = tcnn.Encoding(
-                n_input_dims=3,
-                encoding_config={
-                    "otype": "HashGrid",
-                    "n_levels": 16,
-                    "n_features_per_level": 2,
-                    "log2_hashmap_size": 19,
-                    "base_resolution": 16,
-                    "per_level_scale": per_level_scale,
-                },
-                dtype=torch.float32,
-            )
-            pos_in_dim = self.encoder.n_output_dims
-        else:
-            self.encoder = PositionalEncoder(num_freqs)
-            pos_in_dim = 3 * 2 * num_freqs
+        per_level_scale = 1.4472692012786865
+        self.encoder = tcnn.Encoding(
+            n_input_dims=3,
+            encoding_config={
+                "otype": "HashGrid",
+                "n_levels": 16,
+                "n_features_per_level": 2,
+                "log2_hashmap_size": 19,
+                "base_resolution": 16,
+                "per_level_scale": per_level_scale,
+            },
+            dtype=torch.float32,
+        )
+        pos_in_dim = self.encoder.n_output_dims
 
         self.dir_in_dim = 0
         if self.use_view_dirs:
@@ -409,10 +400,6 @@ class IlluminationField(nn.Module):
         if self.use_normals:
             self.normal_encoder = PositionalEncoder(num_freqs)
             self.normal_in_dim += 3 * 2 * num_freqs
-
-        self.embed_in_dim = 0
-        if use_appearance_embeds:
-            self.embed_in_dim += appearance_embedding_dim
 
         in_dim = pos_in_dim + self.dir_in_dim + self.embed_in_dim + self.normal_in_dim
 
@@ -437,17 +424,13 @@ class IlluminationField(nn.Module):
     def forward(
         self,
         x: Tensor,
-        embeds: Tensor | None = None,
         view_dirs: Tensor | None = None,
         normals: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         # x: [N, 3]
-        if self.use_hash_grid:
-            normalized_x = x / (2.0 * self.scene_scale) + 0.5
-            normalized_x = torch.clamp(normalized_x, 0.0, 1.0)
-            encoded_x = self.encoder(normalized_x)
-        else:
-            encoded_x = self.encoder(x)
+        normalized_x = x / (2.0 * self.scene_scale) + 0.5
+        normalized_x = torch.clamp(normalized_x, 0.0, 1.0)
+        encoded_x = self.encoder(normalized_x)
 
         mlp_input = [encoded_x]
 
@@ -467,15 +450,6 @@ class IlluminationField(nn.Module):
                 zeros = torch.zeros(x.shape[0], self.normal_in_dim, device=x.device)
                 mlp_input.append(zeros)
 
-        if self.use_appearance_embeds:
-            if embeds is not None:
-                num_points = x.shape[0]
-                broadcasted_embeds = embeds.expand(num_points, -1)
-                mlp_input.append(broadcasted_embeds)
-            else:
-                zeros = torch.zeros(x.shape[0], self.embed_in_dim, device=x.device)
-                mlp_input.append(zeros)
-
         mlp_input_tensor = torch.cat(mlp_input, dim=-1)
 
         hidden_features = self.mlp_base(mlp_input_tensor)
@@ -485,12 +459,13 @@ class IlluminationField(nn.Module):
         if residual_dim == self.hidden_dim:
             hidden_features = hidden_features.clone() + residual
         else:
-            padded_residual = torch.zeros(mlp_input_tensor.shape[0], self.hidden_dim, device=mlp_input_tensor.device)
+            padded_residual = torch.zeros(
+                mlp_input_tensor.shape[0],
+                self.hidden_dim,
+                device=mlp_input_tensor.device,
+            )
             padded_residual[:, :residual_dim] = residual
             hidden_features = hidden_features.clone() + padded_residual
-
-        # residual = mlp_input_tensor[:, :self.hidden_dim]
-        # hidden_features = hidden_features.clone() + residual
 
         params = self.mlp_head(hidden_features.float())
 
@@ -505,7 +480,7 @@ class IlluminationField(nn.Module):
 
 
 class CameraResponseNet(nn.Module):
-    def __init__(self, embedding_dim, hidden_dim=32):
+    def __init__(self, embedding_dim: int, hidden_dim: int = 32) -> None:
         super().__init__()
         self.mlp_base = tcnn.Network(
             n_input_dims=embedding_dim,

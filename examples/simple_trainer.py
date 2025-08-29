@@ -20,7 +20,7 @@ from torch.optim.lr_scheduler import ExponentialLR, ChainedScheduler, CosineAnne
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
-from typing_extensions import Literal, assert_never
+from typing_extensions import Literal
 
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
@@ -187,9 +187,6 @@ class Runner:
             self.scene_scale,
             use_view_dirs=cfg.use_view_dirs,
             use_normals=cfg.use_normals,
-            use_appearance_embeds=cfg.appearance_embeddings
-            and not cfg.use_camera_response_network,
-            appearance_embedding_dim=cfg.appearance_embedding_dim,
         ).to(self.device)
 
         if world_size > 1:
@@ -209,7 +206,7 @@ class Runner:
                 self.camera_response_net.parameters(), lr=cfg.camera_net_lr
             )
 
-        if cfg.appearance_embeddings or cfg.use_camera_response_network:
+        if cfg.use_camera_response_network:
             num_train_images = len(self.trainset)
             self.appearance_embeds = torch.nn.Embedding(
                 num_train_images, cfg.appearance_embedding_dim
@@ -252,8 +249,6 @@ class Runner:
             )
         elif isinstance(self.cfg.strategy, MCMCStrategy):
             self.strategy_state = self.cfg.strategy.initialize_state()
-        else:
-            assert_never(self.cfg.strategy)
 
         self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
         self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
@@ -266,8 +261,6 @@ class Runner:
             self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="vgg").to(
                 self.device
             )
-        else:
-            raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
 
         # Running stats for prunning & growing.
         n_gauss = len(self.splats["means"])
@@ -303,14 +296,8 @@ class Runner:
             cam_origin = camtoworlds.squeeze(0)[:3, 3]
             view_dirs_input = means - cam_origin
 
-        embeddings_input = None
-        image_ids = kwargs.pop("image_ids", None)
-        if self.cfg.appearance_embeddings and image_ids is not None:
-            embeddings_input = self.appearance_embeds(image_ids)
-
         color_A, color_b = self.illumination_field(
             means,
-            embeds=embeddings_input,
             view_dirs=view_dirs_input,
             normals=splat_normals,
         )
@@ -390,14 +377,7 @@ class Runner:
             camtoworld, points_3d_cam_flat
         )  # [B, H*W, 3]
 
-        if self.cfg.appearance_embeddings:
-            embeddings = (
-                self.appearance_embeds(image_ids) if image_ids is not None else None
-            )
-        else:
-            embeddings = None
-
-        gain, gamma = self.illumination_field(points_3d_world.view(-1, 3), embeddings)
+        gain, gamma = self.illumination_field(points_3d_world.view(-1, 3))
 
         illum_map_vis = gain.reshape(B, H, W, 3).squeeze(0)  # -> [H, W, 3]
 
@@ -420,13 +400,6 @@ class Runner:
             CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
         ]
 
-        if cfg.appearance_embeddings:
-            schedulers.append(
-                CosineAnnealingLR(
-                    self.appearance_embeds_optimizer, T_max=max_steps, eta_min=0
-                )
-            )
-
         if cfg.use_camera_response_network:
             schedulers.append(
                 CosineAnnealingLR(
@@ -440,7 +413,7 @@ class Runner:
             shuffle=True,
             num_workers=4,
             persistent_workers=True,
-            pin_memory=True,
+            pin_memory=False,
         )
         trainloader_iter = iter(trainloader)
         global_tic = time.time()
@@ -462,7 +435,6 @@ class Runner:
                     for param in self.camera_response_net.parameters():
                         param.requires_grad = False
 
-                if cfg.appearance_embeddings or cfg.use_camera_response_network:
                     for param in self.appearance_embeds.parameters():
                         param.requires_grad = False
 
@@ -485,135 +457,68 @@ class Runner:
                     pbar.set_description(f"Skipping step {step} due to black image")
                     continue
 
-                if cfg.use_dual_rasterization:
-                    (
-                        renders_enh,
-                        renders_low,
-                        alphas_enh,
-                        alphas_low,
-                        info,
-                    ) = self.rasterize_splats(
-                        camtoworlds=camtoworlds,
-                        Ks=Ks,
-                        width=width,
-                        height=height,
-                        sh_degree=sh_degree_to_use,
-                        render_mode="RGB+ED",
-                        image_ids=data["image_id"].to(device),
+                base_reflectance_sh = torch.cat(
+                    [self.splats["sh0"], self.splats["shN"]], 1
+                )
+
+                intrinsic_maps, _, info = rasterize_intrinsics(
+                    means=self.splats["means"],
+                    quats=self.splats["quats"],
+                    scales=torch.exp(self.splats["scales"]),
+                    opacities=torch.sigmoid(self.splats["opacities"]),
+                    base_reflectance_sh=base_reflectance_sh,
+                    viewmats=torch.linalg.inv(camtoworlds.float()),
+                    Ks=Ks,
+                    width=width,
+                    height=height,
+                    sh_degree=sh_degree_to_use,
+                )
+
+                reflectance_map = intrinsic_maps["reflectance"]
+                world_position_map = intrinsic_maps["world_position"]
+                world_normal_map = intrinsic_maps["world_normal"]
+                points_3d_world_flat = world_position_map.view(-1, 3)
+                world_normals_flat = world_normal_map.view(-1, 3)
+
+                view_dirs_input = None
+                if cfg.use_view_dirs:
+                    cam_origin = camtoworlds.squeeze(0)[:3, 3]
+                    view_dirs_input = points_3d_world_flat - cam_origin
+
+                illum_A, illum_b = self.illumination_field(
+                    points_3d_world_flat,
+                    view_dirs=view_dirs_input,
+                    normals=world_normals_flat,
+                )
+
+                illum_A_map = illum_A.view(1, height, width, 3, 3)
+                illum_b_map = illum_b.view(1, height, width, 3)
+
+                scene_lit_color_map = (
+                    torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
+                    + illum_b_map
+                )
+
+                if cfg.use_camera_response_network:
+                    image_ids = data["image_id"].to(device)
+                    embedding = self.appearance_embeds(image_ids)
+                    c, d = self.camera_response_net(embedding)
+                    final_color_map = (
+                        c[:, None, None, :] * scene_lit_color_map
+                        + d[:, None, None, :]
                     )
 
-                    colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
-                    reflectance_map = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
-                    with torch.no_grad():
-                        depth = renders_low[..., 3:4].detach()
-                        grid = kornia.utils.create_meshgrid(
-                            height, width, normalized_coordinates=False, device=device
-                        )
-                        points_3d_cam = kornia.geometry.depth.unproject_points(
-                            grid, depth, Ks
-                        )
-                        points_3d_world = kornia.geometry.transform_points(
-                            camtoworlds, points_3d_cam.view(1, -1, 3)
-                        )
-                        num_points = points_3d_world.shape[1]
-
-                        embeddings = (
-                            self.appearance_embeds(data["image_id"].to(device)).expand(
-                                num_points, -1
-                            )
-                            if cfg.appearance_embeddings
-                            else None
-                        )
-
-                        illum_A, illum_b = self.illumination_field(
-                            points_3d_world.view(-1, 3), embeds=embeddings
-                        )
-                        gray_color = torch.full((num_points, 3, 1), 0.5, device=device)
-                        illum_color = (
-                            torch.bmm(illum_A, gray_color).squeeze(-1) + illum_b
-                        )
-                        illum_map = torch.clamp(illum_color, 0.0, 1.0).view(
-                            1, height, width, 3
-                        )
                 else:
-                    base_reflectance_sh = torch.cat(
-                        [self.splats["sh0"], self.splats["shN"]], 1
-                    )
+                    final_color_map = scene_lit_color_map
 
-                    intrinsic_maps, _, info = rasterize_intrinsics(
-                        means=self.splats["means"],
-                        quats=self.splats["quats"],
-                        scales=torch.exp(self.splats["scales"]),
-                        opacities=torch.sigmoid(self.splats["opacities"]),
-                        base_reflectance_sh=base_reflectance_sh,
-                        viewmats=torch.linalg.inv(camtoworlds.float()),
-                        Ks=Ks,
-                        width=width,
-                        height=height,
-                        sh_degree=sh_degree_to_use,
-                    )
+                colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
-                    reflectance_map = intrinsic_maps["reflectance"]
-                    world_position_map = intrinsic_maps["world_position"]
-                    world_normal_map = intrinsic_maps["world_normal"]
-                    points_3d_world_flat = world_position_map.view(-1, 3)
-                    world_normals_flat = world_normal_map.view(-1, 3)
-
-                    embeddings_input = None
-                    if cfg.appearance_embeddings:
-                        image_ids = data["image_id"].to(device)
-                        embeddings_input = self.appearance_embeds(image_ids)
-                        if not cfg.use_camera_response_network:
-                            embeddings_input = embeddings_input.expand(
-                                height * width, -1
-                            )
-
-                    view_dirs_input = None
-                    if cfg.use_view_dirs:
-                        cam_origin = camtoworlds.squeeze(0)[:3, 3]
-                        view_dirs_input = points_3d_world_flat - cam_origin
-
-                    illum_A, illum_b = self.illumination_field(
-                        points_3d_world_flat,
-                        embeds=embeddings_input
-                        if not cfg.use_camera_response_network
-                        else None,
-                        view_dirs=view_dirs_input,
-                        normals=world_normals_flat,
-                    )
-
-                    illum_A_map = illum_A.view(1, height, width, 3, 3)
-                    illum_b_map = illum_b.view(1, height, width, 3)
-
-                    scene_lit_color_map = (
-                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
-                        + illum_b_map
-                    )
-
-                    if cfg.use_camera_response_network:
-                        image_ids = data["image_id"].to(device)
-                        embedding = (
-                            self.appearance_embeds(image_ids)
-                            if embeddings_input is None
-                            else embeddings_input
-                        )
-                        c, d = self.camera_response_net(embedding)
-                        final_color_map = (
-                            c[:, None, None, :] * scene_lit_color_map
-                            + d[:, None, None, :]
-                        )
-
-                    else:
-                        final_color_map = scene_lit_color_map
-
-                    colors_low = torch.clamp(final_color_map, 0.0, 1.0)
-
-                    gray_color = torch.full_like(reflectance_map, 0.5)
-                    illum_color_map = (
-                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
-                        + illum_b_map
-                    )
-                    illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
+                gray_color = torch.full_like(reflectance_map, 0.5)
+                illum_color_map = (
+                    torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
+                    + illum_b_map
+                )
+                illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
 
                 info["means2d"].retain_grad()
 
@@ -626,89 +531,26 @@ class Runner:
                     1.0 - cfg.ssim_lambda
                 ) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                if cfg.use_yuv_colourspace:
-                    reflectance_map_yuv = kornia.color.rgb_to_yuv(
-                        reflectance_map.permute(0, 3, 1, 2)
-                    )
-                    illum_map_yuv = kornia.color.rgb_to_yuv(
-                        illum_map.permute(0, 3, 1, 2)
-                    )
-
-                    reflectance_lum = reflectance_map_yuv[
-                        :, 0:1, :, :
-                    ]  # Shape: [B, 1, H, W]
-                    illum_lum = illum_map_yuv[:, 0:1, :, :]
-
                 if cfg.lambda_illum_smoothness > 0:
-                    if cfg.use_gradient_aware_loss:
-                        img_grads = kornia.filters.spatial_gradient(
-                            pixels.permute(0, 3, 1, 2)
-                        )
-                        grad_mag = torch.norm(img_grads, dim=2).sum(
-                            dim=1
-                        )  # Shape: [B, H, W]
-                        smooth_mask = torch.exp(-2.0 * grad_mag).unsqueeze(
-                            -1
-                        )  # Shape: [B, H, W, 1]
+                    with torch.no_grad():
+                        rand_points = (
+                            torch.rand(4096, 3, device=device) * 2 - 1
+                        ) * self.scene_scale
+                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
+                        perturbed_points = rand_points + perturbation
 
-                        if cfg.use_yuv_colourspace:
-                            smooth_mask = smooth_mask.permute(0, 3, 1, 2)
-                            illum_lum_diff_h = (
-                                illum_lum[:, :, 1:, :] - illum_lum[:, :, :-1, :]
-                            )
-                            illum_lum_diff_w = (
-                                illum_lum[:, :, :, 1:] - illum_lum[:, :, :, :-1]
-                            )
+                    color_A, color_b = self.illumination_field(rand_points)
+                    color_A_perturbed, color_b_perturbed = self.illumination_field(
+                        perturbed_points
+                    )
 
-                            loss_h = (
-                                torch.pow(illum_lum_diff_h, 2)
-                                * smooth_mask[:, :, :-1, :]
-                            ).mean()
-                            loss_w = (
-                                torch.pow(illum_lum_diff_w, 2)
-                                * smooth_mask[:, :, :, :-1]
-                            ).mean()
-
-                            loss_illum_smoothness = loss_h + loss_w
-                        else:
-                            illum_map_diff_h = (
-                                illum_map[:, 1:, :, :] - illum_map[:, :-1, :, :]
-                            )
-                            illum_map_diff_w = (
-                                illum_map[:, :, 1:, :] - illum_map[:, :, :-1, :]
-                            )
-
-                            loss_h = (
-                                torch.pow(illum_map_diff_h, 2)
-                                * smooth_mask[:, :-1, :, :]
-                            ).mean()
-                            loss_w = (
-                                torch.pow(illum_map_diff_w, 2)
-                                * smooth_mask[:, :, :-1, :]
-                            ).mean()
-
-                            loss_illum_smoothness = loss_h + loss_w
-
-                    else:
-                        with torch.no_grad():
-                            rand_points = (
-                                torch.rand(4096, 3, device=device) * 2 - 1
-                            ) * self.scene_scale
-                            perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
-                            perturbed_points = rand_points + perturbation
-
-                        color_A, color_b = self.illumination_field(rand_points)
-                        color_A_perturbed, color_b_perturbed = self.illumination_field(
-                            perturbed_points
-                        )
-
-                        loss_A_smooth = (
-                            (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
-                        )
-                        loss_b_smooth = (
-                            (color_b - color_b_perturbed).norm(dim=-1).mean()
-                        )
-                        loss_illum_smoothness = loss_A_smooth + loss_b_smooth
+                    loss_A_smooth = (
+                        (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
+                    )
+                    loss_b_smooth = (
+                        (color_b - color_b_perturbed).norm(dim=-1).mean()
+                    )
+                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
                     loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
 
@@ -921,11 +763,6 @@ class Runner:
                         "stats": stats_save,
                     }
 
-                    if cfg.appearance_embeddings:
-                        data_save["appearance_embeds"] = (
-                            self.appearance_embeds.state_dict()
-                        )
-
                     if cfg.use_camera_response_network:
                         data_save["camera_reponse_net"] = (
                             self.camera_response_net.state_dict()
@@ -958,11 +795,10 @@ class Runner:
             self.illum_field_optimizer.step()
             self.illum_field_optimizer.zero_grad()
 
-            if cfg.appearance_embeddings or cfg.use_camera_response_network:
+            if cfg.use_camera_response_network:
                 self.appearance_embeds_optimizer.step()
                 self.appearance_embeds_optimizer.zero_grad()
 
-            if cfg.use_camera_response_network:
                 self.camera_response_optimizer.step()
                 self.camera_response_optimizer.zero_grad()
 
@@ -986,8 +822,6 @@ class Runner:
                     info=info,
                     lr=schedulers[0].get_last_lr()[0],
                 )
-            else:
-                assert_never(self.cfg.strategy)
 
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.eval(step)
@@ -1018,85 +852,55 @@ class Runner:
             torch.cuda.synchronize()
             tic = time.time()
 
-            if cfg.use_dual_rasterization:
-                renders_enh, renders_low, _, _, _ = self.rasterize_splats(
-                    camtoworlds=camtoworlds,
-                    Ks=Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=cfg.sh_degree,
-                    near_plane=cfg.near_plane,
-                    far_plane=cfg.far_plane,
-                    masks=masks,
-                    image_ids=data["image_id"].to(device),
-                    render_mode="RGB+ED",
-                )
+            base_reflectance_sh = torch.cat(
+                [self.splats["sh0"], self.splats["shN"]], 1
+            )
+            intrinsic_maps, _, info = rasterize_intrinsics(
+                means=self.splats["means"],
+                quats=self.splats["quats"],
+                scales=torch.exp(self.splats["scales"]),
+                opacities=torch.sigmoid(self.splats["opacities"]),
+                base_reflectance_sh=base_reflectance_sh,
+                viewmats=torch.linalg.inv(camtoworlds.float()),
+                Ks=Ks,
+                width=width,
+                height=height,
+                sh_degree=cfg.sh_degree,
+            )
+            reflectance_map = intrinsic_maps["reflectance"]
+            world_position_map = intrinsic_maps["world_position"]
+            world_normal_map = intrinsic_maps["world_normal"]
+            points_3d_world_flat = world_position_map.view(-1, 3)
+            world_normals_flat = world_normal_map.view(-1, 3)
 
-                colors_low = torch.clamp(renders_low[..., :3], 0.0, 1.0)
-                colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
+            view_dirs_input = None
+            if cfg.use_view_dirs:
+                cam_origin = camtoworlds.squeeze(0)[:3, 3]
+                view_dirs_input = points_3d_world_flat - cam_origin
+            illum_A, illum_b = self.illumination_field(
+                points_3d_world_flat,
+                view_dirs=view_dirs_input,
+                normals=world_normals_flat,
+            )
+            illum_A_map = illum_A.view(1, height, width, 3, 3)
+            illum_b_map = illum_b.view(1, height, width, 3)
+            scene_lit_color_map = (
+                torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
+                + illum_b_map
+            )
+            if cfg.use_camera_response_network:
+                image_ids = data["image_id"].to(device)
+                embedding = self.appearance_embeds(image_ids)
+                c, d = self.camera_response_net(embedding)
+                final_color_map = (
+                    c[:, None, None, :] * scene_lit_color_map + d[:, None, None, :]
+                )
 
             else:
-                base_reflectance_sh = torch.cat(
-                    [self.splats["sh0"], self.splats["shN"]], 1
-                )
-                intrinsic_maps, _, info = rasterize_intrinsics(
-                    means=self.splats["means"],
-                    quats=self.splats["quats"],
-                    scales=torch.exp(self.splats["scales"]),
-                    opacities=torch.sigmoid(self.splats["opacities"]),
-                    base_reflectance_sh=base_reflectance_sh,
-                    viewmats=torch.linalg.inv(camtoworlds.float()),
-                    Ks=Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=cfg.sh_degree,
-                )
-                reflectance_map = intrinsic_maps["reflectance"]
-                world_position_map = intrinsic_maps["world_position"]
-                world_normal_map = intrinsic_maps["world_normal"]
-                points_3d_world_flat = world_position_map.view(-1, 3)
-                world_normals_flat = world_normal_map.view(-1, 3)
-                embeddings_input = None
-                if cfg.appearance_embeddings:
-                    image_ids = data["image_id"].to(device)
-                    embeddings_input = self.appearance_embeds(image_ids)
-                    if not cfg.use_camera_response_network:
-                        embeddings_input = embeddings_input.expand(height * width, -1)
-                view_dirs_input = None
-                if cfg.use_view_dirs:
-                    cam_origin = camtoworlds.squeeze(0)[:3, 3]
-                    view_dirs_input = points_3d_world_flat - cam_origin
-                illum_A, illum_b = self.illumination_field(
-                    points_3d_world_flat,
-                    embeds=embeddings_input
-                    if not cfg.use_camera_response_network
-                    else None,
-                    view_dirs=view_dirs_input,
-                    normals=world_normals_flat,
-                )
-                illum_A_map = illum_A.view(1, height, width, 3, 3)
-                illum_b_map = illum_b.view(1, height, width, 3)
-                scene_lit_color_map = (
-                    torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
-                    + illum_b_map
-                )
-                if cfg.use_camera_response_network:
-                    image_ids = data["image_id"].to(device)
-                    embedding = (
-                        self.appearance_embeds(image_ids)
-                        if embeddings_input is None
-                        else embeddings_input
-                    )
-                    c, d = self.camera_response_net(embedding)
-                    final_color_map = (
-                        c[:, None, None, :] * scene_lit_color_map + d[:, None, None, :]
-                    )
+                final_color_map = scene_lit_color_map
 
-                else:
-                    final_color_map = scene_lit_color_map
-
-                colors_low = torch.clamp(final_color_map, 0.0, 1.0)
-                colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
+            colors_low = torch.clamp(final_color_map, 0.0, 1.0)
+            colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
@@ -1300,16 +1104,21 @@ class Runner:
 
         self.writer.flush()
 
+
 def objective(trial: optuna.Trial):
     import gc
 
     cfg = Config()
 
-    cfg.lambda_tv_loss = trial.suggest_categorical("lambda_tv_loss", [0,100,250,500,750,1000,2000])
+    cfg.lambda_tv_loss = trial.suggest_categorical(
+        "lambda_tv_loss", [0, 100, 250, 500, 750, 1000, 2000]
+    )
     cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0.1, 0.8)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 0.3)
 
-    cfg.appearance_embedding_lr = trial.suggest_float("appearance_embedding_lr", 1e-5, 6e-3)
+    cfg.appearance_embedding_lr = trial.suggest_float(
+        "appearance_embedding_lr", 1e-5, 6e-3, log=True
+    )
 
     cfg.max_steps = 1500
     cfg.eval_steps = [1500]
@@ -1343,7 +1152,6 @@ def objective(trial: optuna.Trial):
             gc.collect()
 
     return total_psnr / count, total_ssim / count, total_lpips / count
-
 
 
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):

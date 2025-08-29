@@ -67,16 +67,11 @@ class Config:
 
     postfix: str = "_contrast"
 
-    appearance_embeddings: bool = True
     appearance_embedding_dim: int = 64
 
     use_view_dirs: bool = True
     use_normals: bool = True
-    use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
-    use_gradient_aware_loss: bool = False
-
-    use_yuv_colourspace: bool = False
 
     lambda_illum_smoothness: float = 0.001
     lambda_exclusion: float = 0.1

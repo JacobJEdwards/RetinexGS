@@ -9,7 +9,6 @@ from typing_extensions import Literal
 from utils import quaternion_to_matrix
 
 from gsplat.cuda._wrapper import (
-    RollingShutterType,
     fully_fused_projection,
     isect_offset_encode,
     isect_tiles,
