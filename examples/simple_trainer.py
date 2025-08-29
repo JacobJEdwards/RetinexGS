@@ -35,6 +35,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.utils import AutomaticWeightedLoss
 from losses import PerceptualColorLoss
 from losses import HistogramLoss, WhitePreservationLoss
 from gsplat.distributed import cli
@@ -242,11 +243,16 @@ class Runner:
             fused=True
         )
 
+
         loss_params = []
         if cfg.learn_adaptive_curve_lambdas:
             loss_params += self.loss_adaptive_curve.parameters()
 
         loss_params.append(self.target_histogram_dist)
+
+        if cfg.uncertainty_weighting:
+            self.awl = AutomaticWeightedLoss(9)
+            loss_params.append(self.awl.parameters())
 
         self.loss_optimizer = torch.optim.AdamW(
             loss_params,
@@ -477,71 +483,60 @@ class Runner:
             "histogram_loss": cfg.lambda_histogram,
         }
 
-
-        total_loss = 0
-        loss_names = individual_losses.keys()
-        for name in loss_names:
-            loss = individual_losses[name]
-            total_loss += fallback_lambdas[name] * loss
+        if cfg.uncertainty_weighting:
+            total_loss = self.awl(individual_losses.values())
+        else:
+            total_loss = 0
+            loss_names = individual_losses.keys()
+            for name in loss_names:
+                loss = individual_losses[name]
+                total_loss += fallback_lambdas[name] * loss
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)
 
-            loss_names = [
-                "reflect_spa",
-                "color_val",
-                "exposure_val",
-                "adaptive_curve",
-                "smooth_edge_aware",
-                "exclusion_val",
-                "white_preservation",
-                "histogram_loss",
-            ]
-
-            title = "train"
-
-            for name in loss_names:
+            for name in individual_losses.keys():
                 unweighted_loss = individual_losses[name].item()
                 self.writer.add_scalar(
-                    f"{title}/loss_{name}_unweighted", unweighted_loss, step
+                    f"train/loss_{name}_unweighted", unweighted_loss, step
                 )
 
             if cfg.learn_adaptive_curve_lambdas:
                 self.writer.add_scalar(
-                    f"{title}/learnable_adaptive_curve_lambda1",
+                    f"train/learnable_adaptive_curve_lambda1",
                     self.loss_adaptive_curve.lambda1.item(),
                     step,
                 )
                 self.writer.add_scalar(
-                    f"{title}/learnable_adaptive_curve_lambda2",
+                    f"train/learnable_adaptive_curve_lambda2",
                     self.loss_adaptive_curve.lambda2.item(),
                     step,
                 )
                 self.writer.add_scalar(
-                    f"{title}/learnable_adaptive_curve_lambda3",
+                    f"train/learnable_adaptive_curve_lambda3",
                     self.loss_adaptive_curve.lambda3.item(),
                     step,
                 )
 
             if self.cfg.tb_save_image:
                 self.writer.add_images(
-                    f"{title}/input_image_for_net",
+                    f"train/input_image_for_net",
                     input_image_for_net,
                     step,
                 )
                 self.writer.add_images(
-                    f"{title}/pixels",
+                    f"train/pixels",
                     pixels.permute(0, 3, 1, 2),
                     step,
                 )
 
                 self.writer.add_images(
-                    f"{title}/illumination_map",
+                    f"train/illumination_map",
                     illumination_map,
                     step,
                 )
                 self.writer.add_images(
-                    f"{title}/target_reflectance",
+                    f"train/target_reflectance",
                     reflectance_map,
                     step,
                 )

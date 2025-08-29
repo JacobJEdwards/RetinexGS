@@ -94,9 +94,11 @@ class Config:
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
     loss_histogram: bool = True
+    loss_perceptual_color: bool = True
+
+    uncertainty_weighting: bool = True
 
     loss_exclusion: bool = False
-    loss_perceptual_color: bool = False
 
     save_images: bool = False
 
