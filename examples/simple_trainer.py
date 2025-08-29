@@ -132,7 +132,7 @@ def create_splats_with_optimizers(
     elif visible_adam:
         optimizer_class = SelectiveAdam
     else:
-        optimizer_class = torch.optim.AdamW
+        optimizer_class = torch.optim.Adam
 
     optimizers = {
         name: optimizer_class(
@@ -195,7 +195,7 @@ class Runner:
                 self.illumination_field, device_ids=[local_rank]
             )
 
-        self.illum_field_optimizer = torch.optim.AdamW(
+        self.illum_field_optimizer = torch.optim.Adam(
             self.illumination_field.parameters(), lr=cfg.illumination_field_lr, fused=True
         )
 
@@ -203,15 +203,15 @@ class Runner:
             self.camera_response_net = CameraResponseNet(
                 embedding_dim=cfg.appearance_embedding_dim
             ).to(self.device)
-            self.camera_response_optimizer = torch.optim.AdamW(
-                self.camera_response_net.parameters(), lr=cfg.camera_net_lr, weight_decay=0.0, fused=True
+            self.camera_response_optimizer = torch.optim.Adam(
+                self.camera_response_net.parameters(), lr=cfg.camera_net_lr, fused=True
             )
 
             num_train_images = len(self.trainset)
             self.appearance_embeds = torch.nn.Embedding(
                 num_train_images, cfg.appearance_embedding_dim
             ).to(self.device)
-            self.appearance_embeds_optimizer = torch.optim.AdamW(
+            self.appearance_embeds_optimizer = torch.optim.Adam(
                 self.appearance_embeds.parameters(), lr=cfg.appearance_embedding_lr, fused=True
             )
 
@@ -220,8 +220,8 @@ class Runner:
 
         if cfg.uncertainty_weighting:
             self.awl = AutomaticWeightedLoss(5).to(self.device)
-            self.awl_optimizer = torch.optim.AdamW(
-                self.awl.parameters(), lr=cfg.loss_lr, weight_decay=0.0, fused=True
+            self.awl_optimizer = torch.optim.Adam(
+                self.awl.parameters(), lr=cfg.loss_lr, fused=True
             )
 
         feature_dim = None
