@@ -86,6 +86,9 @@ class Config:
     appearance_embedding_lr: float = 6e-3
     camera_net_lr: float = 3e-4
     illumination_field_lr: float = 6e-5
+    loss_lr: float = 1e-4
+
+    uncertainty_weighting: bool = True
 
     learning_steps: int = 2800
 

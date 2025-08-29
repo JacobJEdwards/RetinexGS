@@ -29,6 +29,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
+from examples.utils import AutomaticWeightedLoss
 from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss
@@ -217,6 +218,8 @@ class Runner:
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.loss_tv = TotalVariationLoss().to(self.device)
+
+        self.awl = AutomaticWeightedLoss(5).to(self.device)
 
         feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -1106,8 +1109,6 @@ class Runner:
 
 
 def objective(trial: optuna.Trial):
-    import gc
-
     cfg = Config()
 
     cfg.lambda_tv_loss = trial.suggest_categorical(
@@ -1149,7 +1150,6 @@ def objective(trial: optuna.Trial):
         finally:
             del runner
             torch.cuda.empty_cache()
-            gc.collect()
 
     return total_psnr / count, total_ssim / count, total_lpips / count
 
@@ -1217,18 +1217,26 @@ if __name__ == "__main__":
 
     cli(main, config, verbose=True)
 
-    # study = optuna.create_study(
-    #     directions=["maximize", "maximize", "minimize"],
-    # )
-    # study.optimize(objective, n_trials=30, catch=(RuntimeError, ValueError))
-    #
-    # print("Study statistics: ")
-    # print(f"  Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f"  Trial {i}:")
-    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print("    Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f"      {key}: {value}")
+    storage = optuna.storages.JournalStorage(
+        optuna.storages.journal.JournalFileBackend("optuna_study.log")
+    )
+
+    study = optuna.create_study(
+        directions=["maximize", "maximize", "minimize"],
+        storage=storage,
+        study_name="gaussian_splatting_hyperparam_opt",
+        load_if_exists=True,
+    )
+    study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError), gc_after_trial=True, storage=storage,
+                   show_progress_bar=True)
+
+    print("Study statistics: ")
+    print(f"  Number of finished trials: {len(study.trials)}")
+
+    print("Best trials (Pareto front):")
+    for i, trial in enumerate(study.best_trials):
+        print(f"  Trial {i}:")
+        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+        print("    Params: ")
+        for key, value in trial.params.items():
+            print(f"      {key}: {value}")
