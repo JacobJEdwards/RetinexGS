@@ -571,18 +571,12 @@ class Runner:
         ]
 
         initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
-        initial_embed_lr = self.retinex_embed_optimizer.param_groups[0]["lr"]
         initial_loss_lr = self.retinex_optimizer.param_groups[0]["lr"]
         schedulers.extend([
             CosineAnnealingLR(
                 self.retinex_optimizer,
                 T_max=cfg.freeze_step,
                 eta_min=initial_retinex_lr * 0.01,
-            ),
-            CosineAnnealingLR(
-                self.retinex_embed_optimizer,
-                T_max=cfg.freeze_step,
-                eta_min=initial_embed_lr * 0.01,
             ),
             CosineAnnealingLR(
                 self.loss_optimizer,
@@ -597,7 +591,7 @@ class Runner:
             shuffle=True,
             num_workers=4,
             persistent_workers=True,
-            pin_memory=True,
+            pin_memory=False,
         )
         trainloader_iter = iter(trainloader)
 
@@ -1091,7 +1085,7 @@ class Runner:
             batch_size=self.cfg.batch_size,
             shuffle=False,
             num_workers=1,
-            pin_memory=True,
+            pin_memory=False,
         )
 
         trainloader_groundtruth = torch.utils.data.DataLoader(
@@ -1099,7 +1093,7 @@ class Runner:
             batch_size=self.cfg.batch_size,
             shuffle=False,
             num_workers=1,
-            pin_memory=True,
+            pin_memory=False,
         )
 
         metrics = defaultdict(list)
@@ -1195,8 +1189,6 @@ slice_func = None
 total_variation_loss = None
 
 def objective(trial: optuna.Trial) -> tuple[float, float, float]:
-    import gc
-
     cfg = Config()
 
     cfg.lambda_edge_aware_smooth = trial.suggest_float(
@@ -1218,6 +1210,10 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     )
     cfg.lambda_reflect = trial.suggest_float(
         "lambda_reflect", 0.05, 0.5
+    )
+
+    cfg.retinex_embedding_lr = trial.suggest_float(
+        "retinex_embedding_lr", 1e-6, 1e-2, log=True
     )
 
     cfg.max_steps = 3000
@@ -1251,7 +1247,6 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
         finally:
             del runner
             torch.cuda.empty_cache()
-            gc.collect()
 
     return total_psnr / count, total_ssim / count, total_lpips / count
 
@@ -1281,4 +1276,22 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    # cli(main, config, verbose=True)
+
+    study = optuna.create_study(
+        directions=["maximize", "maximize", "minimize"],
+        study_name="retinex_optuna_study",
+        storage="sqlite:///retinex_optuna_study.db",
+        load_if_exists=True,
+    )
+
+    study.optimize(objective, n_trials=20, gc_after_trial=True, catch=(RuntimeError, ValueError), show_progress_bar=True)
+
+    print("Number of finished trials: ", len(study.trials))
+    print("Best trials (Pareto front):")
+    for t in study.best_trials:
+        print(f"  Value: {t.values}")
+        print("  Params: ")
+        for key, value in t.params.items():
+            print(f"    {key}: {value}")
+
