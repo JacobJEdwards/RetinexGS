@@ -68,7 +68,8 @@ class Config:
     lambda_reflect: float = 1.0
     lambda_illum_curve: float = 1.0
     lambda_illum_exposure: float = 1.0
-    lambda_edge_aware_smooth: float = 5.0
+    lambda_edge_aware_smooth: float = 20.0
+    lambda_illum_variance: float = 1.0
 
     lambda_white_preservation: float = 3.7
     lambda_histogram: float = 1
@@ -89,6 +90,7 @@ class Config:
     loss_reflectance_spa: bool = True
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
+    loss_variance: bool = True
 
     loss_histogram: bool = False
     loss_perceptual_color: bool = False

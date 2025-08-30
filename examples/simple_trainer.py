@@ -214,12 +214,13 @@ class Runner:
             "smooth_edge_aware": cfg.lambda_edge_aware_smooth,
             "white_preservation": cfg.lambda_white_preservation,
             "histogram_loss": cfg.lambda_histogram,
+            "variance": cfg.lambda_illum_variance,
         }
 
         self.loss_names = [
             "reflect_spa", "perceptual_color", "exposure_val",
             "adaptive_curve", "smooth_edge_aware",
-            "white_preservation", "histogram_loss"
+            "white_preservation", "histogram_loss", "variance"
         ]
 
 
@@ -472,6 +473,12 @@ class Runner:
         else:
             loss_perceptual_color = torch.tensor(0.0, device=device)
 
+        if cfg.loss_variance:
+            illumination_std = torch.std(illumination_map, dim=[2, 3])
+            loss_variance = -torch.mean(illumination_std) + 1e-6
+        else:
+            loss_variance = torch.tensor(0.0, device=device)
+
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
             "perceptual_color": loss_perceptual_color,
@@ -480,6 +487,7 @@ class Runner:
             "smooth_edge_aware": loss_smooth_edge_aware,
             "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
+            "variance": loss_variance,
         }
 
         if cfg.uncertainty_weighting:
