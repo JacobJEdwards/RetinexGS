@@ -27,7 +27,7 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 10_000
-    eval_steps: list[int] = field(default_factory=lambda: [10_000])
+    eval_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
     save_steps: list[int] = field(default_factory=lambda: [10_000])
     save_ply: bool = False
     ply_steps: list[int] = field(default_factory=lambda: [10_000])
@@ -97,7 +97,7 @@ class Config:
     loss_histogram: bool = False
     loss_reflectance_spa: bool = False
 
-    uncertainty_weighting: bool = True
+    uncertainty_weighting: bool = False
     learnt_weighting: bool = False
 
     save_images: bool = False
