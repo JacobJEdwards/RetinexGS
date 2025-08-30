@@ -278,7 +278,7 @@ class Runner:
 
             loss_params.extend(self.lambda_predictor.parameters())
 
-        self.loss_optimizer = torch.optim.Adam(
+        self.loss_optimizer = torch.optim.AdamW(
             loss_params,
             lr=cfg.loss_opt_lr * math.sqrt(cfg.batch_size),
             fused=True
