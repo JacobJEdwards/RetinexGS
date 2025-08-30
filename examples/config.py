@@ -58,7 +58,7 @@ class Config:
     scale_reg: float = 0.0
 
     tb_every: int = 1000
-    tb_save_image: bool = False
+    tb_save_image: bool = True
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
@@ -97,7 +97,7 @@ class Config:
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
 
-    save_images: bool = True
+    save_images: bool = False
 
     postfix: str = "_multiexposure"
 
