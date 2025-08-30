@@ -598,13 +598,13 @@ class Runner:
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
 
-        schedulers.extend([
-            CosineAnnealingLR(
-                self.retinex_optimiser,
-                T_max=cfg.freeze_step,
-                eta_min=0,
-            ),
-        ])
+        # schedulers.extend([
+        #     CosineAnnealingLR(
+        #         self.retinex_optimiser,
+        #         T_max=cfg.freeze_step,
+        #         eta_min=0,
+        #     ),
+        # ])
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
