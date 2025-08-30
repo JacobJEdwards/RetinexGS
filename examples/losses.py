@@ -415,6 +415,20 @@ class FrequencySeparationLoss(nn.Module):
 
         return total_loss
 
+class ChromaLoss(nn.Module):
+    def __init__(self):
+        super(ChromaLoss, self).__init__()
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        lab_image = kornia.color.rgb_to_lab(image)
+
+        a_channel = lab_image[:, 1, :, :]
+        b_channel = lab_image[:, 2, :, :]
+
+        loss = F.l1_loss(a_channel, torch.zeros_like(a_channel)) + \
+               F.l1_loss(b_channel, torch.zeros_like(b_channel))
+
+        return loss
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
@@ -422,3 +436,4 @@ if __name__ == "__main__":
     x_gt = torch.rand(1, 3, 399, 499)  # GT low-light
 
     curve_1 = torch.linspace(0, 1, 255).unsqueeze(0)
+

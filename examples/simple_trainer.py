@@ -42,7 +42,10 @@ from losses import (
     SpatialLoss,
     AdaptiveCurveLoss,
     EdgeAwareSmoothingLoss,
-    HistogramLoss, WhitePreservationLoss, PerceptualColorLoss, FrequencySeparationLoss
+    HistogramLoss,
+    WhitePreservationLoss,
+    PerceptualColorLoss,
+    ChromaLoss,
 )
 from gsplat import export_splats, rasterization
 from gsplat.optimizers import SelectiveAdam
@@ -199,7 +202,8 @@ class Runner:
             chroma_tolerance=cfg.chroma_tolerance,
             gain=cfg.gain,
         ).to(self.device)
-        self.loss_frequency = FrequencySeparationLoss().to(self.device)
+        self.loss_chroma = ChromaLoss().to(self.device)
+
 
         target_hist = torch.tensor(stats.norm.pdf(
             np.linspace(0, 1, 255), loc=0.5, scale=0.2
@@ -216,13 +220,13 @@ class Runner:
             "white_preservation": cfg.lambda_white_preservation,
             "histogram_loss": cfg.lambda_histogram,
             "variance": cfg.lambda_illum_variance,
-            "frequency": cfg.lambda_freq,
+            "chroma": cfg.lambda_chroma,
         }
 
         self.loss_names = [
             "reflect_spa", "perceptual_color", "exposure_val",
             "adaptive_curve", "smooth_edge_aware",
-            "white_preservation", "histogram_loss", "variance", "frequency"
+            "white_preservation", "histogram_loss", "variance", "chroma"
         ]
 
         self.fixed_losses = [
@@ -486,10 +490,10 @@ class Runner:
         else:
             loss_variance = torch.tensor(0.0, device=device)
 
-        if cfg.loss_frequency:
-            loss_frequency = self.loss_frequency(illumination_map=illumination_map, reflectance_map=reflectance_map)
+        if cfg.loss_chroma:
+            loss_chroma = self.loss_chroma(illumination_map)
         else:
-            loss_frequency = torch.tensor(0.0, device=device)
+            loss_chroma = torch.tensor(0.0, device=device)
 
 
         individual_losses = {
@@ -501,7 +505,7 @@ class Runner:
             "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
             "variance": loss_variance,
-            "frequency": loss_frequency,
+            "chroma": loss_chroma,
         }
 
         if cfg.uncertainty_weighting:
