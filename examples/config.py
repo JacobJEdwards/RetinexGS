@@ -91,8 +91,8 @@ class Config:
     loss_reflectance_spa: bool = True
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
-    loss_histogram: bool = True
-    loss_perceptual_color: bool = True
+    loss_histogram: bool = False
+    loss_perceptual_color: bool = False
 
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
