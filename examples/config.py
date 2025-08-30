@@ -63,7 +63,7 @@ class Config:
     lpips_net: Literal["vgg", "alex"] = "alex"
 
     lambda_low: float = 0.80
-    lambda_illumination: float = 0.35
+    lambda_illumination: float = 0.3
 
     lambda_illum_curve: float = 2.0
     lambda_illum_exposure: float = 1.0
