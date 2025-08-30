@@ -487,7 +487,7 @@ class Runner:
             loss_variance = torch.tensor(0.0, device=device)
 
         if cfg.loss_frequency:
-            loss_frequency = self.frequency_loss(illumination_map=illumination_map, reflectance_map=reflectance_map)
+            loss_frequency = self.loss_frequency(illumination_map=illumination_map, reflectance_map=reflectance_map)
         else:
             loss_frequency = torch.tensor(0.0, device=device)
 
