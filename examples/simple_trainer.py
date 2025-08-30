@@ -250,7 +250,7 @@ class Runner:
 
         if cfg.uncertainty_weighting:
             self.awl = AutomaticWeightedLoss(9)
-            loss_params.append(self.awl.parameters())
+            loss_params.extend(self.awl.parameters())
 
         self.loss_optimizer = torch.optim.Adam(
             loss_params,
