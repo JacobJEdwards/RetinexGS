@@ -70,7 +70,7 @@ class Config:
     lambda_edge_aware_smooth: float = 50.0
     lambda_white_preservation: float = 3.7
     lambda_perceptual_color: float = 2.5
-    lambda_freq: float = 0.01
+    lambda_freq: float = 0.005
 
     lambda_illum_variance: float = 1.0
     lambda_reflect: float = 1.0
