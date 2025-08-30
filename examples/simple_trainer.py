@@ -535,6 +535,12 @@ class Runner:
                     f"train/loss_{name}_unweighted", unweighted_loss, step
                 )
 
+                self.writer.add_scalar(
+                    f"train/loss_{name}_weighted",
+                    (unweighted_loss * (self.fallback_lambdas[name] if name in self.fallback_lambdas else 1.0)),
+                    step,
+                )
+
             if cfg.learn_adaptive_curve_lambdas:
                 self.writer.add_scalar(
                     "train/learnable_adaptive_curve_lambda1",
