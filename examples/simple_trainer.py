@@ -223,6 +223,9 @@ class Runner:
             "white_preservation", "histogram_loss", "variance"
         ]
 
+        self.fixed_losses = [
+            "smooth_edge_aware",
+        ]
 
         retinex_in_channels = 3
         retinex_out_channels = 3
@@ -262,7 +265,7 @@ class Runner:
 
 
         if cfg.uncertainty_weighting:
-            self.awl = AutomaticWeightedLoss(len(self.loss_names))
+            self.awl = AutomaticWeightedLoss(len(self.loss_names) - len(self.fixed_losses)).to(self.device)
             loss_params.extend(self.awl.parameters())
 
         if cfg.learnt_weighting:
@@ -493,7 +496,12 @@ class Runner:
         }
 
         if cfg.uncertainty_weighting:
+            individual_losses = {k: v for k, v in individual_losses.items() if k not in self.fixed_losses}
             total_loss = self.awl(*individual_losses.values())
+
+            for i, name in enumerate(self.fixed_losses):
+                total_loss += self.fallback_lambdas[name] * individual_losses[name]
+
         elif cfg.learnt_weighting:
             predicted_lambdas_vector = self.lambda_predictor(retinex_embedding.detach())
             total_loss = 0
