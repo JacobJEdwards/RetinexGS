@@ -66,7 +66,7 @@ class Config:
     lambda_illumination: float = 0.45
 
     lambda_illum_curve: float = 2.0
-    lambda_illum_exposure: float = 1.5
+    lambda_illum_exposure: float = 1.0
     lambda_edge_aware_smooth: float = 20.0
     lambda_white_preservation: float = 3.7
     lambda_perceptual_color: float = 2.5
@@ -98,7 +98,7 @@ class Config:
     loss_reflectance_spa: bool = False
 
     uncertainty_weighting: bool = False
-    learnt_weighting: bool = False
+    learnt_weighting: bool = True
 
     save_images: bool = False
 
