@@ -144,7 +144,6 @@ class MultiScaleRetinexNet(nn.Module):
         self.film1 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=16)
 
         self.enc1 = RetinexBlock(16, 32, stride=2)
-        self.film2 = SpatiallyFiLMLayer(embed_dim=embed_dim, feature_channels=32)
         self.enc2 = RetinexBlock(32, 64, stride=2)
 
         self.bottleneck = nn.Sequential(
@@ -183,7 +182,6 @@ class MultiScaleRetinexNet(nn.Module):
         e0_modulated = self.film1(e0, embedding)
 
         e1 = self.enc1(e0_modulated)
-        e1_modulated = self.film2(e1, embedding)
         e2 = self.enc2(e1)
 
         b = self.bottleneck(e2)
@@ -192,7 +190,7 @@ class MultiScaleRetinexNet(nn.Module):
         if d2_up.shape[2:] != e1.shape[2:]:
             d2_up = F.interpolate(d2_up, size=e1.shape[2:], mode='bilinear', align_corners=False)
 
-        d2 = torch.cat([d2_up, e1_modulated], dim=1)
+        d2 = torch.cat([d2_up, e1], dim=1)
         d2 = self.dec2_conv(d2)
         d2 = self.dec2_attn(d2)
 

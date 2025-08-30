@@ -68,12 +68,10 @@ class Config:
     lambda_reflect: float = 1.0
     lambda_illum_curve: float = 1.0
     lambda_illum_exposure: float = 1.0
-    lambda_edge_aware_smooth: float = 15.0
+    lambda_edge_aware_smooth: float = 5.0
 
-    lambda_illum_exposure_local: float = 1.8
     lambda_white_preservation: float = 3.7
     lambda_histogram: float = 1
-    lambda_illum_exclusion: float = 0.15
     lambda_perceptual_color: float = 1.0
 
     luminance_threshold: float = 98.0
