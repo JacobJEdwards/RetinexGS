@@ -1196,6 +1196,13 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
         "gain", 0.5, 10.0, log=True
     )
 
+    cfg.retinex_opt_lr = trial.suggest_float(
+        "retinex_opt_lr", 1e-4, 1e-2, log=True
+    )
+    cfg.retinex_embedding_lr = trial.suggest_float(
+        "retinex_embedding_lr", 1e-5, 1e-2, log=True
+    )
+
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
 
@@ -1278,7 +1285,7 @@ if __name__ == "__main__":
         load_if_exists=True,
     )
 
-    study.optimize(objective, n_trials=50, gc_after_trial=True, catch=(RuntimeError, ValueError),
+    study.optimize(objective, n_trials=80, gc_after_trial=True, catch=(RuntimeError, ValueError),
                    show_progress_bar=True)
 
     print("Number of finished trials: ", len(study.trials))
