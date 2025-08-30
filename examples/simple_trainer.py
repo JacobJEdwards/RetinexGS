@@ -245,11 +245,7 @@ class Runner:
         if world_size > 1:
             self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
-        self.retinex_optimizer = torch.optim.Adam(
-            self.retinex_net.parameters(),
-            lr=cfg.retinex_opt_lr * math.sqrt(cfg.batch_size),
-            fused=True,
-        )
+
         self.retinex_embed_dim = cfg.retinex_embedding_dim
         self.retinex_embeds = nn.Embedding(
             len(self.trainset), self.retinex_embed_dim
@@ -258,21 +254,20 @@ class Runner:
         if world_size > 1:
             self.retinex_embeds = DDP(self.retinex_embeds, device_ids=[local_rank])
 
-        self.retinex_embed_optimizer = torch.optim.Adam(
-            self.retinex_embeds.parameters(),
-            lr=cfg.retinex_embedding_lr * math.sqrt(cfg.batch_size),
-            fused=True
-        )
+        param_groups = [
+            {"params": self.retinex_net.parameters(), "lr": cfg.retinex_opt_lr * math.sqrt(cfg.batch_size)},
+            {"params": self.retinex_embeds.parameters(), "lr": cfg.retinex_embedding_lr * math.sqrt(cfg.batch_size)},
+            {"params": self.target_histogram_dist, "lr": 1e-3}
+        ]
 
 
-        loss_params = [self.target_histogram_dist]
         if cfg.learn_adaptive_curve_lambdas:
-            loss_params += self.loss_adaptive_curve.parameters()
+            param_groups.append({"params": self.loss_adaptive_curve.parameters(), "lr": 1e-3})
 
 
         if cfg.uncertainty_weighting:
             self.awl = AutomaticWeightedLoss(len(self.loss_names) - len(self.fixed_losses)).to(self.device)
-            loss_params.extend(self.awl.parameters())
+            param_groups.append({"params": self.awl.parameters(), "lr": cfg.loss_opt_lr})
 
         if cfg.learnt_weighting:
             self.lambda_predictor = nn.Sequential(
@@ -283,14 +278,13 @@ class Runner:
             ).to(self.device)
             torch.nn.init.constant_(self.lambda_predictor[-2].bias, 0.54)
 
-            loss_params.extend(self.lambda_predictor.parameters())
+            param_groups.append({"params": self.lambda_predictor.parameters(), "lr": cfg.loss_opt_lr})
 
-        self.loss_optimizer = torch.optim.Adam(
-            loss_params,
-            lr=cfg.loss_opt_lr * math.sqrt(cfg.batch_size),
+
+        self.retinex_optimiser = torch.optim.Adam(
+            param_groups,
             fused=True
         )
-
 
         feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -606,15 +600,10 @@ class Runner:
 
         schedulers.extend([
             CosineAnnealingLR(
-                self.retinex_optimizer,
+                self.retinex_optimiser,
                 T_max=cfg.freeze_step,
                 eta_min=0,
             ),
-            CosineAnnealingLR(
-                self.loss_optimizer,
-                T_max=cfg.freeze_step,
-                eta_min=0,
-            )
         ])
 
         trainloader = torch.utils.data.DataLoader(
@@ -799,20 +788,15 @@ class Runner:
                 # optimizer.step()
                 self.scaler.step(optimizer)
 
-            self.scaler.step(self.retinex_optimizer)
+            self.scaler.step(self.retinex_optimiser)
             # self.retinex_optimizer.step()
-            self.scaler.step(self.retinex_embed_optimizer)
-            # self.retinex_embed_optimizer.step()
-            self.scaler.step(self.loss_optimizer)
 
             self.scaler.update()
 
             for optimizer in self.optimizers.values():
                 optimizer.zero_grad()
 
-            self.retinex_optimizer.zero_grad()
-            self.retinex_embed_optimizer.zero_grad()
-            self.loss_optimizer.zero_grad()
+            self.retinex_optimiser.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
