@@ -400,7 +400,8 @@ class Runner:
         illumination_map = torch.exp(log_illumination_map)
         illumination_map = torch.clamp(illumination_map, min=1e-5)
         illumination_map = illumination_map.nan_to_num()
-        illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
+        if not self.cfg.allow_chromatic_illumination:
+            illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
         reflectance_map = input_image_for_net / (illumination_map + 1e-6)
 
