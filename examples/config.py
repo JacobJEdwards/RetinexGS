@@ -97,7 +97,7 @@ class Config:
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
 
-    save_images: bool = False
+    save_images: bool = True
 
     postfix: str = "_multiexposure"
 
