@@ -14,10 +14,10 @@ class AdaptiveCurveLoss(nn.Module):
 
     def __init__(
             self,
-            alpha: float = 0.2,
-            beta: float = 0.8,
-            initial_low_thresh: float = 0.3,
-            initial_high_thresh: float = 0.7,
+            alpha: float = 0.45,
+            beta: float = 0.55,
+            initial_low_thresh: float = 0.25,
+            initial_high_thresh: float = 0.65,
             lambda1: float = 1.0,
             lambda2: float = 1.0,
             lambda3: float = 1.0,
