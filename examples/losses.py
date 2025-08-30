@@ -143,7 +143,7 @@ class SpatialLoss(nn.Module):
         self.pool = nn.AvgPool2d(4)
 
 
-    def forward(self, org: Tensor, enhance: Tensor, contrast: int = 8):
+    def forward(self, org: Tensor, enhance: Tensor, contrast: float = 8.0):
         org_mean = torch.mean(org, 1, keepdim=True)
         enhance_mean = torch.mean(enhance, 1, keepdim=True)
 

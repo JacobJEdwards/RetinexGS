@@ -90,7 +90,7 @@ class Config:
     loss_reflectance_spa: bool = True
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
-    loss_variance: bool = True
+    loss_variance: bool = False
 
     loss_histogram: bool = False
     loss_perceptual_color: bool = False
