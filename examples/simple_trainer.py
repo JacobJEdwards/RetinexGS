@@ -480,7 +480,7 @@ class Runner:
         }
 
         if cfg.uncertainty_weighting:
-            total_loss = self.awl(individual_losses.values())
+            total_loss = self.awl(*individual_losses.values())
         else:
             total_loss = 0
             loss_names = individual_losses.keys()
