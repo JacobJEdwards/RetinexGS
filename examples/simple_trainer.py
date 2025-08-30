@@ -501,6 +501,7 @@ class Runner:
             "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
             "variance": loss_variance,
+            "frequency": loss_frequency,
         }
 
         if cfg.uncertainty_weighting:
