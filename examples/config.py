@@ -65,14 +65,14 @@ class Config:
     lambda_low: float = 0.80
     lambda_illumination: float = 0.45
 
-    lambda_reflect: float = 1.0
+    lambda_reflect: float = 0.2
     lambda_illum_curve: float = 1.0
     lambda_illum_exposure: float = 1.0
     lambda_edge_aware_smooth: float = 20.0
 
     lambda_illum_exposure_local: float = 1.8
-    lambda_white_preservation: float = 3.7
-    lambda_histogram: float = 1
+    lambda_white_preservation: float = 0.5
+    lambda_histogram: float = 0.5
     lambda_illum_exclusion: float = 0.15
     lambda_perceptual_color: float = 1.0
 
@@ -96,9 +96,7 @@ class Config:
     loss_histogram: bool = True
     loss_perceptual_color: bool = True
 
-    uncertainty_weighting: bool = True
-
-    loss_exclusion: bool = False
+    uncertainty_weighting: bool = False
 
     save_images: bool = False
 

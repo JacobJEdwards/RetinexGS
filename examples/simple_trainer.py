@@ -36,15 +36,14 @@ from datasets.traj import (
 )
 from config import Config
 from utils import AutomaticWeightedLoss
-from losses import PerceptualColorLoss
-from losses import HistogramLoss, WhitePreservationLoss
 from gsplat.distributed import cli
 from losses import (
     ColourConsistencyLoss,
     ExposureLoss,
     SpatialLoss,
     AdaptiveCurveLoss,
-    ExclusionLoss, EdgeAwareSmoothingLoss
+    EdgeAwareSmoothingLoss,
+    HistogramLoss, WhitePreservationLoss, PerceptualColorLoss
 )
 from gsplat import export_splats, rasterization
 from gsplat.optimizers import SelectiveAdam
@@ -196,7 +195,6 @@ class Runner:
             learn_lambdas=cfg.learn_adaptive_curve_lambdas,
         ).to(self.device)
         self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
-        self.loss_exclusion = ExclusionLoss().to(self.device)
         self.histogram_loss = HistogramLoss().to(self.device)
         self.loss_white_preservation = WhitePreservationLoss(
             luminance_threshold=cfg.luminance_threshold,
@@ -210,6 +208,17 @@ class Runner:
 
         self.target_histogram_dist = nn.Parameter(target_hist)
 
+        self.fallback_lambdas = {
+            "reflect_spa": cfg.lambda_reflect,
+            "perceptual_color": cfg.lambda_perceptual_color,
+            "color_val": cfg.lambda_illum_color,
+            "exposure_val": cfg.lambda_illum_exposure,
+            "adaptive_curve": cfg.lambda_illum_curve,
+            "smooth_edge_aware": cfg.lambda_edge_aware_smooth,
+            "white_preservation": cfg.lambda_white_preservation,
+            "histogram_loss": cfg.lambda_histogram,
+        }
+
         retinex_in_channels = 3
         retinex_out_channels = 3
 
@@ -222,7 +231,7 @@ class Runner:
         if world_size > 1:
             self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
-        self.retinex_optimizer = torch.optim.Adam(
+        self.retinex_optimizer = torch.optim.AdamW(
             self.retinex_net.parameters(),
             lr=cfg.retinex_opt_lr * math.sqrt(cfg.batch_size),
             fused=True
@@ -248,7 +257,7 @@ class Runner:
 
 
         if cfg.uncertainty_weighting:
-            self.awl = AutomaticWeightedLoss(9)
+            self.awl = AutomaticWeightedLoss(len(self.fallback_lambdas))
             loss_params.extend(self.awl.parameters())
 
         self.loss_optimizer = torch.optim.Adam(
@@ -431,11 +440,6 @@ class Runner:
         else:
             loss_smooth_edge_aware = torch.tensor(0.0, device=device)
 
-        if cfg.loss_exclusion:
-            loss_exclusion_val = self.loss_exclusion(reflectance_map, illumination_map)
-        else:
-            loss_exclusion_val = torch.tensor(0.0, device=device)
-
         if cfg.loss_white_preservation:
             loss_white_preservation = self.loss_white_preservation(
                 input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
@@ -462,22 +466,10 @@ class Runner:
             "exposure_val": loss_exposure_val,
             "adaptive_curve": loss_adaptive_curve,
             "smooth_edge_aware": loss_smooth_edge_aware,
-            "exclusion_val": loss_exclusion_val,
             "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
         }
 
-        fallback_lambdas = {
-            "reflect_spa": cfg.lambda_reflect,
-            "perceptual_color": cfg.lambda_perceptual_color,
-            "color_val": cfg.lambda_illum_color,
-            "exposure_val": cfg.lambda_illum_exposure,
-            "adaptive_curve": cfg.lambda_illum_curve,
-            "smooth_edge_aware": cfg.lambda_edge_aware_smooth,
-            "exclusion_val": cfg.lambda_illum_exclusion,
-            "white_preservation": cfg.lambda_white_preservation,
-            "histogram_loss": cfg.lambda_histogram,
-        }
 
         if cfg.uncertainty_weighting:
             total_loss = self.awl(*individual_losses.values())
@@ -486,7 +478,7 @@ class Runner:
             loss_names = individual_losses.keys()
             for name in loss_names:
                 loss = individual_losses[name]
-                total_loss += fallback_lambdas[name] * loss
+                total_loss += self.fallback_lambdas[name] * loss
 
         if step % self.cfg.tb_every == 0:
             self.writer.add_scalar("retinex_net/total_loss", total_loss.item(), step)
@@ -499,40 +491,40 @@ class Runner:
 
             if cfg.learn_adaptive_curve_lambdas:
                 self.writer.add_scalar(
-                    f"train/learnable_adaptive_curve_lambda1",
+                    "train/learnable_adaptive_curve_lambda1",
                     self.loss_adaptive_curve.lambda1.item(),
                     step,
                 )
                 self.writer.add_scalar(
-                    f"train/learnable_adaptive_curve_lambda2",
+                    "train/learnable_adaptive_curve_lambda2",
                     self.loss_adaptive_curve.lambda2.item(),
                     step,
                 )
                 self.writer.add_scalar(
-                    f"train/learnable_adaptive_curve_lambda3",
+                    "train/learnable_adaptive_curve_lambda3",
                     self.loss_adaptive_curve.lambda3.item(),
                     step,
                 )
 
             if self.cfg.tb_save_image:
                 self.writer.add_images(
-                    f"train/input_image_for_net",
+                    "train/input_image_for_net",
                     input_image_for_net,
                     step,
                 )
                 self.writer.add_images(
-                    f"train/pixels",
+                    "train/pixels",
                     pixels.permute(0, 3, 1, 2),
                     step,
                 )
 
                 self.writer.add_images(
-                    f"train/illumination_map",
+                    "train/illumination_map",
                     illumination_map,
                     step,
                 )
                 self.writer.add_images(
-                    f"train/target_reflectance",
+                    "train/target_reflectance",
                     reflectance_map,
                     step,
                 )
@@ -889,9 +881,6 @@ class Runner:
                 f"PSNR: {stats_eval.get('psnr', 0):.3f}",
                 f"SSIM: {stats_eval.get('ssim', 0):.4f}",
                 f"LPIPS: {stats_eval.get('lpips', 0):.3f}",
-                f"PSNR Enh: {stats_eval.get('psnr_enh', 0):.3f}",
-                f"SSIM Enh: {stats_eval.get('ssim_enh', 0):.4f}",
-                f"LPIPS Enh: {stats_eval.get('lpips_enh', 0):.3f}",
             ]
             print_parts_eval.extend(
                 [
