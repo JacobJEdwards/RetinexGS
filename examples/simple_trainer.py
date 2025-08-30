@@ -242,15 +242,14 @@ class Runner:
         )
 
 
-        loss_params = []
+        loss_params = [self.target_histogram_dist]
         if cfg.learn_adaptive_curve_lambdas:
             loss_params += self.loss_adaptive_curve.parameters()
 
-        loss_params.append(self.target_histogram_dist)
 
         if cfg.uncertainty_weighting:
             self.awl = AutomaticWeightedLoss(9)
-            loss_params.append(self.awl.parameters())
+            loss_params.extend(self.awl.parameters())
 
         self.loss_optimizer = torch.optim.Adam(
             loss_params,
