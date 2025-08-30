@@ -364,6 +364,58 @@ class PerceptualColorLoss(nn.Module):
 
         return F.l1_loss(img1_ab, img2_ab)
 
+class FrequencySeparationLoss(nn.Module):
+    def __init__(self, radius_ratio: float = 0.05, lambda_freq: float = 1.0):
+        super().__init__()
+        if not (0 < radius_ratio < 0.5):
+            raise ValueError("radius_ratio must be between 0 and 0.5")
+
+        self.radius_ratio = radius_ratio
+        self.lambda_freq = lambda_freq
+        self.register_buffer("low_pass_mask", None)
+        self.register_buffer("high_pass_mask", None)
+
+    def _create_masks(self, h: int, w: int, device: torch.device) -> None:
+        radius = int(min(h, w) * self.radius_ratio)
+
+        center_y, center_x = h // 2, w // 2
+        Y, X = torch.meshgrid(
+            torch.arange(h, device=device),
+            torch.arange(w, device=device),
+            indexing='ij'
+        )
+
+        dist_from_center = torch.sqrt((X - center_x) ** 2 + (Y - center_y) ** 2)
+
+        self.low_pass_mask = (dist_from_center <= radius).float()
+        self.high_pass_mask = 1.0 - self.low_pass_mask
+
+    def _get_magnitude(self, freq_domain: torch.Tensor) -> torch.Tensor:
+        return torch.abs(freq_domain)
+
+    def forward(self, illumination_map: torch.Tensor, reflectance_map: torch.Tensor) -> torch.Tensor:
+        b, c, h, w = illumination_map.shape
+
+        if self.low_pass_mask is None or self.low_pass_mask.shape != (h, w):
+            self._create_masks(h, w, illumination_map.device)
+
+        illum_gray = torch.mean(illumination_map, dim=1, keepdim=True)
+        reflect_gray = torch.mean(reflectance_map, dim=1, keepdim=True)
+
+        illum_freq = torch.fft.fftshift(torch.fft.fftn(illum_gray, dim=(-2, -1)), dim=(-2, -1))
+        reflect_freq = torch.fft.fftshift(torch.fft.fftn(reflect_gray, dim=(-2, -1)), dim=(-2, -1))
+
+        illum_magnitude = self._get_magnitude(illum_freq)
+        reflect_magnitude = self._get_magnitude(reflect_freq)
+
+        loss_illum = torch.mean(illum_magnitude * self.high_pass_mask)
+        loss_reflect = torch.mean(reflect_magnitude * self.low_pass_mask)
+
+        total_loss = self.lambda_freq * (loss_illum + loss_reflect)
+
+        return total_loss
+
+
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
     x_in_enh = torch.rand(1, 3, 399, 499)  # Pred normal-light

@@ -42,7 +42,7 @@ from losses import (
     SpatialLoss,
     AdaptiveCurveLoss,
     EdgeAwareSmoothingLoss,
-    HistogramLoss, WhitePreservationLoss, PerceptualColorLoss
+    HistogramLoss, WhitePreservationLoss, PerceptualColorLoss, FrequencySeparationLoss
 )
 from gsplat import export_splats, rasterization
 from gsplat.optimizers import SelectiveAdam
@@ -199,6 +199,7 @@ class Runner:
             chroma_tolerance=cfg.chroma_tolerance,
             gain=cfg.gain,
         ).to(self.device)
+        self.loss_frequency = FrequencySeparationLoss().to(self.device)
 
         target_hist = torch.tensor(stats.norm.pdf(
             np.linspace(0, 1, 255), loc=0.5, scale=0.2
@@ -215,12 +216,13 @@ class Runner:
             "white_preservation": cfg.lambda_white_preservation,
             "histogram_loss": cfg.lambda_histogram,
             "variance": cfg.lambda_illum_variance,
+            "frequency": cfg.lambda_freq,
         }
 
         self.loss_names = [
             "reflect_spa", "perceptual_color", "exposure_val",
             "adaptive_curve", "smooth_edge_aware",
-            "white_preservation", "histogram_loss", "variance"
+            "white_preservation", "histogram_loss", "variance", "frequency"
         ]
 
         self.fixed_losses = [
@@ -483,6 +485,12 @@ class Runner:
             loss_variance = -torch.mean(illumination_std) + 1e-6
         else:
             loss_variance = torch.tensor(0.0, device=device)
+
+        if cfg.loss_frequency:
+            loss_frequency = self.frequency_loss(illumination_map=illumination_map, reflectance_map=reflectance_map)
+        else:
+            loss_frequency = torch.tensor(0.0, device=device)
+
 
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
