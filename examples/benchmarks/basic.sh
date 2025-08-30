@@ -2,19 +2,12 @@ SCENE_DIR="/workspace/360_v2"
 RESULT_DIR="/workspace/2d"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 RENDER_TRAJ_PATH="ellipse"
-POSTFIXES="contrast variance"
-
+POSTFIXES="contrast variance multiexposure"
 
 for POSTFIX in $POSTFIXES;
   do
   for SCENE in $SCENE_LIST;
   do
-      if [ "$SCENE" = "bonsai" ] || [ "$SCENE" = "counter" ] || [ "$SCENE" = "kitchen" ] || [ "$SCENE" = "room" ]; then
-          DATA_FACTOR=2
-      else
-          DATA_FACTOR=4
-      fi
-
       echo "Running $SCENE"
 
       NEW_RESULT_DIR=$RESULT_DIR/"$POSTFIX"/"$SCENE"
