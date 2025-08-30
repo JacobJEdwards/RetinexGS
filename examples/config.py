@@ -97,6 +97,7 @@ class Config:
     loss_perceptual_color: bool = True
 
     uncertainty_weighting: bool = False
+    learnt_weighting: bool = True
 
     save_images: bool = False
 

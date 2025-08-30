@@ -219,6 +219,13 @@ class Runner:
             "histogram_loss": cfg.lambda_histogram,
         }
 
+        self.loss_names = [
+            "reflect_spa", "perceptual_color", "color_val", "exposure_val",
+            "adaptive_curve", "smooth_edge_aware",
+            "white_preservation", "histogram_loss"
+        ]
+
+
         retinex_in_channels = 3
         retinex_out_channels = 3
 
@@ -257,8 +264,19 @@ class Runner:
 
 
         if cfg.uncertainty_weighting:
-            self.awl = AutomaticWeightedLoss(len(self.fallback_lambdas))
+            self.awl = AutomaticWeightedLoss(len(self.loss_names))
             loss_params.extend(self.awl.parameters())
+
+        if cfg.learnt_weighting:
+            self.lambda_predictor = nn.Sequential(
+                nn.Linear(cfg.retinex_embedding_dim, 64),
+                nn.LeakyReLU(),
+                nn.Linear(64, len(self.loss_names)),
+                nn.Softplus()
+            ).to(self.device)
+            torch.nn.init.constant_(self.lambda_predictor[-2].bias, 0.54)
+
+            loss_params.extend(self.lambda_predictor.parameters())
 
         self.loss_optimizer = torch.optim.Adam(
             loss_params,
@@ -371,11 +389,9 @@ class Runner:
         )  # return colors and alphas
 
     def get_retinex_output(
-            self, images_ids: Tensor, pixels: Tensor
+            self, pixels: Tensor, retinex_embedding: Tensor
     ) -> tuple[Tensor, Tensor, Tensor]:
         input_image_for_net = pixels.permute(0, 3, 1, 2)
-
-        retinex_embedding = self.retinex_embeds(images_ids)
 
         log_illumination_map = checkpoint(
             self.retinex_net,
@@ -405,11 +421,14 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
+        retinex_embedding = self.retinex_embeds(images_ids)
+
         (
             input_image_for_net,
             illumination_map,
             reflectance_map,
-        ) = self.get_retinex_output(images_ids=images_ids, pixels=pixels)
+        ) = self.get_retinex_output(pixels=pixels, retinex_embedding=retinex_embedding)
+
         loss_color_val = (
             self.loss_color(illumination_map)
         )
@@ -470,9 +489,16 @@ class Runner:
             "histogram_loss": loss_histogram,
         }
 
-
         if cfg.uncertainty_weighting:
             total_loss = self.awl(*individual_losses.values())
+        elif cfg.learnt_weighting:
+            predicted_lambdas_vector = self.lambda_predictor(retinex_embedding.detach())
+            total_loss = 0
+            avg_predicted_lambdas = predicted_lambdas_vector.mean(dim=0)
+
+            for i, loss in enumerate(individual_losses.values()):
+                total_loss += avg_predicted_lambdas[i] * loss
+
         else:
             total_loss = 0
             loss_names = individual_losses.keys()
@@ -1045,11 +1071,13 @@ class Runner:
 
             pixels_groundtruth = data_groundtruth["image"].to(device) / 255.0
 
+            retinex_embedding = self.retinex_embeds(image_ids)
+
             (
                 _, # input_image_for_net
                 _, # illumination_map
                 reflectance_output,
-            ) = self.get_retinex_output(images_ids=image_ids, pixels=pixels_multiexposure)
+            ) = self.get_retinex_output(pixels=pixels_multiexposure, retinex_embedding=retinex_embedding)
 
             pixels_groundtruth_chw = pixels_groundtruth.permute(0, 3, 1, 2)
 
