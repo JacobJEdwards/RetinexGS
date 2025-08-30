@@ -82,8 +82,8 @@ class Config:
     exposure_loss_patch_size: int = 32
     exposure_mean_val: float = 0.5
 
-    learn_adaptive_curve_lambdas: bool = True
-    learn_adaptive_curve_use_embedding: bool = True
+    learn_adaptive_curve_lambdas: bool = False
+    learn_adaptive_curve_use_embedding: bool = False
 
     allow_chromatic_illumination: bool = True
 

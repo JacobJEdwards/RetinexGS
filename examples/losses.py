@@ -14,8 +14,8 @@ class AdaptiveCurveLoss(nn.Module):
 
     def __init__(
             self,
-            alpha: float = 0.4,
-            beta: float = 0.6,
+            alpha: float = 0.2,
+            beta: float = 0.8,
             initial_low_thresh: float = 0.3,
             initial_high_thresh: float = 0.7,
             lambda1: float = 1.0,
@@ -370,5 +370,3 @@ if __name__ == "__main__":
     x_gt = torch.rand(1, 3, 399, 499)  # GT low-light
 
     curve_1 = torch.linspace(0, 1, 255).unsqueeze(0)
-    curve_2 = gamma_curve(curve_1, 1.0)
-    curve_3 = s_curve(curve_2, alpha=1.0)
