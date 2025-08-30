@@ -65,14 +65,14 @@ class Config:
     lambda_low: float = 0.80
     lambda_illumination: float = 0.45
 
-    lambda_reflect: float = 0.2
+    lambda_reflect: float = 1.0
     lambda_illum_curve: float = 1.0
     lambda_illum_exposure: float = 1.0
     lambda_edge_aware_smooth: float = 20.0
 
     lambda_illum_exposure_local: float = 1.8
-    lambda_white_preservation: float = 0.5
-    lambda_histogram: float = 0.5
+    lambda_white_preservation: float = 3.7
+    lambda_histogram: float = 1
     lambda_illum_exclusion: float = 0.15
     lambda_perceptual_color: float = 1.0
 
@@ -80,13 +80,11 @@ class Config:
     chroma_tolerance: float = 2.75
     gain: float = 2.0
 
-    lambda_illum_color: float = 1.
-
     exposure_loss_patch_size: int = 32
     exposure_mean_val: float = 0.46
 
-    learn_adaptive_curve_lambdas: bool = False
-    learn_adaptive_curve_use_embedding: bool = False
+    learn_adaptive_curve_lambdas: bool = True
+    learn_adaptive_curve_use_embedding: bool = True
 
     loss_adaptive_curve: bool = True
     loss_exposure: bool = True

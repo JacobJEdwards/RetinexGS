@@ -38,7 +38,6 @@ from config import Config
 from utils import AutomaticWeightedLoss
 from gsplat.distributed import cli
 from losses import (
-    ColourConsistencyLoss,
     ExposureLoss,
     SpatialLoss,
     AdaptiveCurveLoss,
@@ -186,7 +185,6 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        self.loss_color = ColourConsistencyLoss().to(self.device)
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=cfg.exposure_loss_patch_size,
                                           mean_val=cfg.exposure_mean_val).to(self.device)
@@ -211,7 +209,6 @@ class Runner:
         self.fallback_lambdas = {
             "reflect_spa": cfg.lambda_reflect,
             "perceptual_color": cfg.lambda_perceptual_color,
-            "color_val": cfg.lambda_illum_color,
             "exposure_val": cfg.lambda_illum_exposure,
             "adaptive_curve": cfg.lambda_illum_curve,
             "smooth_edge_aware": cfg.lambda_edge_aware_smooth,
@@ -220,7 +217,7 @@ class Runner:
         }
 
         self.loss_names = [
-            "reflect_spa", "perceptual_color", "color_val", "exposure_val",
+            "reflect_spa", "perceptual_color", "exposure_val",
             "adaptive_curve", "smooth_edge_aware",
             "white_preservation", "histogram_loss"
         ]
@@ -429,9 +426,6 @@ class Runner:
             reflectance_map,
         ) = self.get_retinex_output(pixels=pixels, retinex_embedding=retinex_embedding)
 
-        loss_color_val = (
-            self.loss_color(illumination_map)
-        )
         if cfg.loss_adaptive_curve:
             loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map)
         else:
@@ -481,7 +475,6 @@ class Runner:
         individual_losses = {
             "reflect_spa": loss_reflectance_spa,
             "perceptual_color": loss_perceptual_color,
-            "color_val": loss_color_val,
             "exposure_val": loss_exposure_val,
             "adaptive_curve": loss_adaptive_curve,
             "smooth_edge_aware": loss_smooth_edge_aware,
