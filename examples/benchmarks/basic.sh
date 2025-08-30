@@ -1,7 +1,6 @@
 SCENE_DIR="/workspace/360_v2"
 RESULT_DIR="/workspace/2d"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
-RENDER_TRAJ_PATH="ellipse"
 POSTFIXES="contrast variance multiexposure"
 
 for POSTFIX in $POSTFIXES;
@@ -12,8 +11,7 @@ for POSTFIX in $POSTFIXES;
 
       NEW_RESULT_DIR=$RESULT_DIR/"$POSTFIX"/"$SCENE"
 
-      CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer --data_factor $DATA_FACTOR \
-          --render_traj_path $RENDER_TRAJ_PATH \
+      CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
           --data_dir $SCENE_DIR/"$SCENE"/ \
           --postfix $POSTFIX \
           --result_dir $NEW_RESULT_DIR
