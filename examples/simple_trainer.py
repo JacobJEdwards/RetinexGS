@@ -239,10 +239,10 @@ class Runner:
         if world_size > 1:
             self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
 
-        self.retinex_optimizer = torch.optim.AdamW(
+        self.retinex_optimizer = torch.optim.Adam(
             self.retinex_net.parameters(),
             lr=cfg.retinex_opt_lr * math.sqrt(cfg.batch_size),
-            fused=True
+            fused=True,
         )
         self.retinex_embed_dim = cfg.retinex_embedding_dim
         self.retinex_embeds = nn.Embedding(
@@ -279,7 +279,7 @@ class Runner:
 
             loss_params.extend(self.lambda_predictor.parameters())
 
-        self.loss_optimizer = torch.optim.AdamW(
+        self.loss_optimizer = torch.optim.Adam(
             loss_params,
             lr=cfg.loss_opt_lr * math.sqrt(cfg.batch_size),
             fused=True
