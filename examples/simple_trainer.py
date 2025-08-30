@@ -600,18 +600,16 @@ class Runner:
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
 
-        initial_retinex_lr = self.retinex_optimizer.param_groups[0]["lr"]
-        initial_loss_lr = self.retinex_optimizer.param_groups[0]["lr"]
         schedulers.extend([
             CosineAnnealingLR(
                 self.retinex_optimizer,
                 T_max=cfg.freeze_step,
-                eta_min=initial_retinex_lr * 0.01,
+                eta_min=0,
             ),
             CosineAnnealingLR(
                 self.loss_optimizer,
                 T_max=cfg.freeze_step,
-                eta_min=initial_loss_lr * 0.01
+                eta_min=0,
             )
         ])
 
