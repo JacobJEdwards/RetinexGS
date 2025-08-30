@@ -81,7 +81,7 @@ class Config:
     gain: float = 2.0
 
     exposure_loss_patch_size: int = 32
-    exposure_mean_val: float = 0.46
+    exposure_mean_val: float = 0.5
 
     learn_adaptive_curve_lambdas: bool = True
     learn_adaptive_curve_use_embedding: bool = True
@@ -107,7 +107,7 @@ class Config:
 
     retinex_embedding_dim: int = 128
 
-    freeze_step: int = 2000
+    freeze_step: int = 3000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
