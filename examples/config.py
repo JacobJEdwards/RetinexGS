@@ -57,7 +57,7 @@ class Config:
     opacity_reg: float = 0.0
     scale_reg: float = 0.0
 
-    tb_every: int = 1000
+    tb_every: int = 100
     tb_save_image: bool = True
 
     lpips_net: Literal["vgg", "alex"] = "alex"
