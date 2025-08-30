@@ -1206,8 +1206,9 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     count = 0
     configs = [
         (Path("/workspace/360_v2/room"), "multiexposure"),
+        (Path("/workspace/360_v2/counter"), "multiexposure"),
+        (Path("/workspace/360_v2/kitchen"), "contrast"),
         (Path("/workspace/360_v2/stump"), "contrast"),
-        (Path("/workspace/360_v2/stump"), "kitchen"),
         (Path("/workspace/360_v2/counter"), "variance"),
         (Path("/workspace/360_v2/stump"), "variance"),
     ]
