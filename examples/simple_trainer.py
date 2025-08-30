@@ -35,7 +35,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.utils import AutomaticWeightedLoss
+from utils import AutomaticWeightedLoss
 from losses import PerceptualColorLoss
 from losses import HistogramLoss, WhitePreservationLoss
 from gsplat.distributed import cli
