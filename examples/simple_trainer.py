@@ -1231,27 +1231,27 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    # cli(main, config, verbose=True)
+    cli(main, config, verbose=True)
 
-    storage = optuna.storages.JournalStorage(
-        optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
-    )
-
-    study = optuna.create_study(
-        directions=["maximize", "maximize", "minimize"],
-        study_name="retinex_optuna_study",
-        storage=storage,
-        load_if_exists=True,
-    )
-
-    study.optimize(objective, n_trials=50, gc_after_trial=True, catch=(RuntimeError, ValueError),
-                   show_progress_bar=True)
-
-    print("Number of finished trials: ", len(study.trials))
-    print("Best trials (Pareto front):")
-    for t in study.best_trials:
-        print(f"  Value: {t.values}")
-        print("  Params: ")
-        for key, value in t.params.items():
-            print(f"    {key}: {value}")
+    # storage = optuna.storages.JournalStorage(
+    #     optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
+    # )
+    #
+    # study = optuna.create_study(
+    #     directions=["maximize", "maximize", "minimize"],
+    #     study_name="retinex_optuna_study",
+    #     storage=storage,
+    #     load_if_exists=True,
+    # )
+    #
+    # study.optimize(objective, n_trials=50, gc_after_trial=True, catch=(RuntimeError, ValueError),
+    #                show_progress_bar=True)
+    #
+    # print("Number of finished trials: ", len(study.trials))
+    # print("Best trials (Pareto front):")
+    # for t in study.best_trials:
+    #     print(f"  Value: {t.values}")
+    #     print("  Params: ")
+    #     for key, value in t.params.items():
+    #         print(f"    {key}: {value}")
 
