@@ -1215,7 +1215,7 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
 
     for (datadir, postfix) in configs:
         cfg.postfix = postfix
-        cfg.datadir = datadir
+        cfg.data_dir = datadir
         try:
             runner = Runner(0, 0, 1, cfg)
             runner.train()
