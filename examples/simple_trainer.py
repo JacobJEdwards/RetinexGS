@@ -496,8 +496,8 @@ class Runner:
         }
 
         if cfg.uncertainty_weighting:
-            individual_losses = {k: v for k, v in individual_losses.items() if k not in self.fixed_losses}
-            total_loss = self.awl(*individual_losses.values())
+            awl_individual_losses = {k: v for k, v in individual_losses.items() if k not in self.fixed_losses}
+            total_loss = self.awl(*awl_individual_losses.values())
 
             for i, name in enumerate(self.fixed_losses):
                 total_loss += self.fallback_lambdas[name] * individual_losses[name]
