@@ -110,7 +110,7 @@ class Config:
 
     retinex_embedding_dim: int = 128
 
-    freeze_step: int = 3000
+    freeze_step: int = 8000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
