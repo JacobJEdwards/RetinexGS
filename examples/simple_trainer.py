@@ -1076,13 +1076,12 @@ def objective(trial: optuna.Trial):
     )
     cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0.1, 0.8)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 0.3)
-
     cfg.appearance_embedding_lr = trial.suggest_float(
         "appearance_embedding_lr", 1e-5, 6e-3, log=True
     )
 
-    cfg.max_steps = 1500
-    cfg.eval_steps = [1500]
+    cfg.max_steps = 3000
+    cfg.eval_steps = [3000]
 
     total_psnr = 0
     total_ssim = 0
