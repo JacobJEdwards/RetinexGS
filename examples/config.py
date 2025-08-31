@@ -65,10 +65,10 @@ class Config:
     lambda_low: float = 0.80
     lambda_illumination: float = 0.45
 
-    lambda_illum_curve: float = 2.0
-    lambda_illum_exposure: float = 1.0
-    lambda_edge_aware_smooth: float = 20.0
-    lambda_white_preservation: float = 5.0
+    lambda_edge_aware_smooth: float = 21.0
+    lambda_illum_curve: float = 1.85
+    lambda_illum_exposure: float = 0.12
+    lambda_white_preservation: float = 3.6
     lambda_perceptual_color: float = 2.5
 
     lambda_chroma: float = 0.01
@@ -77,10 +77,10 @@ class Config:
     lambda_histogram: float = 1
 
     luminance_threshold: float = 95.0
-    chroma_tolerance: float = 4.0
-    gain: float = 2.0
+    chroma_tolerance: float = 2.4
+    gain: float = 9.8
 
-    exposure_loss_patch_size: int = 32
+    exposure_loss_patch_size: int = 128
     exposure_mean_val: float = 0.48
 
     learn_adaptive_curve_lambdas: bool = False
@@ -106,8 +106,8 @@ class Config:
 
     postfix: str = "_multiexposure"
 
-    retinex_opt_lr: float = 7e-3
-    retinex_embedding_lr: float = 5e-4
+    retinex_opt_lr: float = 2e-3
+    retinex_embedding_lr: float = 5e-3
     loss_opt_lr: float = 1e-4
 
     retinex_embedding_dim: int = 128

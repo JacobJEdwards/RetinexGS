@@ -1166,42 +1166,46 @@ total_variation_loss = None
 def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     cfg = Config()
 
-    cfg.lambda_edge_aware_smooth = trial.suggest_float(
-        "lambda_edge_aware_smooth", 10.0, 35.0, log=True
-    )
-    cfg.lambda_illum_curve = trial.suggest_float(
-        "lambda_illum_curve", 0.5, 5.0, log=True
+    cfg.lambda_perceptual_color = trial.suggest_float(
+        "lambda_perceptual_color", 0.1, 10.0, log=True
     )
 
-    cfg.lambda_illum_exposure = trial.suggest_float(
-        "lambda_illum_exposure", 0.1, 8.0, log=True
-    )
-
-    cfg.lambda_white_preservation = trial.suggest_float(
-        "lambda_white_preservation", 1.0, 10.0, log=True
-    )
-
-    cfg.loss_perceptual_color = trial.suggest_categorical(
-        "loss_perceptual_color", [True, False]
-    )
-
-    cfg.exposure_loss_patch_size = trial.suggest_categorical(
-        "exposure_loss_patch_size", [32, 64, 128]
-    )
-
-    cfg.chroma_tolerance = trial.suggest_float(
-        "chroma_tolerance", 1.0, 10.0, log=True
-    )
-    cfg.gain = trial.suggest_float(
-        "gain", 0.5, 10.0, log=True
-    )
-
-    cfg.retinex_opt_lr = trial.suggest_float(
-        "retinex_opt_lr", 1e-4, 1e-2, log=True
-    )
-    cfg.retinex_embedding_lr = trial.suggest_float(
-        "retinex_embedding_lr", 1e-5, 1e-2, log=True
-    )
+    # cfg.lambda_edge_aware_smooth = trial.suggest_float(
+    #     "lambda_edge_aware_smooth", 10.0, 35.0, log=True
+    # )
+    # cfg.lambda_illum_curve = trial.suggest_float(
+    #     "lambda_illum_curve", 0.5, 5.0, log=True
+    # )
+    #
+    # cfg.lambda_illum_exposure = trial.suggest_float(
+    #     "lambda_illum_exposure", 0.1, 8.0, log=True
+    # )
+    #
+    # cfg.lambda_white_preservation = trial.suggest_float(
+    #     "lambda_white_preservation", 1.0, 10.0, log=True
+    # )
+    #
+    # cfg.loss_perceptual_color = trial.suggest_categorical(
+    #     "loss_perceptual_color", [True, False]
+    # )
+    #
+    # cfg.exposure_loss_patch_size = trial.suggest_categorical(
+    #     "exposure_loss_patch_size", [32, 64, 128]
+    # )
+    #
+    # cfg.chroma_tolerance = trial.suggest_float(
+    #     "chroma_tolerance", 1.0, 10.0, log=True
+    # )
+    # cfg.gain = trial.suggest_float(
+    #     "gain", 0.5, 10.0, log=True
+    # )
+    #
+    # cfg.retinex_opt_lr = trial.suggest_float(
+    #     "retinex_opt_lr", 1e-4, 1e-2, log=True
+    # )
+    # cfg.retinex_embedding_lr = trial.suggest_float(
+    #     "retinex_embedding_lr", 1e-5, 1e-2, log=True
+    # )
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
@@ -1285,7 +1289,7 @@ if __name__ == "__main__":
         load_if_exists=True,
     )
 
-    study.optimize(objective, n_trials=80, gc_after_trial=True, catch=(RuntimeError, ValueError),
+    study.optimize(objective, n_trials=15, gc_after_trial=True, catch=(RuntimeError, ValueError),
                    show_progress_bar=True)
 
     print("Number of finished trials: ", len(study.trials))
