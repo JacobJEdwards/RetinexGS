@@ -2,27 +2,27 @@ SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 POSTFIXES="_variance _multiexposure _contrast"
 CONFIG_OPTIONS=(
-  ""
   "--no-loss_adaptive_curve"
   "--no-loss_exposure"
-  "--no-loss_reflectance_spa"
   "--no-loss_smooth_edge_aware"
-  "--no-loss_exclusion"
   "--no-loss_white_preservation"
-  "--no-loss_histogram"
   "--no-loss_perceptual_color"
+  "--no-allow_chromatic_illumination"
+  "--uncertainty_weighting"
+  "--learnt_weighting"
+  "--freeze_step 10000"
 )
 
 CONFIG_NAMES=(
-  "base"
   "no_loss_adaptive_curve"
   "no_loss_exposure"
-  "no_loss_reflectance_spa"
   "no_loss_smooth_edge_aware"
-  "no_loss_exclusion"
   "no_loss_white_preservation"
-  "no_loss_histogram"
   "no_loss_perceptual_color"
+  "grayscale_illumination"
+  "uncertainty_weighting"
+  "learnt_weighting"
+  "no_freeze_net"
 )
 
 for POSTFIX in $POSTFIXES; do
@@ -43,6 +43,9 @@ for POSTFIX in $POSTFIXES; do
                 --data_dir $SCENE_DIR/"$SCENE"/ \
                 --postfix $POSTFIX \
                 --result_dir $RESULT_DIR/"$SCENE"/ \
+                --no-save_images \
+                --no-tb_save_image \
+                --tb_every 1000 \
                 ${CONFIG_OPTIONS[$i]}
         done
     done
