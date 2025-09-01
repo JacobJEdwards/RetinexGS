@@ -37,7 +37,7 @@ for POSTFIX in $POSTFIXES; do
         fi
 
         for i in "${!CONFIG_OPTIONS[@]}"; do
-            echo "Running $SCENE with ${CONFIG_NAMES[$i]}"
+            echo "Running $SCENE with ${CONFIG_NAMES[$i]} on $POSTFIX"
             RESULT_DIR="$RESULT_DIR_BASE/${CONFIG_NAMES[$i]}"
             CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer --data_factor $DATA_FACTOR \
                 --data_dir $SCENE_DIR/"$SCENE"/ \
