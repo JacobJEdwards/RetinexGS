@@ -1,6 +1,6 @@
 SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
-POSTFIXES="_variance _multiexposure _contrast"
+POSTFIXES="variance multiexposure contrast"
 CONFIG_OPTIONS=(
   "--no-loss_adaptive_curve"
   "--no-loss_exposure"
