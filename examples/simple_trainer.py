@@ -3,6 +3,7 @@ import math
 import os
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import imageio
@@ -403,15 +404,15 @@ class Runner:
 
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
-            CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
+            # CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
         ]
 
-        if cfg.use_camera_response_network:
-            schedulers.append(
-                CosineAnnealingLR(
-                    self.camera_response_optimizer, T_max=max_steps, eta_min=0
-                )
-            )
+        # if cfg.use_camera_response_network:
+        #     schedulers.append(
+        #         CosineAnnealingLR(
+        #             self.camera_response_optimizer, T_max=max_steps, eta_min=0
+        #         )
+        #     )
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
@@ -1071,38 +1072,61 @@ class Runner:
 def objective(trial: optuna.Trial):
     cfg = Config()
 
+    cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 1e-5, 1.0, log=True)
     cfg.lambda_tv_loss = trial.suggest_categorical(
         "lambda_tv_loss", [0, 100, 250, 500, 750, 1000, 2000]
     )
-    cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0.1, 0.8)
+    cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0.1, 2.0, log=True)
     cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.0, 0.3)
     cfg.appearance_embedding_lr = trial.suggest_float(
         "appearance_embedding_lr", 1e-5, 6e-3, log=True
+    )
+    cfg.illumination_field_lr = trial.suggest_float(
+        "illumination_field_lr", 1e-6, 1e-2, log=True
+    )
+    cfg.camera_net_lr = trial.suggest_float(
+        "camera_net_lr", 1e-5, 6e-3, log=True
+    )
+    cfg.appearance_embedding_dim = trial.suggest_categorical(
+        "appearance_embedding_dim", [16, 32, 64, 128]
+    )
+    cfg.uncertainty_weighting = trial.suggest_categorical(
+        "uncertainty_weighting", [True, False]
     )
 
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
 
-    total_psnr = 0
     total_ssim = 0
     total_lpips = 0
 
     count = 0
+    configs = [
+        (Path("/workspace/360_v2/room"), "multiexposure"),
+        (Path("/workspace/360_v2/counter"), "multiexposure"),
+        (Path("/workspace/360_v2/kitchen"), "contrast"),
+        (Path("/workspace/360_v2/stump"), "contrast"),
+        (Path("/workspace/360_v2/counter"), "variance"),
+        (Path("/workspace/360_v2/stump"), "variance"),
+    ]
 
-    for postfix in ["_multiexposure", "_variance", "_contrast"]:
+    for (datadir, postfix) in configs:
         cfg.postfix = postfix
-
+        cfg.data_dir = datadir
         try:
             runner = Runner(0, 0, 1, cfg)
-            runner.trial = trial
             runner.train()
 
-            with open(f"{runner.stats_dir}/val_step{cfg.max_steps - 1:04d}.json") as f:
+            with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
                 stats = json.load(f)
 
-            total_psnr += stats.get("psnr_enh", 0)
-            total_ssim += stats.get("ssim_enh", 0)
-            total_lpips += stats.get("lpips_enh", 0)
+            psnr = stats.get("psnr", 0)
+            ssim = stats.get("ssim", 0)
+            lpips = stats.get("lpips", 0)
+
+            total_psnr += psnr
+            total_ssim += ssim
+            total_lpips += lpips
 
             count += 1
 
@@ -1111,6 +1135,7 @@ def objective(trial: optuna.Trial):
             torch.cuda.empty_cache()
 
     return total_psnr / count, total_ssim / count, total_lpips / count
+
 
 
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
@@ -1174,7 +1199,7 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    # cli(main, config, verbose=True)
 
     storage = optuna.storages.JournalStorage(
         optuna.storages.journal.JournalFileBackend("optuna_study.log")
