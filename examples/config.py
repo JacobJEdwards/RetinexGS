@@ -86,7 +86,7 @@ class Config:
     learn_adaptive_curve_lambdas: bool = False
     learn_adaptive_curve_use_embedding: bool = False
 
-    allow_chromatic_illumination: bool = True
+    allow_chromatic_illumination: bool = False
 
     loss_adaptive_curve: bool = True
     loss_exposure: bool = True

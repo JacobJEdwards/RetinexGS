@@ -1,13 +1,30 @@
 SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 POSTFIXES="variance multiexposure contrast"
+
+
+for POSTFIX in $POSTFIXES;
+  do
+  for SCENE in $SCENE_LIST;
+  do
+      echo "Running $SCENE"
+
+      NEW_RESULT_DIR=$RESULT_DIR/"$POSTFIX"/"$SCENE"
+
+      CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
+          --data_dir $SCENE_DIR/"$SCENE"/ \
+          --postfix $POSTFIX \
+          --result_dir $NEW_RESULT_DIR
+  done
+done
+
 CONFIG_OPTIONS=(
   "--no-loss_adaptive_curve"
   "--no-loss_exposure"
   "--no-loss_smooth_edge_aware"
   "--no-loss_white_preservation"
   "--no-loss_perceptual_color"
-  "--no-allow_chromatic_illumination"
+  "--allow_chromatic_illumination"
   "--uncertainty_weighting"
   "--learnt_weighting"
   "--freeze_step 10000"
@@ -19,7 +36,7 @@ CONFIG_NAMES=(
   "no_loss_smooth_edge_aware"
   "no_loss_white_preservation"
   "no_loss_perceptual_color"
-  "grayscale_illumination"
+  "coloured_illumination"
   "uncertainty_weighting"
   "learnt_weighting"
   "no_freeze_net"
