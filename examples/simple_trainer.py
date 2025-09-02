@@ -1097,6 +1097,7 @@ def objective(trial: optuna.Trial):
     cfg.max_steps = 3000
     cfg.eval_steps = [3000]
 
+    total_psnr = 0
     total_ssim = 0
     total_lpips = 0
 
