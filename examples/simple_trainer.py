@@ -1212,7 +1212,7 @@ if __name__ == "__main__":
         study_name="gaussian_splatting_hyperparam_opt",
         load_if_exists=True,
     )
-    study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError), gc_after_trial=True, storage=storage,
+    study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError), gc_after_trial=True,
                    show_progress_bar=True)
 
     print("Study statistics: ")
