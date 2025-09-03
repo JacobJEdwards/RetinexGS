@@ -401,7 +401,7 @@ class IlluminationField(nn.Module):
             self.normal_encoder = PositionalEncoder(num_freqs)
             self.normal_in_dim += 3 * 2 * num_freqs
 
-        in_dim = pos_in_dim + self.dir_in_dim + self.embed_in_dim + self.normal_in_dim
+        in_dim = pos_in_dim + self.dir_in_dim + self.normal_in_dim
 
         self.mlp_base = tcnn.Network(
             n_input_dims=in_dim,
