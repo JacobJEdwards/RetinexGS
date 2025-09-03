@@ -604,7 +604,7 @@ class Runner:
                     )
 
                 if cfg.uncertainty_weighting:
-                    loss += self.awl(loss_terms_for_uncertainty)
+                    loss += self.awl(*loss_terms_for_uncertainty)
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,
