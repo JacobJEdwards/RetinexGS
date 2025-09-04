@@ -1,7 +1,7 @@
 SCENE_DIR="/workspace/360_v2"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 POSTFIXES="variance multiexposure contrast"
-
+RESULT_DIR="/workspace/2d"
 
 for POSTFIX in $POSTFIXES;
   do
@@ -23,11 +23,9 @@ CONFIG_OPTIONS=(
   "--no-loss_exposure"
   "--no-loss_smooth_edge_aware"
   "--no-loss_white_preservation"
-  "--no-loss_perceptual_color"
   "--allow_chromatic_illumination"
   "--uncertainty_weighting"
   "--learnt_weighting"
-  "--freeze_step 10000"
 )
 
 CONFIG_NAMES=(
@@ -35,11 +33,9 @@ CONFIG_NAMES=(
   "no_loss_exposure"
   "no_loss_smooth_edge_aware"
   "no_loss_white_preservation"
-  "no_loss_perceptual_color"
   "coloured_illumination"
   "uncertainty_weighting"
   "learnt_weighting"
-  "no_freeze_net"
 )
 
 for POSTFIX in $POSTFIXES; do
