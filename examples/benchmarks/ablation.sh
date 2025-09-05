@@ -20,7 +20,6 @@ done
 
 CONFIG_OPTIONS=(
   "--no-loss_adaptive_curve"
-  "--no-loss_exposure"
   "--no-loss_smooth_edge_aware"
   "--no-loss_white_preservation"
   "--allow_chromatic_illumination"
@@ -30,7 +29,6 @@ CONFIG_OPTIONS=(
 
 CONFIG_NAMES=(
   "no_loss_adaptive_curve"
-  "no_loss_exposure"
   "no_loss_smooth_edge_aware"
   "no_loss_white_preservation"
   "coloured_illumination"
