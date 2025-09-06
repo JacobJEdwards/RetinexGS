@@ -19,6 +19,8 @@ for POSTFIX in $POSTFIXES; do
       CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer --data_factor $DATA_FACTOR \
           --data_dir $SCENE_DIR/"$SCENE"/ \
           --postfix "$POSTFIX" \
+          --save_images \
+          --tb_save_image \
           --result_dir $RESULT_DIR/"$POSTFIX"/"$SCENE"/
   done
 done
@@ -63,6 +65,9 @@ for POSTFIX in $POSTFIXES; do
             CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer --data_factor $DATA_FACTOR \
                 --data_dir $SCENE_DIR/"$SCENE"/ \
                 --postfix $POSTFIX \
+                --no_save_images \
+                --no_tb_save_image \
+                --tb_every 1000 \
                 --result_dir $RESULT_DIR/"$SCENE"/ \
                 ${CONFIG_OPTIONS[$i]}
         done

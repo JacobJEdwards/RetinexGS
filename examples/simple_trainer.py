@@ -1200,28 +1200,28 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    # cli(main, config, verbose=True)
+    cli(main, config, verbose=True)
 
-    storage = optuna.storages.JournalStorage(
-        optuna.storages.journal.JournalFileBackend("optuna_study.log")
-    )
-
-    study = optuna.create_study(
-        directions=["maximize", "maximize", "minimize"],
-        storage=storage,
-        study_name="gaussian_splatting_hyperparam_opt",
-        load_if_exists=True,
-    )
-    study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError), gc_after_trial=True,
-                   show_progress_bar=True)
-
-    print("Study statistics: ")
-    print(f"  Number of finished trials: {len(study.trials)}")
-
-    print("Best trials (Pareto front):")
-    for i, trial in enumerate(study.best_trials):
-        print(f"  Trial {i}:")
-        print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-        print("    Params: ")
-        for key, value in trial.params.items():
-            print(f"      {key}: {value}")
+    # storage = optuna.storages.JournalStorage(
+    #     optuna.storages.journal.JournalFileBackend("optuna_study.log")
+    # )
+    #
+    # study = optuna.create_study(
+    #     directions=["maximize", "maximize", "minimize"],
+    #     storage=storage,
+    #     study_name="gaussian_splatting_hyperparam_opt",
+    #     load_if_exists=True,
+    # )
+    # study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError), gc_after_trial=True,
+    #                show_progress_bar=True)
+    #
+    # print("Study statistics: ")
+    # print(f"  Number of finished trials: {len(study.trials)}")
+    #
+    # print("Best trials (Pareto front):")
+    # for i, trial in enumerate(study.best_trials):
+    #     print(f"  Trial {i}:")
+    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
+    #     print("    Params: ")
+    #     for key, value in trial.params.items():
+    #         print(f"      {key}: {value}")
