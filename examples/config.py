@@ -73,14 +73,15 @@ class Config:
     use_normals: bool = True
     use_camera_response_network: bool = True
 
-    lambda_illum_smoothness: float = 0.05
-    lambda_exclusion: float = 0.22
-    lambda_shn_reg: float = 0.12
-    lambda_tv_loss: float = 250.0
+    lambda_illum_smoothness: float = 0.001
+    lambda_exclusion: float = 0.1
+    lambda_shn_reg: float = 0.8
 
-    appearance_embedding_lr: float = 1e-3
-    camera_net_lr: float = 1e-4
-    illumination_field_lr: float = 1e-5
+    lambda_tv_loss: float = 0.0
+
+    appearance_embedding_lr: float = 6e-3
+    camera_net_lr: float = 3e-4
+    illumination_field_lr: float = 6e-5
     loss_lr: float = 1e-4
 
     uncertainty_weighting: bool = False

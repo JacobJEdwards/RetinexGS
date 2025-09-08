@@ -404,15 +404,15 @@ class Runner:
 
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
-            # CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
+            CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
         ]
 
-        # if cfg.use_camera_response_network:
-        #     schedulers.append(
-        #         CosineAnnealingLR(
-        #             self.camera_response_optimizer, T_max=max_steps, eta_min=0
-        #         )
-        #     )
+        if cfg.use_camera_response_network:
+            schedulers.append(
+                CosineAnnealingLR(
+                    self.camera_response_optimizer, T_max=max_steps, eta_min=0
+                )
+            )
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
