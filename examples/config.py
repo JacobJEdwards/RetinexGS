@@ -72,6 +72,7 @@ class Config:
     use_gradient_aware_loss: bool = False
 
     use_yuv_colourspace: bool = False
+    save_images: bool = True
 
     postfix: str = "_contrast"
 
