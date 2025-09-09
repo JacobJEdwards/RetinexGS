@@ -27,10 +27,10 @@ class Config:
     steps_scaler: float = 1.0
 
     max_steps: int = 10_000
-    eval_steps: list[int] = field(default_factory=lambda: [10_000])
-    save_steps: list[int] = field(default_factory=lambda: [10_000])
+    eval_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
+    save_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
     save_ply: bool = False
-    ply_steps: list[int] = field(default_factory=lambda: [10_000])
+    ply_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
     disable_video: bool = True
 
     init_type: str = "sfm"
@@ -45,9 +45,6 @@ class Config:
     near_plane: float = 0.01
     far_plane: float = 1e10
 
-    save_ckpt: bool = False
-    save_images: bool = False
-
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
 
     means_lr: float = 1.6e-4
@@ -61,32 +58,38 @@ class Config:
     scale_reg: float = 0.0
 
     tb_every: int = 100
-    tb_save_image: bool = False
+    tb_save_image: bool = True
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    postfix: str = "_contrast"
-
+    appearance_embeddings: bool = True
     appearance_embedding_dim: int = 64
 
     use_view_dirs: bool = True
     use_normals: bool = True
+    use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
+    use_gradient_aware_loss: bool = False
 
-    lambda_illum_smoothness: float = 0.001
-    lambda_exclusion: float = 0.1
+    use_yuv_colourspace: bool = False
+
+    postfix = "_contrast"
+
+    lambda_illum_smoothness: float = 0.005
+    lambda_exclusion: float = 0.3
     lambda_shn_reg: float = 0.8
+    lambda_tv_loss: float = 5000
 
-    lambda_tv_loss: float = 0.0
+    lambda_reflectance_reg: float = 0
+    lambda_gray_world: float = 0
+    lambda_camera_reg: float = 0.0
+    lambda_illum_reg: float = 0.0
 
     appearance_embedding_lr: float = 6e-3
     camera_net_lr: float = 3e-4
     illumination_field_lr: float = 6e-5
-    loss_lr: float = 1e-4
 
-    uncertainty_weighting: bool = False
-
-    learning_steps: int = 3000
+    learning_steps: int = 2800
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
