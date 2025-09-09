@@ -73,6 +73,8 @@ class Config:
 
     use_yuv_colourspace: bool = False
     save_images: bool = True
+    save_ckpt: bool = False
+    uncertainty_weighting: bool = False
 
     postfix: str = "_contrast"
 
@@ -89,6 +91,7 @@ class Config:
     appearance_embedding_lr: float = 6e-3
     camera_net_lr: float = 3e-4
     illumination_field_lr: float = 6e-5
+    loss_lr: float = 1e-4
 
     learning_steps: int = 2800
 

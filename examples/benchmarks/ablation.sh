@@ -66,6 +66,7 @@ for POSTFIX in $POSTFIXES; do
                 --data_dir $SCENE_DIR/"$SCENE"/ \
                 --postfix $POSTFIX \
                 --no_save_images \
+                --no_ckpt \
                 --no_tb_save_image \
                 --tb_every 1000 \
                 --result_dir $RESULT_DIR/"$SCENE"/ \
