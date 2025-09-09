@@ -412,13 +412,6 @@ class Runner:
             CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
         ]
 
-        if cfg.appearance_embeddings:
-            schedulers.append(
-                CosineAnnealingLR(
-                    self.appearance_embeds_optimizer, T_max=max_steps, eta_min=0
-                )
-            )
-
         if cfg.use_camera_response_network:
             schedulers.append(
                 CosineAnnealingLR(
