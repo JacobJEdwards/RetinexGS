@@ -113,17 +113,6 @@ def create_splats_with_optimizers(
         colors = torch.logit(rgbs)
         params.append(("colors", torch.nn.Parameter(colors), sh0_lr))
 
-    # lumincance
-    adjust_k = torch.nn.Parameter(
-        torch.ones_like(colors[:, :1, :]), requires_grad=True
-    )  # enhance, for multiply
-    adjust_b = torch.nn.Parameter(
-        torch.zeros_like(colors[:, :1, :]), requires_grad=True
-    )  # bias, for add,
-
-    params.append(("adjust_k", adjust_k, sh0_lr))
-    params.append(("adjust_b", adjust_b, sh0_lr))
-
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
 
     BS = batch_size * world_size
@@ -561,10 +550,11 @@ class Runner:
                     )
                     loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
-                    loss_terms_for_uncertainty.append(loss_illum_smoothness)
 
                     if not cfg.uncertainty_weighting:
                         loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    else:
+                        loss_terms_for_uncertainty.append(loss_illum_smoothness)
 
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
                 illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
@@ -577,16 +567,18 @@ class Runner:
                         loss_exclusion = self.loss_exclusion(
                             reflectance_map_for_loss, illum_map_for_loss
                         )
-                        loss_terms_for_uncertainty.append(loss_exclusion)
 
                         if not cfg.uncertainty_weighting:
                             loss += cfg.lambda_exclusion * loss_exclusion
+                        else:
+                            loss_terms_for_uncertainty.append(loss_exclusion)
 
                 if cfg.lambda_tv_loss > 0.0:
                     loss_illum_tv = self.loss_tv(illum_map_for_loss)
-                    loss_terms_for_uncertainty.append(loss_illum_tv)
                     if not cfg.uncertainty_weighting:
                         loss += cfg.lambda_tv_loss * loss_illum_tv
+                    else:
+                        loss_terms_for_uncertainty.append(loss_illum_tv)
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss_shn_reg = self.splats["shN"].pow(2).mean()
