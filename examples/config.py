@@ -78,10 +78,10 @@ class Config:
 
     postfix: str = "_contrast"
 
-    lambda_illum_smoothness: float = 0.005
     lambda_exclusion: float = 0.3
     lambda_shn_reg: float = 0.8
 
+    lambda_illum_smoothness: float = 0.0
     lambda_tv_loss: float = 0.0
     lambda_reflectance_reg: float = 0
     lambda_gray_world: float = 0
