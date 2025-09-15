@@ -49,16 +49,10 @@ for POSTFIX in $POSTFIXES; do
 
     for SCENE in $SCENE_LIST;
     do
-        if [ "$SCENE" = "bonsai" ] || [ "$SCENE" = "counter" ] || [ "$SCENE" = "kitchen" ] || [ "$SCENE" = "room" ]; then
-            DATA_FACTOR=2
-        else
-            DATA_FACTOR=4
-        fi
-
         for i in "${!CONFIG_OPTIONS[@]}"; do
             echo "Running $SCENE with ${CONFIG_NAMES[$i]} on $POSTFIX"
             RESULT_DIR="$RESULT_DIR_BASE/${CONFIG_NAMES[$i]}"
-            CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer --data_factor $DATA_FACTOR \
+            CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
                 --data_dir $SCENE_DIR/"$SCENE"/ \
                 --postfix $POSTFIX \
                 --no_save_images \
