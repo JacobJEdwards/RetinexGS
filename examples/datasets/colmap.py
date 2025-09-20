@@ -188,7 +188,7 @@ class Parser:
         #     image_dir_suffix = f"_{factor}"
         # else:
         #     image_dir_suffix = ""
-        self.postfix = postfix if postfix.startswith("_") else f"_{postfix}"
+        self.postfix = postfix if postfix.startswith("_") else f"_{postfix}" if postfix else ""
         colmap_image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
         image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
         for d in [image_dir, colmap_image_dir]:
