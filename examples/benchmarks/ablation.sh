@@ -32,8 +32,8 @@ CONFIG_OPTIONS=(
     "--no-use-camera-response-network"
     "--lambda_illum_smoothness 1.0"
     "--lambda_tv_loss 1.0"
-
 )
+
 CONFIG_NAMES=(
     "no_loss_terms"
     "no_normals"
