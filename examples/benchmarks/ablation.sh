@@ -43,23 +43,25 @@ CONFIG_NAMES=(
     "with_tv_loss"
 )
 
-for POSTFIX in $POSTFIXES; do
-    RESULT_DIR_ABLATION="$RESULT_DIR_BASE/ablation/$POSTFIX"
-
-    for SCENE in $SCENE_LIST;
+for i in "${!CONFIG_OPTIONS[@]}";
     do
-        for i in "${!CONFIG_OPTIONS[@]}"; do
-            echo "Running $SCENE with ${CONFIG_NAMES[$i]} on $POSTFIX"
-            RESULT_DIR="$RESULT_DIR_ABLATION/${CONFIG_NAMES[$i]}"
-            CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
-                --data_dir $SCENE_DIR/"$SCENE"/ \
-                --postfix "$POSTFIX" \
-                --no_save_images \
-                --no_save_ckpt \
-                --no_tb_save_image \
-                --tb_every 1000 \
-                --result_dir "$RESULT_DIR"/"$SCENE"/ \
-                ${CONFIG_OPTIONS[$i]}
-        done
+    for POSTFIX in $POSTFIXES;
+    do
+      RESULT_DIR_ABLATION="$RESULT_DIR_BASE/ablation/$POSTFIX"
+
+      for SCENE in $SCENE_LIST;
+      do
+              echo "Running $SCENE with ${CONFIG_NAMES[$i]} on $POSTFIX"
+              RESULT_DIR="$RESULT_DIR_ABLATION/${CONFIG_NAMES[$i]}"
+              CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
+                  --data_dir $SCENE_DIR/"$SCENE"/ \
+                  --postfix "$POSTFIX" \
+                  --no_save_images \
+                  --no_save_ckpt \
+                  --no_tb_save_image \
+                  --tb_every 1000 \
+                  --result_dir "$RESULT_DIR"/"$SCENE"/ \
+                  ${CONFIG_OPTIONS[$i]}
+      done
     done
 done
