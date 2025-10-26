@@ -56,10 +56,8 @@ for i in "${!CONFIG_OPTIONS[@]}";
               CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
                   --data_dir $SCENE_DIR/"$SCENE"/ \
                   --postfix "$POSTFIX" \
-                  --no_save_images \
                   --no_save_ckpt \
-                  --no_tb_save_image \
-                  --tb_every 1000 \
+                  --tb_every 500 \
                   --result_dir "$RESULT_DIR"/"$SCENE"/ \
                   ${CONFIG_OPTIONS[$i]}
       done
