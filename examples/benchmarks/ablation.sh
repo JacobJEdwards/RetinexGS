@@ -3,21 +3,6 @@ SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 POSTFIXES="variance multiexposure contrast"
 RESULT_DIR="/workspace/2d"
 
-for POSTFIX in $POSTFIXES;
-  do
-  for SCENE in $SCENE_LIST;
-  do
-      echo "Running $SCENE"
-
-      NEW_RESULT_DIR=$RESULT_DIR/"$POSTFIX"/"$SCENE"
-
-      CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
-          --data_dir $SCENE_DIR/"$SCENE"/ \
-          --postfix $POSTFIX \
-          --result_dir $NEW_RESULT_DIR
-  done
-done
-
 CONFIG_OPTIONS=(
   "--no-loss_adaptive_curve"
   "--no-loss_smooth_edge_aware"
@@ -54,7 +39,6 @@ for POSTFIX in $POSTFIXES; do
                 --data_dir $SCENE_DIR/"$SCENE"/ \
                 --postfix $POSTFIX \
                 --result_dir $RESULT_DIR/"$SCENE"/ \
-                --no-save_images \
                 --no-tb_save_image \
                 --tb_every 1000 \
                 ${CONFIG_OPTIONS[$i]}

@@ -90,7 +90,6 @@ class Config:
 
     loss_adaptive_curve: bool = True
     loss_smooth_edge_aware: bool = True
-    loss_white_preservation: bool = True
 
     loss_exposure: bool = False
     loss_perceptual_color: bool = False
