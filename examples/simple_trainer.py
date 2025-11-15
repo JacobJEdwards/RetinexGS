@@ -1232,7 +1232,7 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     total_ssim = 0
     total_lpips = 0
 
-    cfg.postfix = "_retinex"
+    cfg.postfix = "_org"
     cfg.data_dir = Path("/workspace/ceiling")
     try:
         runner = Runner(0, 0, 1, cfg)
