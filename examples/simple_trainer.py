@@ -1170,85 +1170,90 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
         "lambda_perceptual_color", 0.1, 10.0, log=True
     )
 
-    # cfg.lambda_edge_aware_smooth = trial.suggest_float(
-    #     "lambda_edge_aware_smooth", 10.0, 35.0, log=True
-    # )
-    # cfg.lambda_illum_curve = trial.suggest_float(
-    #     "lambda_illum_curve", 0.5, 5.0, log=True
-    # )
-    #
-    # cfg.lambda_illum_exposure = trial.suggest_float(
-    #     "lambda_illum_exposure", 0.1, 8.0, log=True
-    # )
-    #
-    # cfg.lambda_white_preservation = trial.suggest_float(
-    #     "lambda_white_preservation", 1.0, 10.0, log=True
-    # )
-    #
-    # cfg.loss_perceptual_color = trial.suggest_categorical(
-    #     "loss_perceptual_color", [True, False]
-    # )
-    #
-    # cfg.exposure_loss_patch_size = trial.suggest_categorical(
-    #     "exposure_loss_patch_size", [32, 64, 128]
-    # )
-    #
-    # cfg.chroma_tolerance = trial.suggest_float(
-    #     "chroma_tolerance", 1.0, 10.0, log=True
-    # )
-    # cfg.gain = trial.suggest_float(
-    #     "gain", 0.5, 10.0, log=True
-    # )
-    #
-    # cfg.retinex_opt_lr = trial.suggest_float(
-    #     "retinex_opt_lr", 1e-4, 1e-2, log=True
-    # )
-    # cfg.retinex_embedding_lr = trial.suggest_float(
-    #     "retinex_embedding_lr", 1e-5, 1e-2, log=True
-    # )
+    cfg.lambda_edge_aware_smooth = trial.suggest_float(
+        "lambda_edge_aware_smooth", 10.0, 35.0, log=True
+    )
+    cfg.lambda_illum_curve = trial.suggest_float(
+        "lambda_illum_curve", 0.5, 5.0, log=True
+    )
 
-    cfg.max_steps = 3000
-    cfg.eval_steps = [3000]
+    cfg.lambda_illum_exposure = trial.suggest_float(
+        "lambda_illum_exposure", 0.1, 8.0, log=True
+    )
+
+    cfg.lambda_white_preservation = trial.suggest_float(
+        "lambda_white_preservation", 1.0, 10.0, log=True
+    )
+
+    cfg.loss_perceptual_color = trial.suggest_categorical(
+        "loss_perceptual_color", [True, False]
+    )
+
+    cfg.exposure_loss_patch_size = trial.suggest_categorical(
+        "exposure_loss_patch_size", [32, 64, 128]
+    )
+
+    cfg.chroma_tolerance = trial.suggest_float(
+        "chroma_tolerance", 1.0, 10.0, log=True
+    )
+    cfg.gain = trial.suggest_float(
+        "gain", 0.5, 10.0, log=True
+    )
+
+    cfg.retinex_opt_lr = trial.suggest_float(
+        "retinex_opt_lr", 1e-4, 1e-2, log=True
+    )
+    cfg.retinex_embedding_lr = trial.suggest_float(
+        "retinex_embedding_lr", 1e-5, 1e-2, log=True
+    )
+    cfg.loss_exposure = trial.suggest_categorical(
+        "loss_exposure", [True, False]
+    )
+    cfg.loss_perceptual_color = trial.suggest_categorical(
+        "loss_perceptual_color", [True, False]
+    )
+    cfg.loss_variance = trial.suggest_categorical(
+        "loss_variance", [True, False]
+    )
+    cfg.loss_histogram = trial.suggest_categorical(
+        "loss_histogram", [True, False]
+    )
+    cfg.loss_reflectance_space = trial.suggest_categorical(
+        "loss_reflectance_space", [True, False]
+    )
+    cfg.loss_chroma = trial.suggest_categorical(
+        "loss_chroma", [True, False]
+    )
+
+    cfg.max_steps = 6000
+    cfg.eval_steps = [6000]
 
     total_psnr = 0
     total_ssim = 0
     total_lpips = 0
 
-    count = 0
-    configs = [
-        (Path("/workspace/360_v2/room"), "multiexposure"),
-        (Path("/workspace/360_v2/counter"), "multiexposure"),
-        (Path("/workspace/360_v2/kitchen"), "contrast"),
-        (Path("/workspace/360_v2/stump"), "contrast"),
-        (Path("/workspace/360_v2/counter"), "variance"),
-        (Path("/workspace/360_v2/stump"), "variance"),
-    ]
+    cfg.postfix = "_retinex"
+    cfg.data_dir = Path("/workspace/ceiling/images_8")
+    try:
+        runner = Runner(0, 0, 1, cfg)
+        runner.train()
 
-    for (datadir, postfix) in configs:
-        cfg.postfix = postfix
-        cfg.data_dir = datadir
-        try:
-            runner = Runner(0, 0, 1, cfg)
-            runner.train()
+        with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
+            stats = json.load(f)
 
-            with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
-                stats = json.load(f)
+        psnr = stats.get("psnr", 0)
+        ssim = stats.get("ssim", 0)
+        lpips = stats.get("lpips", 0)
 
-            psnr = stats.get("psnr", 0)
-            ssim = stats.get("ssim", 0)
-            lpips = stats.get("lpips", 0)
+        total_psnr += psnr
+        total_ssim += ssim
+        total_lpips += lpips
 
-            total_psnr += psnr
-            total_ssim += ssim
-            total_lpips += lpips
+    finally:
+        del runner
+        torch.cuda.empty_cache()
 
-            count += 1
-
-        finally:
-            del runner
-            torch.cuda.empty_cache()
-
-    return total_psnr / count, total_ssim / count, total_lpips / count
+    return total_psnr, total_ssim, total_lpips
 
 
 if __name__ == "__main__":
@@ -1276,27 +1281,27 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    # cli(main, config, verbose=True)
 
-    # storage = optuna.storages.JournalStorage(
-    #     optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
-    # )
-    #
-    # study = optuna.create_study(
-    #     directions=["maximize", "maximize", "minimize"],
-    #     study_name="retinex_optuna_study",
-    #     storage=storage,
-    #     load_if_exists=True,
-    # )
-    #
-    # study.optimize(objective, n_trials=15, gc_after_trial=True, catch=(RuntimeError, ValueError),
-    #                show_progress_bar=True)
-    #
-    # print("Number of finished trials: ", len(study.trials))
-    # print("Best trials (Pareto front):")
-    # for t in study.best_trials:
-    #     print(f"  Value: {t.values}")
-    #     print("  Params: ")
-    #     for key, value in t.params.items():
-    #         print(f"    {key}: {value}")
-    #
+    storage = optuna.storages.JournalStorage(
+        optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
+    )
+
+    study = optuna.create_study(
+        directions=["maximize", "maximize", "minimize"],
+        study_name="retinex_optuna_study",
+        storage=storage,
+        load_if_exists=True,
+    )
+
+    study.optimize(objective, n_trials=80, gc_after_trial=True, catch=(RuntimeError, ValueError),
+                   show_progress_bar=True)
+
+    print("Number of finished trials: ", len(study.trials))
+    print("Best trials (Pareto front):")
+    for t in study.best_trials:
+        print(f"  Value: {t.values}")
+        print("  Params: ")
+        for key, value in t.params.items():
+            print(f"    {key}: {value}")
+

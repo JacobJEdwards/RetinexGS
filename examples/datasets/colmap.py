@@ -186,8 +186,8 @@ class Parser:
         # else:
         #     image_dir_suffix = ""
         self.postfix = postfix if postfix.startswith("_") else f"_{postfix}" if postfix != "" else ""
-        colmap_image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
-        image_dir = os.path.join(data_dir, f"images_8{self.postfix}")
+        colmap_image_dir = os.path.join(data_dir, f"images_8")
+        image_dir = os.path.join(data_dir, f"images_8")
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
                 raise ValueError(f"Image folder {d} does not exist.")
@@ -384,7 +384,7 @@ class Dataset:
         index = self.indices[item]
 
         if self.split == 'val' or self.is_val:
-            image = imageio.imread(self.parser.image_paths[index].replace(self.postfix,''))[..., :3]
+            image = imageio.imread(f"{self.parser.image_paths[index]}{self.postfix}")[..., :3]
         else:
             image = imageio.imread(self.parser.image_paths[index])[..., :3]
 
