@@ -1233,7 +1233,7 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     total_lpips = 0
 
     cfg.postfix = "_retinex"
-    cfg.data_dir = Path("/workspace/ceiling/images_8")
+    cfg.data_dir = Path("/workspace/ceiling")
     try:
         runner = Runner(0, 0, 1, cfg)
         runner.train()
@@ -1250,7 +1250,6 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
         total_lpips += lpips
 
     finally:
-        del runner
         torch.cuda.empty_cache()
 
     return total_psnr, total_ssim, total_lpips
