@@ -1237,7 +1237,7 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
 
     cfg.max_steps = 4000
     cfg.eval_steps = [4000]
-    cfg.postfix = "_opt"
+    cfg.postfix = "_org"
     cfg.data_dir = Path("/workspace/ceiling")
 
     total_psnr = 0
@@ -1309,7 +1309,7 @@ if __name__ == "__main__":
         load_if_exists=True,
     )
 
-    study.optimize(objective, n_trials=80, gc_after_trial=True, catch=(RuntimeError, ValueError),
+    study.optimize(objective, n_trials=200, gc_after_trial=True, catch=(RuntimeError, ValueError),
                    show_progress_bar=True)
 
     print("Number of finished trials: ", len(study.trials))
