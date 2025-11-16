@@ -26,11 +26,11 @@ class Config:
     batch_size: int = 1
     steps_scaler: float = 1.0
 
-    max_steps: int = 30_000
-    eval_steps: list[int] = field(default_factory=lambda: [10_000, 30_000])
-    save_steps: list[int] = field(default_factory=lambda: [30_000])
+    max_steps: int = 10_000
+    eval_steps: list[int] = field(default_factory=lambda: [10_000, 10_000])
+    save_steps: list[int] = field(default_factory=lambda: [10_000])
     save_ply: bool = False
-    ply_steps: list[int] = field(default_factory=lambda: [30_000])
+    ply_steps: list[int] = field(default_factory=lambda: [10_000])
     disable_video: bool = True
 
     init_type: str = "sfm"
@@ -112,7 +112,7 @@ class Config:
 
     retinex_embedding_dim: int = 128
 
-    freeze_step: int = 30_000
+    freeze_step: int = 10_000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
