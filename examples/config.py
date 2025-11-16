@@ -99,7 +99,7 @@ class Config:
     loss_reflectance_spa: bool = False
     loss_chroma: bool = True
 
-    uncertainty_weighting: bool = True
+    uncertainty_weighting: bool = False
     learnt_weighting: bool = False
 
     save_images: bool = True
