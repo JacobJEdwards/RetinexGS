@@ -102,7 +102,7 @@ class Config:
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
 
-    save_images: bool = True
+    save_images: bool = False
 
     postfix: str = "_org"
 
