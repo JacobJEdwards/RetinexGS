@@ -26,11 +26,11 @@ class Config:
     batch_size: int = 1
     steps_scaler: float = 1.0
 
-    max_steps: int = 10_000
-    eval_steps: list[int] = field(default_factory=lambda: [3_000, 10_000])
-    save_steps: list[int] = field(default_factory=lambda: [10_000])
+    max_steps: int = 30_000
+    eval_steps: list[int] = field(default_factory=lambda: [10_000, 30_000])
+    save_steps: list[int] = field(default_factory=lambda: [30_000])
     save_ply: bool = False
-    ply_steps: list[int] = field(default_factory=lambda: [10_000])
+    ply_steps: list[int] = field(default_factory=lambda: [30_000])
     disable_video: bool = True
 
     init_type: str = "sfm"
@@ -65,11 +65,11 @@ class Config:
     lambda_low: float = 0.80
     lambda_illumination: float = 0.45
 
-    lambda_edge_aware_smooth: float = 21.0
-    lambda_illum_curve: float = 1.85
-    lambda_illum_exposure: float = 0.12
+    lambda_edge_aware_smooth: float = 31.0
+    lambda_illum_curve: float = 0.5
+    lambda_illum_exposure: float = 2.12
     lambda_white_preservation: float = 3.6
-    lambda_perceptual_color: float = 8.0
+    lambda_perceptual_color: float = 0.1
 
     lambda_chroma: float = 0.01
     lambda_illum_variance: float = 1.0
@@ -83,10 +83,10 @@ class Config:
     exposure_loss_patch_size: int = 128
     exposure_mean_val: float = 0.48
 
-    learn_adaptive_curve_lambdas: bool = False
-    learn_adaptive_curve_use_embedding: bool = False
+    learn_adaptive_curve_lambdas: bool = True
+    learn_adaptive_curve_use_embedding: bool = True
 
-    allow_chromatic_illumination: bool = False
+    allow_chromatic_illumination: bool = True
 
     loss_adaptive_curve: bool = True
     loss_smooth_edge_aware: bool = True
@@ -97,14 +97,14 @@ class Config:
     loss_variance: bool = False
     loss_histogram: bool = False
     loss_reflectance_spa: bool = False
-    loss_chroma: bool = False
+    loss_chroma: bool = True
 
-    uncertainty_weighting: bool = False
+    uncertainty_weighting: bool = True
     learnt_weighting: bool = False
 
-    save_images: bool = False
+    save_images: bool = True
 
-    postfix: str = "_multiexposure"
+    postfix: str = "_org"
 
     retinex_opt_lr: float = 2e-3
     retinex_embedding_lr: float = 5e-3
@@ -112,7 +112,7 @@ class Config:
 
     retinex_embedding_dim: int = 128
 
-    freeze_step: int = 10_000
+    freeze_step: int = 30_000
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
