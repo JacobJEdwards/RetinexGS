@@ -40,7 +40,7 @@ class Config:
     sh_degree_interval: int = 1000
     init_opa: float = 0.1
     init_scale: float = 1.0
-    ssim_lambda: float = 0.2
+    ssim_lambda: float = 0.45
 
     near_plane: float = 0.01
     far_plane: float = 1e10
@@ -48,8 +48,8 @@ class Config:
     strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
 
     means_lr: float = 1.6e-4
-    scales_lr: float = 5e-3
-    opacities_lr: float = 5e-2
+    scales_lr: float = 0.014
+    opacities_lr: float = 1.2e-2
     quats_lr: float = 1e-3
     sh0_lr: float = 2.5e-3
     shN_lr: float = 2.5e-3 / 20
@@ -62,55 +62,55 @@ class Config:
 
     lpips_net: Literal["vgg", "alex"] = "alex"
 
-    lambda_low: float = 0.80
-    lambda_illumination: float = 0.45
+    lambda_low: float = 0.89
+    lambda_illumination: float = 0.41
 
-    lambda_edge_aware_smooth: float = 31.0
+    lambda_edge_aware_smooth: float = 5.16
     lambda_illum_curve: float = 0.5
     lambda_illum_exposure: float = 2.12
-    lambda_white_preservation: float = 3.6
-    lambda_perceptual_color: float = 0.1
+    lambda_white_preservation: float = 1.3
+    lambda_perceptual_color: float = 2.17
 
     lambda_chroma: float = 0.01
     lambda_illum_variance: float = 1.0
-    lambda_reflect: float = 1.0
+    lambda_reflect: float = 0.17
     lambda_histogram: float = 1
 
     luminance_threshold: float = 95.0
-    chroma_tolerance: float = 2.4
-    gain: float = 9.8
+    chroma_tolerance: float = 1.0
+    gain: float = 3.64
 
     exposure_loss_patch_size: int = 128
     exposure_mean_val: float = 0.48
 
-    learn_adaptive_curve_lambdas: bool = True
-    learn_adaptive_curve_use_embedding: bool = True
+    learn_adaptive_curve_lambdas: bool = False
+    learn_adaptive_curve_use_embedding: bool = False
 
     allow_chromatic_illumination: bool = True
 
-    loss_adaptive_curve: bool = True
+    loss_adaptive_curve: bool = False
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
 
     loss_exposure: bool = False
-    loss_perceptual_color: bool = False
+    loss_perceptual_color: bool = True
     loss_variance: bool = False
     loss_histogram: bool = False
-    loss_reflectance_spa: bool = False
+    loss_reflectance_spa: bool = True
     loss_chroma: bool = True
 
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
 
-    save_images: bool = False
+    save_images: bool = True
 
     postfix: str = "_org"
 
-    retinex_opt_lr: float = 2e-3
-    retinex_embedding_lr: float = 5e-3
+    retinex_opt_lr: float = 0.00011
+    retinex_embedding_lr: float = 0.0043
     loss_opt_lr: float = 1e-4
 
-    retinex_embedding_dim: int = 128
+    retinex_embedding_dim: int = 64
 
     freeze_step: int = 10_000
 
