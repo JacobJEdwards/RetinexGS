@@ -820,26 +820,43 @@ class Runner:
                 )
 
             if step in [i - 1 for i in cfg.eval_steps]:
-                self.eval(step)
+                self.eval(step, "val")
+                self.eval(step, "train")
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.render_traj(step)
 
     @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
+        """
+        Evaluate the model on the specified stage (train/val).
+        Calculates metrics and saves rendered images, including Retinex decomposition
+        (Illumination and Reconstructed Low-light) if available.
+        """
         print(f"Running evaluation for step {step} on '{stage}' set...")
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
 
-        valloader = torch.utils.data.DataLoader(
-            self.valset, shuffle=False, num_workers=1
+        # Select the appropriate dataset and loader
+        if stage == "train":
+            # Use self.trainset_eval which has no patching (full resolution)
+            dataset = self.trainset
+        else:
+            dataset = self.valset
+
+        dataloader = torch.utils.data.DataLoader(
+            dataset, shuffle=False, num_workers=1
         )
+
+
+
         ellipse_time_total = 0
         metrics = defaultdict(list)
-        for i, data in enumerate(tqdm.tqdm(valloader, desc=f"Eval {stage}")):
+        for i, data in enumerate(tqdm.tqdm(dataloader, desc=f"Eval {stage}")):
             camtoworlds = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
 
+            image_ids = data["image_id"].to(device) if "image_id" in data else None
             pixels = data["image"].to(device) / 255.0
 
             masks = data["mask"].to(device) if "mask" in data else None
@@ -848,6 +865,7 @@ class Runner:
             torch.cuda.synchronize()
             tic = time.time()
 
+            #
             out = self.rasterize_splats(
                 camtoworlds=camtoworlds,
                 Ks=Ks,
@@ -866,25 +884,54 @@ class Runner:
 
             colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
 
+            illumination_map = None
+            colors_reconstructed = None
+
+            if image_ids is not None and self.retinex_embeds is not None:
+                retinex_embedding = self.retinex_embeds(image_ids)
+
+                _, illumination_map, _ = self.get_retinex_output(
+                    pixels=pixels,
+                    retinex_embedding=retinex_embedding
+                )
+
+                colors_reconstructed = colors_enh * illumination_map.permute(0, 2, 3, 1)
+                colors_reconstructed = torch.clamp(colors_reconstructed, 0.0, 1.0)
+
             if world_rank == 0:
                 if cfg.save_images:
+                    # Save Original Input and Enhanced Output (Reflectance)
                     canvas_list_enh = [pixels, colors_enh]
-
                     canvas_eval_enh = (
                         torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
                     )
                     canvas_eval_enh = (canvas_eval_enh * 255).astype(np.uint8)
 
                     imageio.imwrite(
-                        f"{self.render_dir}/{stage}_step{step}_{i:04d}.png",
+                        f"{self.render_dir}/{stage}_step{step}_{i:04d}_orig_vs_enh.png",
                         canvas_eval_enh,
                     )
-                    colors_enh_np = colors_enh.squeeze().cpu().numpy()
-                    imageio.imwrite(
-                        f"{self.render_dir}/{stage}_enh_{i:04d}.png",
-                        (colors_enh_np * 255).astype(np.uint8),
-                    )
 
+                    # Save Retinex Decomposition if available
+                    if illumination_map is not None and colors_reconstructed is not None:
+                        # Illumination Map (heatmap/grayscale usually, but here RGB)
+                        illum_np = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                        illum_np = (illum_np * 255).astype(np.uint8)
+
+                        # Reconstructed Low Light
+                        recon_np = colors_reconstructed.squeeze(0).cpu().numpy()
+                        recon_np = (recon_np * 255).astype(np.uint8)
+
+                        imageio.imwrite(
+                            f"{self.render_dir}/{stage}_step{step}_{i:04d}_illumination.png",
+                            illum_np,
+                        )
+                        imageio.imwrite(
+                            f"{self.render_dir}/{stage}_step{step}_{i:04d}_reconstructed_low.png",
+                            recon_np,
+                        )
+
+                # Metrics
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_enh_p = colors_enh.permute(0, 3, 1, 2)
 
@@ -892,9 +939,14 @@ class Runner:
                 metrics["ssim"].append(self.ssim(colors_enh_p, pixels_p))
                 metrics["psnr"].append(self.psnr(colors_enh_p, pixels_p))
 
+                # If we have reconstruction, we can measure how well we fit the input (low light)
+                if colors_reconstructed is not None:
+                    colors_rec_p = colors_reconstructed.permute(0, 3, 1, 2)
+                    metrics["psnr_reconstruction"].append(self.psnr(colors_rec_p, pixels_p))
+
         if world_rank == 0:
             avg_ellipse_time = (
-                ellipse_time_total / len(valloader) if len(valloader) > 0 else 0
+                ellipse_time_total / len(dataloader) if len(dataloader) > 0 else 0
             )
 
             stats_eval = {}
