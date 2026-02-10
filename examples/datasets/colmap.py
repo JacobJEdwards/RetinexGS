@@ -204,8 +204,18 @@ class Parser:
             image_dir_suffix = f"_{factor}"
         else:
             image_dir_suffix = ""
+
         colmap_image_dir = os.path.join(data_dir, "images")
         image_dir = os.path.join(data_dir, "images" + image_dir_suffix)
+
+        if not os.path.exists(colmap_image_dir):
+            raise ValueError(f"Source image folder {colmap_image_dir} does not exist.")
+
+        # 2. If target directory doesn't exist, create it immediately
+        if not os.path.exists(image_dir) and factor > 1:
+            print(f"Target folder {image_dir} not found. Generating...")
+            _resize_image_folder(colmap_image_dir, image_dir, factor)
+
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
                 raise ValueError(f"Image folder {d} does not exist.")
