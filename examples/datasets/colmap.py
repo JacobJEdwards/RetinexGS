@@ -59,12 +59,12 @@ class Parser:
     """COLMAP parser."""
 
     def __init__(
-        self,
-        data_dir: str,
-        factor: int = 1,
-        normalize: bool = False,
-        test_every: int = 8,
-        load_exposure: bool = False,
+            self,
+            data_dir: str,
+            factor: int = 1,
+            normalize: bool = False,
+            test_every: int = 8,
+            load_exposure: bool = False,
     ):
         self.data_dir = data_dir
         self.factor = factor
@@ -78,6 +78,23 @@ class Parser:
         assert os.path.exists(
             colmap_dir
         ), f"COLMAP directory {colmap_dir} does not exist."
+
+        self.train_filenames: Set[str] = set()
+        self.test_filenames: Set[str] = set()
+
+        train_split_path = os.path.join(data_dir, "Mixed.txt")
+        test_split_path = os.path.join(data_dir, "GT.txt")
+
+        self.has_split_files = False
+        if os.path.exists(train_split_path) and os.path.exists(test_split_path):
+            print(f"[Parser] Found split files: Mixed.txt (Train) and GT.txt (Test)")
+            with open(train_split_path, 'r') as f:
+                self.train_filenames = {line.strip() for line in f.readlines() if line.strip()}
+            with open(test_split_path, 'r') as f:
+                self.test_filenames = {line.strip() for line in f.readlines() if line.strip()}
+            self.has_split_files = True
+        else:
+            print("[Parser] Split files (GT.txt/Mixed.txt) not found. Falling back to test_every.")
 
         manager = SceneManager(colmap_dir)
         manager.load_cameras()
@@ -131,8 +148,11 @@ class Parser:
             elif type_ == 5 or type_ == "OPENCV_FISHEYE":
                 params = np.array([cam.k1, cam.k2, cam.k3, cam.k4], dtype=np.float32)
                 camtype = "fisheye"
+
+            self.camtype = camtype
+
             assert (
-                camtype == "perspective" or camtype == "fisheye"
+                    camtype == "perspective" or camtype == "fisheye"
             ), f"Only perspective and fisheye cameras are supported, got {type_}"
 
             params_dict[camera_id] = params
@@ -319,7 +339,7 @@ class Parser:
                 continue  # no distortion
             assert camera_id in self.Ks_dict, f"Missing K for camera {camera_id}"
             assert (
-                camera_id in self.params_dict
+                    camera_id in self.params_dict
             ), f"Missing params for camera {camera_id}"
             K = self.Ks_dict[camera_id]
             width, height = self.imsize_dict[camera_id]
@@ -346,11 +366,11 @@ class Parser:
                 y1 = (grid_y - cy) / fy
                 theta = np.sqrt(x1**2 + y1**2)
                 r = (
-                    1.0
-                    + params[0] * theta**2
-                    + params[1] * theta**4
-                    + params[2] * theta**6
-                    + params[3] * theta**8
+                        1.0
+                        + params[0] * theta**2
+                        + params[1] * theta**4
+                        + params[2] * theta**6
+                        + params[3] * theta**8
                 )
                 mapx = (fx * x1 * r + width // 2).astype(np.float32)
                 mapy = (fy * y1 * r + height // 2).astype(np.float32)
@@ -389,21 +409,45 @@ class Dataset:
     """A simple dataset class."""
 
     def __init__(
-        self,
-        parser: Parser,
-        split: str = "train",
-        patch_size: Optional[int] = None,
-        load_depths: bool = False,
+            self,
+            parser: Parser,
+            split: str = "train",
+            patch_size: Optional[int] = None,
+            load_depths: bool = False,
     ):
         self.parser = parser
         self.split = split
         self.patch_size = patch_size
         self.load_depths = load_depths
+
         indices = np.arange(len(self.parser.image_names))
-        if split == "train":
-            self.indices = indices[indices % self.parser.test_every != 0]
+
+        if self.parser.has_split_files:
+            valid_indices = []
+            for i, name in enumerate(self.parser.image_names):
+                if split == "train":
+                    if name in self.parser.train_filenames:
+                        valid_indices.append(i)
+                else:
+                    if name in self.parser.test_filenames:
+                        valid_indices.append(i)
+
+            self.indices = np.array(valid_indices)
+            print(f"[Dataset] Split '{split}': Found {len(self.indices)} images matching split files.")
+
+            if len(self.indices) == 0:
+                print(f"Warning: No images matched for split '{split}'. Checking filename formats...")
+                if len(self.parser.train_filenames) > 0:
+                    print(f"Sample train file: {list(self.parser.train_filenames)[0]}")
+                    print(f"Sample loaded image: {self.parser.image_names[0]}")
+
         else:
-            self.indices = indices[indices % self.parser.test_every == 0]
+            # Fallback to original modulo logic if text files are missing
+            if split == "train":
+                self.indices = indices[indices % self.parser.test_every != 0]
+            else:
+                self.indices = indices[indices % self.parser.test_every == 0]
+
 
     def __len__(self):
         return len(self.indices)
@@ -465,11 +509,11 @@ class Dataset:
             depths = points_cam[:, 2]  # (M,)
             # filter out points outside the image
             selector = (
-                (points[:, 0] >= 0)
-                & (points[:, 0] < image.shape[1])
-                & (points[:, 1] >= 0)
-                & (points[:, 1] < image.shape[0])
-                & (depths > 0)
+                    (points[:, 0] >= 0)
+                    & (points[:, 0] < image.shape[1])
+                    & (points[:, 1] >= 0)
+                    & (points[:, 1] < image.shape[0])
+                    & (depths > 0)
             )
             points = points[selector]
             depths = depths[selector]
