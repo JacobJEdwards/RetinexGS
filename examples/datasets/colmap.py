@@ -174,7 +174,7 @@ class Parser:
 
         # Image names from COLMAP. No need for permuting the poses according to
         # image names anymore.
-        image_names = [imdata[k].name for k in imdata]
+        image_names = [imdata[k].name.lower() for k in imdata]
 
         # Previous Nerf results were generated with images sorted by filename,
         # ensure metrics are reported on the same test set.
