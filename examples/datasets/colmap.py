@@ -89,9 +89,9 @@ class Parser:
         if os.path.exists(train_split_path) and os.path.exists(test_split_path):
             print(f"[Parser] Found split files: MIXED.txt (Train) and GT.txt (Test)")
             with open(train_split_path, 'r') as f:
-                self.train_filenames = {line.strip().lower() for line in f.readlines() if line.strip()}
+                self.train_filenames = {line.strip() for line in f.readlines() if line.strip()}
             with open(test_split_path, 'r') as f:
-                self.test_filenames = {line.strip().lower() for line in f.readlines() if line.strip()}
+                self.test_filenames = {line.strip() for line in f.readlines() if line.strip()}
             self.has_split_files = True
         else:
             print("[Parser] Split files (GT.txt/MIXED.txt) not found. Falling back to test_every.")
@@ -174,7 +174,7 @@ class Parser:
 
         # Image names from COLMAP. No need for permuting the poses according to
         # image names anymore.
-        image_names = [imdata[k].name.lower() for k in imdata]
+        image_names = [imdata[k].name for k in imdata]
 
         # Previous Nerf results were generated with images sorted by filename,
         # ensure metrics are reported on the same test set.
@@ -224,6 +224,7 @@ class Parser:
         # so we need to map between the two sorted lists of files.
         colmap_files = sorted(_get_rel_paths(colmap_image_dir))
         image_files = sorted(_get_rel_paths(image_dir))
+
         if factor > 1 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
             image_dir = _resize_image_folder(
                 colmap_image_dir, image_dir + "_png", factor=factor
@@ -436,10 +437,10 @@ class Dataset:
             valid_indices = []
             for i, name in enumerate(self.parser.image_names):
                 if split == "train":
-                    if name.lower() in self.parser.train_filenames:
+                    if name in self.parser.train_filenames:
                         valid_indices.append(i)
                 else:
-                    if name.lower() in self.parser.test_filenames:
+                    if name in self.parser.test_filenames:
                         valid_indices.append(i)
 
             self.indices = np.array(valid_indices)
