@@ -1091,8 +1091,12 @@ class Runner:
                 # write images
                 canvas = torch.cat(canvas_list, dim=2).squeeze(0).cpu().numpy()
                 canvas = (canvas * 255).astype(np.uint8)
+                orig_name = data["image_name"][0]  # batch_size=1 so it's a 1-element list
+                orig_stem = os.path.splitext(orig_name)[0]
+                orig_stem = orig_stem.replace("/", "_").replace("\\", "_")  # safe for folders
+
                 imageio.imwrite(
-                    f"{self.render_dir}/{stage}_step{step}_{i:04d}.png",
+                    f"{self.render_dir}/{stage}_step{step}_{i:04d}_{orig_stem}.png",
                     canvas,
                 )
 
@@ -1190,7 +1194,9 @@ class Runner:
         # save to video
         video_dir = f"{cfg.result_dir}/videos"
         os.makedirs(video_dir, exist_ok=True)
-        writer = imageio.get_writer(f"{video_dir}/traj_{step}.mp4", fps=30)
+        writer_rgb = imageio.get_writer(f"{video_dir}/traj_{step}_rgb.mp4", fps=30)
+        writer_rgbd = imageio.get_writer(f"{video_dir}/traj_{step}_rgbd.mp4", fps=30)
+
         for i in tqdm.trange(len(camtoworlds_all), desc="Rendering trajectory"):
             camtoworlds = camtoworlds_all[i : i + 1]
             Ks = K[None]
@@ -1207,15 +1213,23 @@ class Runner:
             )  # [1, H, W, 4]
             colors = torch.clamp(renders[..., 0:3], 0.0, 1.0)  # [1, H, W, 3]
             depths = renders[..., 3:4]  # [1, H, W, 1]
-            depths = (depths - depths.min()) / (depths.max() - depths.min())
-            canvas_list = [colors, depths.repeat(1, 1, 1, 3)]
 
-            # write images
-            canvas = torch.cat(canvas_list, dim=2).squeeze(0).cpu().numpy()
-            canvas = (canvas * 255).astype(np.uint8)
-            writer.append_data(canvas)
-        writer.close()
-        print(f"Video saved to {video_dir}/traj_{step}.mp4")
+            depths = (depths - depths.min()) / (depths.max() - depths.min() + 1e-8)
+            depths_rgb = depths.repeat(1, 1, 1, 3)
+
+            canvas_rgb = colors.squeeze(0).cpu().numpy()
+            canvas_rgb = (canvas_rgb * 255).astype(np.uint8)
+            writer_rgb.append_data(canvas_rgb)
+
+            canvas_rgbd = torch.cat([colors, depths_rgb], dim=2).squeeze(0).cpu().numpy()
+            canvas_rgbd = (canvas_rgbd * 255).astype(np.uint8)
+            writer_rgbd.append_data(canvas_rgbd)
+
+        writer_rgb.close()
+        writer_rgbd.close()
+
+        print(f"RGB video saved to {video_dir}/traj_{step}_rgb.mp4")
+        print(f"RGB+Depth video saved to {video_dir}/traj_{step}_rgbd.mp4")
 
     @torch.no_grad()
     def export_ppisp_reports(self) -> None:
