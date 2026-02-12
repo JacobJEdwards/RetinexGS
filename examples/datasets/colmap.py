@@ -236,34 +236,37 @@ class Parser:
             )
             image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
-        image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
 
         valid_indices = []
-        missing_count = 0
+        valid_image_names = []
+        valid_image_paths = []
 
-        print(f"[Parser] Verifying {len(image_paths)} image paths...")
+        print(f"[Parser] Checking {len(image_names)} images from COLMAP against {len(colmap_to_image)} files on disk...")
 
-        for i, path in enumerate(image_paths):
-            if os.path.exists(path):
-                valid_indices.append(i)
+        for i, name in enumerate(image_names):
+            if name in colmap_to_image:
+                # Check if the actual file exists just to be safe
+                img_path = os.path.join(image_dir, colmap_to_image[name])
+                if os.path.exists(img_path):
+                    valid_indices.append(i)
+                    valid_image_names.append(name)
+                    valid_image_paths.append(img_path)
             else:
-                missing_count += 1
-                # Optional: Print the first few missing files for debugging
-                if missing_count <= 5:
-                    print(f"  [Warning] Missing file: {path}")
+                # Optional: Print first few missing files to help debug
+                if len(valid_indices) == 0:
+                    print(f"Warning: Image '{name}' found in COLMAP but not in {image_dir}")
 
-        if missing_count > 0:
-            print(f"[Parser] Dropped {missing_count} images because files were not found.")
+        if len(valid_indices) < len(image_names):
+            print(f"[Parser] Dropping {len(image_names) - len(valid_indices)} missing images.")
 
-            # Filter all parallel lists/arrays using the valid_indices
-            image_names = [image_names[i] for i in valid_indices]
-            image_paths = [image_paths[i] for i in valid_indices]
-            camera_ids = [camera_ids[i] for i in valid_indices]
+        # 2. Overwrite the lists with only the valid entries
+        image_names = valid_image_names
+        image_paths = valid_image_paths
 
-            # camtoworlds is a numpy array, so we index it directly
-            camtoworlds = camtoworlds[np.array(valid_indices)]
+        # 3. Filter the other parallel arrays using the valid indices
+        camtoworlds = camtoworlds[np.array(valid_indices)]
+        camera_ids = [camera_ids[i] for i in valid_indices]
 
-        # 3D points and {image_name -> [point_idx]}
         points = manager.points3D.astype(np.float32)
         points_err = manager.point3D_errors.astype(np.float32)
         points_rgb = manager.point3D_colors.astype(np.uint8)
