@@ -82,19 +82,19 @@ class Parser:
         self.train_filenames: Set[str] = set()
         self.test_filenames: Set[str] = set()
 
-        train_split_path = os.path.join(data_dir, "Mixed.txt")
+        train_split_path = os.path.join(data_dir, "MIXED.txt")
         test_split_path = os.path.join(data_dir, "GT.txt")
 
         self.has_split_files = False
         if os.path.exists(train_split_path) and os.path.exists(test_split_path):
-            print(f"[Parser] Found split files: Mixed.txt (Train) and GT.txt (Test)")
+            print(f"[Parser] Found split files: MIXED.txt (Train) and GT.txt (Test)")
             with open(train_split_path, 'r') as f:
                 self.train_filenames = {line.strip().lower() for line in f.readlines() if line.strip()}
             with open(test_split_path, 'r') as f:
                 self.test_filenames = {line.strip().lower() for line in f.readlines() if line.strip()}
             self.has_split_files = True
         else:
-            print("[Parser] Split files (GT.txt/Mixed.txt) not found. Falling back to test_every.")
+            print("[Parser] Split files (GT.txt/MIXED.txt) not found. Falling back to test_every.")
 
         manager = SceneManager(colmap_dir)
         manager.load_cameras()
