@@ -41,6 +41,11 @@ def _resize_image_folder(image_dir: str, resized_dir: str, factor: int) -> str:
         resized_path = os.path.join(
             resized_dir, os.path.splitext(image_file)[0] + ".png"
         )
+
+        if not os.path.exists(image_path):
+            print(f"Warning: Source image missing, skipping: {image_path}")
+            continue
+
         if os.path.isfile(resized_path):
             continue
         image = imageio.imread(image_path)[..., :3]
@@ -232,6 +237,31 @@ class Parser:
             image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
         image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
+
+        valid_indices = []
+        missing_count = 0
+
+        print(f"[Parser] Verifying {len(image_paths)} image paths...")
+
+        for i, path in enumerate(image_paths):
+            if os.path.exists(path):
+                valid_indices.append(i)
+            else:
+                missing_count += 1
+                # Optional: Print the first few missing files for debugging
+                if missing_count <= 5:
+                    print(f"  [Warning] Missing file: {path}")
+
+        if missing_count > 0:
+            print(f"[Parser] Dropped {missing_count} images because files were not found.")
+
+            # Filter all parallel lists/arrays using the valid_indices
+            image_names = [image_names[i] for i in valid_indices]
+            image_paths = [image_paths[i] for i in valid_indices]
+            camera_ids = [camera_ids[i] for i in valid_indices]
+
+            # camtoworlds is a numpy array, so we index it directly
+            camtoworlds = camtoworlds[np.array(valid_indices)]
 
         # 3D points and {image_name -> [point_idx]}
         points = manager.points3D.astype(np.float32)
