@@ -1,24 +1,33 @@
-python simple_trainer.py default --data-dir /workspace/datasets/log --result-dir /workspace/datasets/log/results/gsplat
-python simple_trainer.py default --data-dir /workspace/datasets/log --result-dir /workspace/datasets/log/results/bilateral_grid --post-processing bilateral_grid
-python simple_trainer.py default --data-dir /workspace/datasets/log --result-dir /workspace/datasets/log/results/ppisp --post-processing ppisp
-python simple_trainer.py default --data-dir /workspace/datasets/log --result-dir /workspace/datasets/log/results/gs-w --app-opt
+#!/bin/bash
 
-python simple_trainer.py default --data-dir /workspace/datasets/Log-hicontrast --result-dir /workspace/datasets/Log-hicontrast/results/gsplat
-python simple_trainer.py default --data-dir /workspace/datasets/Log-hicontrast --result-dir /workspace/datasets/Log-hicontrast/results/bilateral_grid --post-processing bilateral_grid
-python simple_trainer.py default --data-dir /workspace/datasets/Log-hicontrast --result-dir /workspace/datasets/Log-hicontrast/results/ppisp --post-processing ppisp
-python simple_trainer.py default --data-dir /workspace/datasets/Log-hicontrast --result-dir /workspace/datasets/Log-hicontrast/results/gs-w --app-opt
+BASE="/workspace/datasets"
 
-python simple_trainer.py default --data-dir /workspace/datasets/plastic-cart-130deg --result-dir /workspace/datasets/plastic-cart-130deg/results/gsplat
-python simple_trainer.py default --data-dir /workspace/datasets/plastic-cart-130deg --result-dir /workspace/datasets/plastic-cart-130deg/results/bilateral_grid --post-processing bilateral_grid
-python simple_trainer.py default --data-dir /workspace/datasets/plastic-cart-130deg --result-dir /workspace/datasets/plastic-cart-130deg/results/ppisp --post-processing ppisp
-python simple_trainer.py default --data-dir /workspace/datasets/plastic-cart-130deg --result-dir /workspace/datasets/plastic-cart-130deg/results/gs-w --app-opt
+DATASETS=(
+    "Circular-bench"
+    "chair"
+    "4logs-earlham-park"
+    "plastic-cart-130-vert-shade"
+    "robot-under-over-exposure"
+    "Rocks2"
+    "robot-recapture"
+    "plastic-cart-130deg"
+    "Log-hicontrast"
+    "log"
+)
 
-python simple_trainer.py default --data-dir /workspace/datasets/robot-recapture --result-dir /workspace/datasets/robot-recapture/results/gsplat
-python simple_trainer.py default --data-dir /workspace/datasets/robot-recapture --result-dir /workspace/datasets/robot-recapture/results/bilateral_grid --post-processing bilateral_grid
-python simple_trainer.py default --data-dir /workspace/datasets/robot-recapture --result-dir /workspace/datasets/robot-recapture/results/ppisp --post-processing ppisp
-python simple_trainer.py default --data-dir /workspace/datasets/robot-recapture --result-dir /workspace/datasets/robot-recapture/results/gs-w --app-opt
+for DATA in "${DATASETS[@]}"; do
+    echo "Processing: $DATA"
+    DIR="$BASE/$DATA"
 
-python simple_trainer.py default --data-dir /workspace/datasets/Rocks2 --result-dir /workspace/datasets/Rocks2/results/gsplat
-python simple_trainer.py default --data-dir /workspace/datasets/Rocks2 --result-dir /workspace/datasets/Rocks2/results/bilateral_grid --post-processing bilateral_grid
-python simple_trainer.py default --data-dir /workspace/datasets/Rocks2 --result-dir /workspace/datasets/Rocks2/results/ppisp --post-processing ppisp
-python simple_trainer.py default --data-dir /workspace/datasets/Rocks2 --result-dir /workspace/datasets/Rocks2/results/gs-w --app-opt
+    # 1. Standard gsplat
+    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gsplat"
+
+    # 2. Bilateral Grid
+    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/bilateral_grid" --post-processing bilateral_grid
+
+    # 3. PPISP
+    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/ppisp" --post-processing ppisp
+
+    # 4. GS-W (App Opt)
+    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gs-w" --app-opt
+done
