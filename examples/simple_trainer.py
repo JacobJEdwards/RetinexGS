@@ -176,7 +176,6 @@ class Runner:
             data_dir=str(cfg.data_dir),
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
-            postfix=cfg.postfix,
         )
 
         self.scaler = GradScaler(enabled=False)
@@ -847,7 +846,6 @@ class Runner:
         dataloader = torch.utils.data.DataLoader(
             dataset, shuffle=False, num_workers=1
         )
-
 
 
         ellipse_time_total = 0

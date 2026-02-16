@@ -41,11 +41,6 @@ def _resize_image_folder(image_dir: str, resized_dir: str, factor: int) -> str:
         resized_path = os.path.join(
             resized_dir, os.path.splitext(image_file)[0] + ".png"
         )
-
-        if not os.path.exists(image_path):
-            print(f"Warning: Source image missing, skipping: {image_path}")
-            continue
-
         if os.path.isfile(resized_path):
             continue
         image = imageio.imread(image_path)[..., :3]
@@ -87,19 +82,19 @@ class Parser:
         self.train_filenames: Set[str] = set()
         self.test_filenames: Set[str] = set()
 
-        train_split_path = os.path.join(data_dir, "MIXED.txt")
+        train_split_path = os.path.join(data_dir, "Mixed.txt")
         test_split_path = os.path.join(data_dir, "GT.txt")
 
         self.has_split_files = False
         if os.path.exists(train_split_path) and os.path.exists(test_split_path):
-            print(f"[Parser] Found split files: MIXED.txt (Train) and GT.txt (Test)")
+            print(f"[Parser] Found split files: Mixed.txt (Train) and GT.txt (Test)")
             with open(train_split_path, 'r') as f:
                 self.train_filenames = {line.strip() for line in f.readlines() if line.strip()}
             with open(test_split_path, 'r') as f:
                 self.test_filenames = {line.strip() for line in f.readlines() if line.strip()}
             self.has_split_files = True
         else:
-            print("[Parser] Split files (GT.txt/MIXED.txt) not found. Falling back to test_every.")
+            print("[Parser] Split files (GT.txt/Mixed.txt) not found. Falling back to test_every.")
 
         manager = SceneManager(colmap_dir)
         manager.load_cameras()
@@ -209,18 +204,8 @@ class Parser:
             image_dir_suffix = f"_{factor}"
         else:
             image_dir_suffix = ""
-
         colmap_image_dir = os.path.join(data_dir, "images")
         image_dir = os.path.join(data_dir, "images" + image_dir_suffix)
-
-        if not os.path.exists(colmap_image_dir):
-            raise ValueError(f"Source image folder {colmap_image_dir} does not exist.")
-
-        # 2. If target directory doesn't exist, create it immediately
-        if not os.path.exists(image_dir) and factor > 1:
-            print(f"Target folder {image_dir} not found. Generating...")
-            _resize_image_folder(colmap_image_dir, image_dir, factor)
-
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
                 raise ValueError(f"Image folder {d} does not exist.")
@@ -229,44 +214,15 @@ class Parser:
         # so we need to map between the two sorted lists of files.
         colmap_files = sorted(_get_rel_paths(colmap_image_dir))
         image_files = sorted(_get_rel_paths(image_dir))
-
         if factor > 1 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
             image_dir = _resize_image_folder(
                 colmap_image_dir, image_dir + "_png", factor=factor
             )
             image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
+        image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
 
-        valid_indices = []
-        valid_image_names = []
-        valid_image_paths = []
-
-        print(f"[Parser] Checking {len(image_names)} images from COLMAP against {len(colmap_to_image)} files on disk...")
-
-        for i, name in enumerate(image_names):
-            if name in colmap_to_image:
-                # Check if the actual file exists just to be safe
-                img_path = os.path.join(image_dir, colmap_to_image[name])
-                if os.path.exists(img_path):
-                    valid_indices.append(i)
-                    valid_image_names.append(name)
-                    valid_image_paths.append(img_path)
-            else:
-                # Optional: Print first few missing files to help debug
-                if len(valid_indices) == 0:
-                    print(f"Warning: Image '{name}' found in COLMAP but not in {image_dir}")
-
-        if len(valid_indices) < len(image_names):
-            print(f"[Parser] Dropping {len(image_names) - len(valid_indices)} missing images.")
-
-        # 2. Overwrite the lists with only the valid entries
-        image_names = valid_image_names
-        image_paths = valid_image_paths
-
-        # 3. Filter the other parallel arrays using the valid indices
-        camtoworlds = camtoworlds[np.array(valid_indices)]
-        camera_ids = [camera_ids[i] for i in valid_indices]
-
+        # 3D points and {image_name -> [point_idx]}
         points = manager.points3D.astype(np.float32)
         points_err = manager.point3D_errors.astype(np.float32)
         points_rgb = manager.point3D_colors.astype(np.uint8)
@@ -563,9 +519,6 @@ class Dataset:
             depths = depths[selector]
             data["points"] = torch.from_numpy(points).float()
             data["depths"] = torch.from_numpy(depths).float()
-
-        image_name = self.parser.image_names[index]
-        data["image_name"] = image_name
 
         return data
 
