@@ -1100,6 +1100,13 @@ class Runner:
                     canvas,
                 )
 
+                render_only = colors.squeeze(0).cpu().numpy()
+                render_only = (render_only * 255).astype(np.uint8)
+                imageio.imwrite(
+                    f"{self.render_dir}/{stage}_step{step}_{i:04d}_{orig_stem}_render.png",
+                    render_only,
+                )
+
                 pixels_p = pixels.permute(0, 3, 1, 2)  # [1, 3, H, W]
                 colors_p = colors.permute(0, 3, 1, 2)  # [1, 3, H, W]
                 metrics["psnr"].append(self.psnr(colors_p, pixels_p))
