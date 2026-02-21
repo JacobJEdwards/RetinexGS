@@ -621,6 +621,9 @@ class Runner:
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low_aligned.permute(0, 3, 1, 2)
                 colors_enh_p = colors_enh_aligned.permute(0, 3, 1, 2)
+                orig_name = data["image_name"][0]  # batch_size=1 so it's a 1-element list
+                orig_stem = os.path.splitext(orig_name)[0]
+                orig_stem = orig_stem.replace("/", "_").replace("\\", "_")  # safe for folders
 
                 if cfg.save_images:
                     canvas_list_low = [pixels, colors_low_aligned]
@@ -636,12 +639,12 @@ class Runner:
                     )
 
                     imageio.imwrite(
-                        f"{self.render_dir}/{stage}_step{step}_low_{i:04d}.png",
+                        f"{self.render_dir}/{stage}_step{step}_low_{i:04d}_{orig_stem}.png",
                         canvas_eval_low,
                     )
 
                     imageio.imwrite(
-                        f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}.png",
+                        f"{self.render_dir}/{stage}_step{step}_enh_{i:04d}_{orig_stem}.png",
                         (canvas_eval_enh * 255).astype(np.uint8),
                     )
 
@@ -649,12 +652,12 @@ class Runner:
                     colors_enh_np = colors_enh.squeeze(0).cpu().numpy()
 
                     imageio.imwrite(
-                        f"{self.render_dir}/{stage}_low_{i:04d}.png",
+                        f"{self.render_dir}/{stage}_low_{i:04d}_{orig_stem}.png",
                         (colors_low_np * 255).astype(np.uint8),
                     )
 
                     imageio.imwrite(
-                        f"{self.render_dir}/{stage}_enh_{i:04d}.png",
+                        f"{self.render_dir}/{stage}_enh_{i:04d}_{orig_stem}.png",
                         (colors_enh_np * 255).astype(np.uint8),
                     )
 
