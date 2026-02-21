@@ -23,15 +23,15 @@ for DATA in "${DATASETS[@]}"; do
     echo "Processing: $DATA"
     DIR="$BASE/$DATA"
 
-    # 1. Standard gsplat
-    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gsplat"
-
-    # 2. Bilateral Grid
-    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/bilateral_grid" --post-processing bilateral_grid
+#    # 1. Standard gsplat
+#    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gsplat"
+#
+#    # 2. Bilateral Grid
+#    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/bilateral_grid" --post-processing bilateral_grid
 
     # 3. PPISP
-    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/ppisp" --post-processing ppisp
+    python simple_trainer.py mcmc --data-dir "$DIR" --result-dir "$DIR/results/ppisp" --post-processing ppisp
 
     # 4. GS-W (App Opt)
-    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gs-w" --app-opt
+#    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gs-w" --app-opt
 done
