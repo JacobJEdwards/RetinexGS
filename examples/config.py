@@ -74,6 +74,7 @@ class Config:
     use_yuv_colourspace: bool = False
     save_images: bool = True
     save_ckpt: bool = False
+    use_bilateral_grid: bool = False
     uncertainty_weighting: bool = False
 
     postfix: str = "_contrast"

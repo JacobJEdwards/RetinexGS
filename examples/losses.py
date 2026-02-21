@@ -705,6 +705,47 @@ class ExclusionLoss(nn.Module):
         grady = img[:, :, :, 1:] - img[:, :, :, :-1]
         return gradx, grady
 
+class GeometryAwareSmoothingLoss(nn.Module):
+    def __init__(self, weight: float = 1.0):
+        super(GeometryAwareSmoothingLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, illumination: Tensor, normals: Tensor) -> Tensor:
+        # Penalizes illumination changes that are not consistent with geometry
+        # illumination: [B, 3, H, W], normals: [B, 3, H, W]
+        def get_grad(x):
+            dx = x[:, :, :, 1:] - x[:, :, :, :-1]
+            dy = x[:, :, 1:, :] - x[:, :, :-1, :]
+            return dx, dy
+
+        illum_dx, illum_dy = get_grad(illumination)
+        norm_dx, norm_dy = get_grad(normals)
+
+        # Basic idea: lighting changes should be small where the surface is flat (norm_grad is small)
+        # Weight TV loss by the flatness of the geometry
+        flatness_x = torch.exp(-norm_dx.pow(2).sum(dim=1, keepdim=True))
+        flatness_y = torch.exp(-norm_dy.pow(2).sum(dim=1, keepdim=True))
+
+        loss = (illum_dx.pow(2) * flatness_x).mean() + (illum_dy.pow(2) * flatness_y).mean()
+        return self.weight * loss
+
+class ChromaticityContinuityLoss(nn.Module):
+    def __init__(self, weight: float = 1.0):
+        super(ChromaticityContinuityLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, illumination: Tensor) -> Tensor:
+        # Penalizes rapid changes in light color temperature
+        # illumination: [B, 3, H, W]
+        # We normalize by intensity to get pure chromaticity
+        intensity = torch.norm(illumination, p=2, dim=1, keepdim=True).clamp(min=1e-6)
+        chromaticity = illumination / intensity
+        
+        dx = chromaticity[:, :, :, 1:] - chromaticity[:, :, :, :-1]
+        dy = chromaticity[:, :, 1:, :] - chromaticity[:, :, :-1, :]
+        
+        loss = dx.pow(2).mean() + dy.pow(2).mean()
+        return self.weight * loss
 
 class PatchConsistencyLoss(nn.Module):
     """

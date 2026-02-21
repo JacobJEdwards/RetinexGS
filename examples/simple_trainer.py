@@ -31,9 +31,10 @@ from datasets.traj import (
 )
 from config import Config
 from utils import AutomaticWeightedLoss
+from lib_bilagrid import color_correct, BilateralGrid, bi_slice
 from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
-from losses import TotalVariationLoss
+from losses import TotalVariationLoss, GeometryAwareSmoothingLoss, GrayWorldLoss, LogTotalVariationLoss, ChromaticityContinuityLoss
 from losses import ExclusionLoss
 from utils import IlluminationField, sh_to_rgb, quaternion_to_matrix
 from rendering_double import rasterization_dual
@@ -46,6 +47,7 @@ from utils import (
     rgb_to_sh,
     set_random_seed,
 )
+from retinex import MultiScaleRetinexNet
 
 
 def create_splats_with_optimizers(
@@ -188,6 +190,14 @@ class Runner:
             self.illumination_field.parameters(), lr=cfg.illumination_field_lr, fused=True
         )
 
+        if cfg.use_bilateral_grid:
+            self.bilateral_grid = BilateralGrid(len(self.trainset)).to(self.device)
+            self.bilateral_grid_optimizer = torch.optim.Adam(
+                self.bilateral_grid.parameters(), lr=2e-3, fused=True
+            )
+        else:
+            self.bilateral_grid = None
+
         if cfg.use_camera_response_network:
             self.camera_response_net = CameraResponseNet(
                 embedding_dim=cfg.appearance_embedding_dim
@@ -206,36 +216,26 @@ class Runner:
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
         self.loss_tv = TotalVariationLoss().to(self.device)
+        self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
+        self.loss_gray_world = GrayWorldLoss().to(self.device)
+        self.loss_log_tv = LogTotalVariationLoss().to(self.device)
+        self.loss_chromaticity = ChromaticityContinuityLoss().to(self.device)
+        self.loss_patch_consistency = PatchConsistencyLoss().to(self.device)
 
-        if cfg.uncertainty_weighting:
-            self.awl = AutomaticWeightedLoss(5).to(self.device)
-            self.awl_optimizer = torch.optim.Adam(
-                self.awl.parameters(), lr=cfg.loss_lr, fused=True
-            )
+        self.retinex_net = MultiScaleRetinexNet(
+            in_channels=3,
+            out_channels=3,
+            embed_dim=cfg.appearance_embedding_dim,
+        ).to(self.device)
 
-        feature_dim = None
-        self.splats, self.optimizers = create_splats_with_optimizers(
-            self.parser,
-            init_type=cfg.init_type,
-            init_num_pts=cfg.init_num_pts,
-            init_extent=cfg.init_extent,
-            init_opacity=cfg.init_opa,
-            init_scale=cfg.init_scale,
-            means_lr=cfg.means_lr,
-            scales_lr=cfg.scales_lr,
-            opacities_lr=cfg.opacities_lr,
-            quats_lr=cfg.quats_lr,
-            sh0_lr=cfg.sh0_lr,
-            shN_lr=cfg.shN_lr,
-            scene_scale=self.scene_scale,
-            sh_degree=cfg.sh_degree,
-            batch_size=cfg.batch_size,
-            feature_dim=feature_dim,
-            device=self.device,
-            world_rank=world_rank,
-            world_size=world_size,
+        if world_size > 1:
+            self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
+
+        # Updated optimizer to include Retinex correction net
+        self.illum_field_optimizer = torch.optim.Adam(
+            list(self.illumination_field.parameters()) + list(self.retinex_net.parameters()), 
+            lr=cfg.illumination_field_lr, fused=True
         )
-        print("Model initialized. Number of GS:", len(self.splats["means"]))
 
         self.cfg.strategy.check_sanity(self.splats, self.optimizers)
         if isinstance(self.cfg.strategy, DefaultStrategy):
@@ -263,120 +263,6 @@ class Runner:
             "grad2d": torch.zeros(n_gauss, device=self.device),  # norm of the gradient
             "count": torch.zeros(n_gauss, device=self.device, dtype=torch.int),
         }
-
-    def rasterize_splats(
-            self,
-            camtoworlds: Tensor,
-            Ks: Tensor,
-            width: int,
-            height: int,
-            masks: Tensor | None = None,
-            **kwargs,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Any]]:
-        means = self.splats["means"]
-        quats = self.splats["quats"]
-        scales = torch.exp(self.splats["scales"])
-        opacities = torch.sigmoid(self.splats["opacities"])
-        rasterize_mode: Literal["antialiased", "classic"] = "classic"
-        colors_enh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
-
-        splat_normals = None
-        if self.cfg.use_normals:
-            rot_mats = quaternion_to_matrix(quats)
-            _, min_scale_idx = torch.min(scales, dim=-1)
-            splat_normals = rot_mats[torch.arange(len(rot_mats)), :, min_scale_idx]
-
-        view_dirs_input = None
-        if self.cfg.use_view_dirs:
-            cam_origin = camtoworlds.squeeze(0)[:3, 3]
-            view_dirs_input = means - cam_origin
-
-        color_A, color_b = self.illumination_field(
-            means,
-            view_dirs=view_dirs_input,
-            normals=splat_normals,
-        )
-
-        base_reflectance_sh = colors_enh[:, 0, :]  # (N, 3)
-        base_reflectance_rgb = sh_to_rgb(base_reflectance_sh)
-
-        base_reflectance_rgb_expanded = base_reflectance_rgb.unsqueeze(
-            -1
-        )  # -> [N, 3, 1]
-        transformed_color_rgb = (
-                torch.bmm(color_A, base_reflectance_rgb_expanded).squeeze(-1) + color_b
-        )  # -> [N, 3]
-
-        final_color_rgb = torch.clamp(transformed_color_rgb, 0.0, 1.0)
-
-        final_color_sh0 = rgb_to_sh(final_color_rgb)
-
-        colors_low = colors_enh.clone()
-        colors_low[:, 0, :] = final_color_sh0
-
-        (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
-            info,
-        ) = rasterization_dual(
-            means=means,
-            quats=quats,
-            scales=scales,
-            opacities=opacities,
-            colors=colors_enh,
-            colors_low=colors_low,
-            viewmats=torch.linalg.inv(camtoworlds.float()),  # [C, 4, 4]
-            Ks=Ks,  # [C, 3, 3]
-            width=width,
-            height=height,
-            packed=False,
-            absgrad=(
-                self.cfg.strategy.absgrad
-                if isinstance(self.cfg.strategy, DefaultStrategy)
-                else False
-            ),
-            rasterize_mode=rasterize_mode,
-            **kwargs,
-        )
-
-        return (
-            render_colors_enh,
-            render_colors_low,
-            render_enh_alphas,
-            render_low_alphas,
-            info,
-        )  # return colors and alphas
-
-    @torch.no_grad()
-    def visualize_illumination_field(
-            self,
-            depth_map: Tensor,
-            camtoworld: Tensor,
-            K: Tensor,
-            image_ids: Tensor | None = None,
-    ) -> Tensor:
-        B, H, W, _ = depth_map.shape
-
-        grid = kornia.utils.create_meshgrid(H, W, normalized_coordinates=False).to(
-            self.device
-        )  # [1, H, W, 2]
-        grid = grid.expand(B, -1, -1, -1)  # [B, H, W, 2]
-
-        points_3d_cam = kornia.geometry.depth.unproject_points(grid, depth_map, K)
-
-        points_3d_cam_flat = points_3d_cam.reshape(B, -1, 3)
-
-        points_3d_world = kornia.geometry.transform_points(
-            camtoworld, points_3d_cam_flat
-        )  # [B, H*W, 3]
-
-        gain, gamma = self.illumination_field(points_3d_world.view(-1, 3))
-
-        illum_map_vis = gain.reshape(B, H, W, 3).squeeze(0)  # -> [H, W, 3]
-
-        return illum_map_vis
 
     def train(self):
         cfg = self.cfg
@@ -423,17 +309,17 @@ class Runner:
 
             sh_degree_to_use = min(
                 step // cfg.sh_degree_interval, cfg.sh_degree
-            )  # Defined early
+            )
 
             if step == cfg.learning_steps:
                 if cfg.use_camera_response_network:
                     for param in self.camera_response_net.parameters():
                         param.requires_grad = False
-
                     for param in self.appearance_embeds.parameters():
                         param.requires_grad = False
-
                 for param in self.illumination_field.parameters():
+                    param.requires_grad = False
+                for param in self.retinex_net.parameters():
                     param.requires_grad = False
 
             with torch.autocast(enabled=False, device_type=device):
@@ -442,15 +328,6 @@ class Runner:
                 pixels = data["image"].to(device) / 255.0
                 height, width = pixels.shape[1:3]
                 pixels = torch.clamp(pixels, 0.0, 1.0)
-
-                if (
-                        torch.mean(pixels) < 0.04
-                        and step not in [i - 1 for i in cfg.save_steps]
-                        and step != max_steps - 1
-                        and step not in [i - 1 for i in cfg.eval_steps]
-                ):
-                    pbar.set_description(f"Skipping step {step} due to black image")
-                    continue
 
                 base_reflectance_sh = torch.cat(
                     [self.splats["sh0"], self.splats["shN"]], 1
@@ -472,18 +349,16 @@ class Runner:
                 reflectance_map = intrinsic_maps["reflectance"]
                 world_position_map = intrinsic_maps["world_position"]
                 world_normal_map = intrinsic_maps["world_normal"]
-                points_3d_world_flat = world_position_map.view(-1, 3)
-                world_normals_flat = world_normal_map.view(-1, 3)
-
+                
                 view_dirs_input = None
                 if cfg.use_view_dirs:
                     cam_origin = camtoworlds.squeeze(0)[:3, 3]
-                    view_dirs_input = points_3d_world_flat - cam_origin
+                    view_dirs_input = world_position_map.view(-1, 3) - cam_origin
 
                 illum_A, illum_b = self.illumination_field(
-                    points_3d_world_flat,
+                    world_position_map.view(-1, 3),
                     view_dirs=view_dirs_input,
-                    normals=world_normals_flat,
+                    normals=world_normal_map.view(-1, 3),
                 )
 
                 illum_A_map = illum_A.view(1, height, width, 3, 3)
@@ -498,97 +373,130 @@ class Runner:
                     image_ids = data["image_id"].to(device)
                     embedding = self.appearance_embeds(image_ids)
                     c, d = self.camera_response_net(embedding)
-                    final_color_map = (
+                    scene_lit_color_map_cam = (
                             c[:, None, None, :] * scene_lit_color_map
                             + d[:, None, None, :]
                     )
-
                 else:
-                    final_color_map = scene_lit_color_map
+                    scene_lit_color_map_cam = scene_lit_color_map
 
-                colors_low = torch.clamp(final_color_map, 0.0, 1.0)
+                # Hybrid Step: 2D CNN correction
+                image_ids = data["image_id"].to(device)
+                appearance_embedding = self.appearance_embeds(image_ids)
+                log_residual_illum = checkpoint(
+                    self.retinex_net,
+                    scene_lit_color_map_cam.permute(0, 3, 1, 2),
+                    appearance_embedding,
+                    use_reentrant=False,
+                )
+                residual_illum = torch.exp(log_residual_illum)
+                final_color_map_linear = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
 
+                if cfg.use_bilateral_grid:
+                    grid_y, grid_x = torch.meshgrid(
+                        torch.linspace(0, 1, height, device=device),
+                        torch.linspace(0, 1, width, device=device),
+                        indexing="ij"
+                    )
+                    grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0).expand(cfg.batch_size, -1, -1, -1)
+                    grid_out = bi_slice(self.bilateral_grid, grid_xy, reflectance_map, image_ids.view(-1, 1))
+                    colors_low = grid_out["rgb"]
+                else:
+                    final_color_map_srgb = kornia.color.linear_rgb_to_srgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+                    colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
+
+                # Illumination for visualization
                 gray_color = torch.full_like(reflectance_map, 0.5)
-                illum_color_map = (
+                illum_color_map_linear = (
                         torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
                         + illum_b_map
-                )
-                illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
+                ) * residual_illum.permute(0, 2, 3, 1)
+                illum_map = torch.clamp(kornia.color.linear_rgb_to_srgb(illum_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1), 0.0, 1.0)
 
                 info["means2d"].retain_grad()
-
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
-                ssim_loss_low = 1.0 - self.ssim(
-                    colors_low.permute(0, 3, 1, 2),
-                    pixels.permute(0, 3, 1, 2),
+                ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
+                loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
+
+                # Regularization
+                loss += 0.1 * self.loss_gray_world(reflectance_map.permute(0, 3, 1, 2))
+                loss += 0.05 * self.loss_log_tv(residual_illum)
+                loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
+                
+                # New consistency terms
+                loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))
+                loss += 0.5 * loss_chroma_cont
+                
+                loss_ref_const = self.loss_patch_consistency(
+                    reflectance_map.permute(0, 3, 1, 2),
+                    intrinsic_maps["depth"].permute(0, 3, 1, 2),
+                    camtoworlds, Ks
                 )
-                loss = (
-                               1.0 - cfg.ssim_lambda
-                       ) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
+                loss += 0.2 * loss_ref_const
 
-                loss_terms_for_uncertainty = []
-
-                if cfg.lambda_illum_smoothness > 0:
-                    with torch.no_grad():
-                        rand_points = (
-                                              torch.rand(4096, 3, device=device) * 2 - 1
-                                      ) * self.scene_scale
-                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
-                        perturbed_points = rand_points + perturbation
-
-                    color_A, color_b = self.illumination_field(rand_points)
-                    color_A_perturbed, color_b_perturbed = self.illumination_field(
-                        perturbed_points
-                    )
-
-                    loss_A_smooth = (
-                        (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
-                    )
-                    loss_b_smooth = (
-                        (color_b - color_b_perturbed).norm(dim=-1).mean()
-                    )
-                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
-
-
-                    if not cfg.uncertainty_weighting:
-                        loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
-                    else:
-                        loss_terms_for_uncertainty.append(loss_illum_smoothness)
-
-                reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
-                illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
-
-                if cfg.lambda_exclusion > 0.0:
-                    if (
-                            reflectance_map_for_loss.shape[2] > 3
-                            and reflectance_map_for_loss.shape[3] > 3
-                    ):
-                        loss_exclusion = self.loss_exclusion(
-                            reflectance_map_for_loss, illum_map_for_loss
-                        )
-
-                        if not cfg.uncertainty_weighting:
-                            loss += cfg.lambda_exclusion * loss_exclusion
-                        else:
-                            loss_terms_for_uncertainty.append(loss_exclusion)
-
-                if cfg.lambda_tv_loss > 0.0:
-                    loss_illum_tv = self.loss_tv(illum_map_for_loss)
-                    if not cfg.uncertainty_weighting:
-                        loss += cfg.lambda_tv_loss * loss_illum_tv
-                    else:
-                        loss_terms_for_uncertainty.append(loss_illum_tv)
+                if cfg.lambda_illum_reg > 0.0:
+                    loss += cfg.lambda_illum_reg * ((illum_A - torch.eye(3, device=device)).pow(2).mean() + illum_b.pow(2).mean())
 
                 if cfg.lambda_shn_reg > 0.0:
-                    loss_shn_reg = self.splats["shN"].pow(2).mean()
-                    loss += cfg.lambda_shn_reg * loss_shn_reg
+                    loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
 
-                if cfg.opacity_reg > 0.0:
-                    loss += (
-                            cfg.opacity_reg
-                            * torch.abs(torch.sigmoid(self.splats["opacities"])).mean()
-                    )
-                if cfg.scale_reg > 0.0:
+                self.cfg.strategy.step_pre_backward(params=self.splats, optimizers=self.optimizers, state=self.strategy_state, step=step, info=info)
+
+            loss.backward()
+            pbar.set_description(f"loss={loss.item():.3f} sh_deg={sh_degree_to_use}")
+
+            if world_rank == 0 and step % cfg.tb_every == 0:
+                self.writer.add_scalar("train/loss", loss.item(), step)
+                self.writer.flush()
+
+            if step in [i - 1 for i in cfg.save_steps] or step == max_steps - 1:
+                data_save = {"step": step, "splats": self.splats.state_dict(), "illumination_field": self.illumination_field.state_dict(), "retinex_net": self.retinex_net.state_dict()}
+                torch.save(data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt")
+
+            for optimizer in self.optimizers.values():
+                optimizer.step()
+                optimizer.zero_grad()
+            self.illum_field_optimizer.step()
+            self.illum_field_optimizer.zero_grad()
+            if cfg.use_camera_response_network:
+                self.appearance_embeds_optimizer.step()
+                self.appearance_embeds_optimizer.zero_grad()
+                self.camera_response_optimizer.step()
+                self.camera_response_optimizer.zero_grad()
+            if cfg.use_bilateral_grid:
+                self.bilateral_grid_optimizer.step()
+                self.bilateral_grid_optimizer.zero_grad()
+
+            for scheduler in schedulers: scheduler.step()
+            self.cfg.strategy.step_post_backward(params=self.splats, optimizers=self.optimizers, state=self.strategy_state, step=step, info=info)
+
+            if step in [i - 1 for i in cfg.eval_steps]:
+                self.eval(step)
+                self.render_traj(step)
+
+    def rasterize_splats(
+            self,
+            camtoworlds: Tensor,
+            Ks: Tensor,
+            width: int,
+            height: int,
+            masks: Tensor | None = None,
+            **kwargs,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, dict[str, Any]]:
+        means = self.splats["means"]
+        quats = self.splats["quats"]
+        scales = torch.exp(self.splats["scales"])
+        opacities = torch.sigmoid(self.splats["opacities"])
+        rasterize_mode: Literal["antialiased", "classic"] = "classic"
+        colors_enh = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)
+
+        (render_colors_enh, render_colors_low, render_enh_alphas, render_low_alphas, info) = rasterization_dual(
+            means=means, quats=quats, scales=scales, opacities=opacities, colors=colors_enh, colors_low=colors_enh,
+            viewmats=torch.linalg.inv(camtoworlds.float()), Ks=Ks, width=width, height=height, packed=False,
+            absgrad=(self.cfg.strategy.absgrad if isinstance(self.cfg.strategy, DefaultStrategy) else False),
+            rasterize_mode=rasterize_mode, **kwargs,
+        )
+        return (render_colors_enh, render_colors_low, render_enh_alphas, render_low_alphas, info)
                     loss += (
                             cfg.scale_reg
                             * torch.abs(torch.exp(self.splats["scales"])).mean()
@@ -750,6 +658,10 @@ class Runner:
             self.illum_field_optimizer.step()
             self.illum_field_optimizer.zero_grad()
 
+            if cfg.use_bilateral_grid:
+                self.bilateral_grid_optimizer.step()
+                self.bilateral_grid_optimizer.zero_grad()
+
             if cfg.use_camera_response_network:
                 self.appearance_embeds_optimizer.step()
                 self.appearance_embeds_optimizer.zero_grad()
@@ -847,33 +759,41 @@ class Runner:
                 image_ids = data["image_id"].to(device)
                 embedding = self.appearance_embeds(image_ids)
                 c, d = self.camera_response_net(embedding)
-                final_color_map = (
+                final_color_map_linear = (
                         c[:, None, None, :] * scene_lit_color_map + d[:, None, None, :]
                 )
 
             else:
-                final_color_map = scene_lit_color_map
+                final_color_map_linear = scene_lit_color_map
 
-            colors_low = torch.clamp(final_color_map, 0.0, 1.0)
-            colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
+            # Convert to sRGB for evaluation
+            final_color_map_srgb = kornia.color.linear_rgb_to_srgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            reflectance_map_srgb = kornia.color.linear_rgb_to_srgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+
+            colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
+            colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
+
+            # Perform global color alignment to handle exposure/WB mismatch (as suggested by J6PW)
+            colors_low_aligned = color_correct(colors_low, pixels)
+            colors_enh_aligned = color_correct(colors_enh, pixels)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
             if world_rank == 0:
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_p = colors_low.permute(0, 3, 1, 2)
-                colors_enh_p = colors_enh.permute(0, 3, 1, 2)
+                colors_p = colors_low_aligned.permute(0, 3, 1, 2)
+                colors_enh_p = colors_enh_aligned.permute(0, 3, 1, 2)
 
                 if cfg.save_images:
-                    canvas_list_low = [pixels, colors_low]
+                    canvas_list_low = [pixels, colors_low_aligned]
 
                     canvas_eval_low = (
                         torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
                     )
                     canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
 
-                    canvas_list_enh = [pixels, colors_enh]
+                    canvas_list_enh = [pixels, colors_enh_aligned]
                     canvas_eval_enh = (
                         torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
                     )
@@ -1043,7 +963,9 @@ class Runner:
 
             renders_traj, _, _, _, _ = out
 
-            colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
+            colors_traj_linear = renders_traj[..., 0:3]
+            colors_traj_srgb = kornia.color.linear_rgb_to_srgb(colors_traj_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            colors_traj = torch.clamp(colors_traj_srgb, 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
             depths_traj_norm = (depths_traj - depths_traj.min()) / (
                     depths_traj.max() - depths_traj.min() + 1e-10
