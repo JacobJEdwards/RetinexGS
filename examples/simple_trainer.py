@@ -234,7 +234,7 @@ class Runner:
 
         # Updated optimizer to include Retinex correction net
         self.illum_field_optimizer = torch.optim.Adam(
-            list(self.illumination_field.parameters()) + list(self.retinex_net.parameters()), 
+            list(self.illumination_field.parameters()) + list(self.retinex_net.parameters()),
             lr=cfg.illumination_field_lr, fused=True
         )
 
@@ -372,7 +372,7 @@ class Runner:
                 reflectance_map = intrinsic_maps["reflectance"]
                 world_position_map = intrinsic_maps["world_position"]
                 world_normal_map = intrinsic_maps["world_normal"]
-                
+
                 view_dirs_input = None
                 if cfg.use_view_dirs:
                     cam_origin = camtoworlds.squeeze(0)[:3, 3]
@@ -445,11 +445,11 @@ class Runner:
                 loss += 0.1 * self.loss_gray_world(reflectance_map.permute(0, 3, 1, 2))
                 loss += 0.05 * self.loss_log_tv(residual_illum)
                 loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
-                
+
                 # New consistency terms
                 loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))
                 loss += 0.5 * loss_chroma_cont
-                
+
                 loss_ref_const = self.loss_patch_consistency(
                     reflectance_map.permute(0, 3, 1, 2),
                     intrinsic_maps["depth"].permute(0, 3, 1, 2),
@@ -909,8 +909,6 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         runner.train()
 
 
-BilateralGrid = None
-color_correct = None
 slice_func = None
 total_variation_loss = None
 
