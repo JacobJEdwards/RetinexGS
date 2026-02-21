@@ -425,7 +425,7 @@ class Runner:
                     grid_out = bi_slice(self.bilateral_grid, grid_xy, reflectance_map, image_ids.view(-1, 1))
                     colors_low = grid_out["rgb"]
                 else:
-                    final_color_map_srgb = kornia.color.linear_rgb_to_srgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+                    final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
                     colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
 
                 # Illumination for visualization
@@ -434,7 +434,7 @@ class Runner:
                         torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
                         + illum_b_map
                 ) * residual_illum.permute(0, 2, 3, 1)
-                illum_map = torch.clamp(kornia.color.linear_rgb_to_srgb(illum_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1), 0.0, 1.0)
+                illum_map = torch.clamp(kornia.color.linear_rgb_to_rgb(illum_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1), 0.0, 1.0)
 
                 info["means2d"].retain_grad()
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
@@ -593,8 +593,8 @@ class Runner:
                 final_color_map_linear = scene_lit_color_map
 
             # Convert to sRGB for evaluation
-            final_color_map_srgb = kornia.color.linear_rgb_to_srgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-            reflectance_map_srgb = kornia.color.linear_rgb_to_srgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            reflectance_map_srgb = kornia.color.linear_rgb_to_rgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
             colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
             colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
@@ -790,7 +790,7 @@ class Runner:
             renders_traj, _, _, _, _ = out
 
             colors_traj_linear = renders_traj[..., 0:3]
-            colors_traj_srgb = kornia.color.linear_rgb_to_srgb(colors_traj_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            colors_traj_srgb = kornia.color.linear_rgb_to_rgb(colors_traj_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
             colors_traj = torch.clamp(colors_traj_srgb, 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
             depths_traj_norm = (depths_traj - depths_traj.min()) / (
