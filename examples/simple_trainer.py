@@ -236,6 +236,28 @@ class Runner:
             list(self.illumination_field.parameters()) + list(self.retinex_net.parameters()), 
             lr=cfg.illumination_field_lr, fused=True
         )
+        
+        self.splats, self.optimizers = create_splats_with_optimizers(
+            self.parser,
+            init_type=cfg.init_type,
+            init_num_pts=cfg.init_num_pts,
+            init_extent=cfg.init_extent,
+            init_opacity=cfg.init_opa,
+            init_scale=cfg.init_scale,
+            means_lr=cfg.means_lr,
+            scales_lr=cfg.scales_lr,
+            opacities_lr=cfg.opacities_lr,
+            quats_lr=cfg.quats_lr,
+            sh0_lr=cfg.sh0_lr,
+            shN_lr=cfg.shN_lr,
+            scene_scale=self.scene_scale,
+            sh_degree=cfg.sh_degree,
+            batch_size=cfg.batch_size,
+            feature_dim=feature_dim,
+            device=self.device,
+            world_rank=world_rank,
+            world_size=world_size,
+        )
 
         self.cfg.strategy.check_sanity(self.splats, self.optimizers)
         if isinstance(self.cfg.strategy, DefaultStrategy):
