@@ -15,6 +15,8 @@ import tqdm
 import tyro
 import yaml
 from scipy import stats
+import kornia
+from lib_bilagrid import color_correct, BilateralGrid, bi_slice
 from torch import Tensor, nn, GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import (
@@ -46,6 +48,8 @@ from losses import (
     WhitePreservationLoss,
     PerceptualColorLoss,
     ChromaLoss,
+    GrayWorldLoss,
+    LogTotalVariationLoss,
 )
 from gsplat import export_splats, rasterization
 from gsplat.optimizers import SelectiveAdam
@@ -202,6 +206,8 @@ class Runner:
             gain=cfg.gain,
         ).to(self.device)
         self.loss_chroma = ChromaLoss().to(self.device)
+        self.loss_gray_world = GrayWorldLoss().to(self.device)
+        self.loss_log_tv = LogTotalVariationLoss().to(self.device)
 
 
         target_hist = torch.tensor(stats.norm.pdf(
@@ -220,6 +226,8 @@ class Runner:
             "histogram_loss": cfg.lambda_histogram,
             "variance": cfg.lambda_illum_variance,
             "chroma": cfg.lambda_chroma,
+            "gray_world": 1.0,
+            "log_tv": 0.1,
         }
 
         self.loss_names = [
@@ -284,6 +292,14 @@ class Runner:
             param_groups,
             fused=True
         )
+
+        if cfg.use_bilateral_grid:
+            self.bilateral_grid = BilateralGrid(len(self.trainset)).to(self.device)
+            self.bilateral_grid_optimizer = torch.optim.Adam(
+                self.bilateral_grid.parameters(), lr=2e-3, fused=True
+            )
+        else:
+            self.bilateral_grid = None
 
         feature_dim = None
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -391,11 +407,12 @@ class Runner:
     def get_retinex_output(
             self, pixels: Tensor, retinex_embedding: Tensor
     ) -> tuple[Tensor, Tensor, Tensor]:
-        input_image_for_net = pixels.permute(0, 3, 1, 2)
+        input_srgb = pixels.permute(0, 3, 1, 2)
+        input_linear = kornia.color.srgb_to_linear_rgb(input_srgb)
 
         log_illumination_map = checkpoint(
             self.retinex_net,
-            input_image_for_net,
+            input_srgb,
             retinex_embedding,
             use_reentrant=False,
         )
@@ -406,16 +423,15 @@ class Runner:
         if not self.cfg.allow_chromatic_illumination:
             illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-        reflectance_map = input_image_for_net / (illumination_map + 1e-6)
+        reflectance_linear = input_linear / (illumination_map + 1e-6)
 
-
-        reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
-        reflectance_map = reflectance_map.nan_to_num()
+        reflectance_linear = torch.clamp(reflectance_linear, 0.0, 1.0)
+        reflectance_linear = reflectance_linear.nan_to_num()
 
         return (
-            input_image_for_net,
+            input_srgb,
             illumination_map,
-            reflectance_map,
+            reflectance_linear,
         )
 
     def retinex_train_step(self, images_ids: Tensor, pixels: Tensor, step: int) -> tuple[
@@ -431,13 +447,16 @@ class Runner:
             reflectance_map,
         ) = self.get_retinex_output(pixels=pixels, retinex_embedding=retinex_embedding)
 
+        # Perceptual and statistical losses are often better in sRGB space
+        reflectance_srgb = kornia.color.linear_rgb_to_srgb(reflectance_map)
+
         if cfg.loss_adaptive_curve:
-            loss_adaptive_curve = self.loss_adaptive_curve(reflectance_map)
+            loss_adaptive_curve = self.loss_adaptive_curve(reflectance_srgb)
         else:
             loss_adaptive_curve = torch.tensor(0.0, device=device)
 
         if cfg.loss_exposure:
-            loss_exposure_val = self.loss_exposure(reflectance_map)
+            loss_exposure_val = self.loss_exposure(reflectance_srgb)
         else:
             loss_exposure_val = torch.tensor(0.0, device=device)
 
@@ -446,7 +465,7 @@ class Runner:
             # con_degree = (0.5 / torch.mean(pixels))
 
             loss_reflectance_spa = self.loss_spatial(
-                input_image_for_net, reflectance_map, contrast=0.5
+                input_image_for_net, reflectance_srgb, contrast=0.5
             )
         else:
             loss_reflectance_spa = torch.tensor(0.0, device=device)
@@ -460,26 +479,26 @@ class Runner:
 
         if cfg.loss_white_preservation:
             loss_white_preservation = self.loss_white_preservation(
-                input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
+                input_image=pixels, reflectance_map=reflectance_srgb.permute(0, 2,3,1),
             )
         else:
             loss_white_preservation = torch.tensor(0.0, device=device)
 
         if cfg.loss_histogram:
-            loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
+            loss_histogram = self.histogram_loss(reflectance_srgb, self.target_histogram_dist)
         else:
             loss_histogram = torch.tensor(0.0, device=device)
 
         if cfg.loss_perceptual_color:
             loss_perceptual_color = self.loss_perceptual_colour(
-                reflectance_map.permute(0, 2, 3, 1), pixels
+                reflectance_srgb.permute(0, 2, 3, 1), pixels
             )
         else:
             loss_perceptual_color = torch.tensor(0.0, device=device)
 
         if cfg.loss_variance:
             illumination_std = torch.std(illumination_map, dim=[2, 3])
-            loss_variance = -torch.mean(illumination_std) + 1e-6
+            loss_variance = torch.mean(illumination_std) # Penalty on variance = smoothness
         else:
             loss_variance = torch.tensor(0.0, device=device)
 
@@ -487,6 +506,9 @@ class Runner:
             loss_chroma = self.loss_chroma(illumination_map)
         else:
             loss_chroma = torch.tensor(0.0, device=device)
+
+        loss_gray_world = self.loss_gray_world(reflectance_srgb)
+        loss_log_tv = self.loss_log_tv(illumination_map)
 
 
         individual_losses = {
@@ -499,6 +521,8 @@ class Runner:
             "histogram_loss": loss_histogram,
             "variance": loss_variance,
             "chroma": loss_chroma,
+            "gray_world": loss_gray_world,
+            "log_tv": loss_log_tv,
         }
 
         if cfg.uncertainty_weighting:
@@ -676,8 +700,20 @@ class Runner:
 
                 gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1)
 
-                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
-                colors_low = torch.clamp(colors_low, 0.0, 1.0)
+                if cfg.use_bilateral_grid:
+                    # Apply bilateral grid slicing (Bilarf baseline)
+                    grid_y, grid_x = torch.meshgrid(
+                        torch.linspace(0, 1, height, device=device),
+                        torch.linspace(0, 1, width, device=device),
+                        indexing="ij"
+                    )
+                    grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0).expand(cfg.batch_size, -1, -1, -1)
+                    grid_out = bi_slice(self.bilateral_grid, grid_xy, colors_enh, image_ids.view(-1, 1))
+                    colors_low = grid_out["rgb"]
+                else:
+                    colors_low_linear = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
+                    colors_low_srgb = kornia.color.linear_rgb_to_srgb(colors_low_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+                    colors_low = torch.clamp(colors_low_srgb, 0.0, 1.0)
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
 
@@ -790,12 +826,18 @@ class Runner:
             self.scaler.step(self.retinex_optimiser)
             # self.retinex_optimizer.step()
 
+            if cfg.use_bilateral_grid:
+                self.scaler.step(self.bilateral_grid_optimizer)
+
             self.scaler.update()
 
             for optimizer in self.optimizers.values():
                 optimizer.zero_grad()
 
             self.retinex_optimiser.zero_grad()
+
+            if cfg.use_bilateral_grid:
+                self.bilateral_grid_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
@@ -880,7 +922,13 @@ class Runner:
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
-            colors_enh = torch.clamp(colors_enh, 0.0, 1.0)
+            # Convert to sRGB for evaluation and matching
+            colors_enh_srgb = kornia.color.linear_rgb_to_srgb(colors_enh.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            colors_enh_srgb = torch.clamp(colors_enh_srgb, 0.0, 1.0)
+
+            # Perform global color alignment to handle exposure/WB mismatch (as suggested by J6PW)
+            # This ensures we evaluate content reconstruction fairly.
+            colors_enh_aligned = color_correct(colors_enh_srgb, pixels)
 
             illumination_map = None
             colors_reconstructed = None
@@ -893,13 +941,15 @@ class Runner:
                     retinex_embedding=retinex_embedding
                 )
 
-                colors_reconstructed = colors_enh * illumination_map.permute(0, 2, 3, 1)
+                # illumination_map is linear, colors_enh is linear
+                colors_reconstructed_linear = colors_enh * illumination_map.permute(0, 2, 3, 1)
+                colors_reconstructed = kornia.color.linear_rgb_to_srgb(colors_reconstructed_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
                 colors_reconstructed = torch.clamp(colors_reconstructed, 0.0, 1.0)
 
             if world_rank == 0:
                 if cfg.save_images:
                     # Save Original Input and Enhanced Output (Reflectance)
-                    canvas_list_enh = [pixels, colors_enh]
+                    canvas_list_enh = [pixels, colors_enh_aligned]
                     canvas_eval_enh = (
                         torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
                     )
@@ -931,7 +981,7 @@ class Runner:
 
                 # Metrics
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_enh_p = colors_enh.permute(0, 3, 1, 2)
+                colors_enh_p = colors_enh_aligned.permute(0, 3, 1, 2)
 
                 metrics["lpips"].append(self.lpips(colors_enh_p, pixels_p))
                 metrics["ssim"].append(self.ssim(colors_enh_p, pixels_p))
@@ -1076,7 +1126,9 @@ class Runner:
 
             renders_traj, _, _ = out
 
-            colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
+            colors_traj_linear = renders_traj[..., 0:3]
+            colors_traj_srgb = kornia.color.linear_rgb_to_srgb(colors_traj_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            colors_traj = torch.clamp(colors_traj_srgb, 0.0, 1.0)
             depths_traj = renders_traj[..., 3:4]
             depths_traj_norm = (depths_traj - depths_traj.min()) / (
                     depths_traj.max() - depths_traj.min() + 1e-10

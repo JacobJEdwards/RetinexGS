@@ -104,6 +104,8 @@ class Config:
 
     save_images: bool = True
 
+    use_bilateral_grid: bool = False
+
     postfix: str = "_org"
 
     retinex_opt_lr: float = 0.00011

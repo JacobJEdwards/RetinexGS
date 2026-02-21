@@ -312,6 +312,34 @@ class WhitePreservationLoss(nn.Module):
 
         return loss
 
+class GrayWorldLoss(nn.Module):
+    def __init__(self):
+        super(GrayWorldLoss, self).__init__()
+
+    def forward(self, reflectance: Tensor) -> Tensor:
+        # Assumes that the average color of reflectance should be gray
+        # reflectance: [B, 3, H, W]
+        mu_r = torch.mean(reflectance[:, 0, :, :])
+        mu_g = torch.mean(reflectance[:, 1, :, :])
+        mu_b = torch.mean(reflectance[:, 2, :, :])
+        
+        mean_gray = (mu_r + mu_g + mu_b) / 3.0
+        loss = (mu_r - mean_gray).pow(2) + (mu_g - mean_gray).pow(2) + (mu_b - mean_gray).pow(2)
+        return loss
+
+class LogTotalVariationLoss(nn.Module):
+    def __init__(self, weight: float = 1.0):
+        super(LogTotalVariationLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, illumination: Tensor) -> Tensor:
+        # Operating in log domain is more robust to high dynamic range in mixed lighting
+        log_i = torch.log(illumination + 1e-6)
+        diff_h = log_i[:, :, 1:, :] - log_i[:, :, :-1, :]
+        diff_w = log_i[:, :, :, 1:] - log_i[:, :, :, :-1]
+        loss = (diff_h.pow(2).mean() + diff_w.pow(2).mean())
+        return self.weight * loss
+
 def interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
     right_indices = torch.searchsorted(xp, x, right=True)
 
