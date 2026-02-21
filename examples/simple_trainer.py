@@ -14,6 +14,7 @@ import torch
 import torch.nn.functional as F
 import tqdm
 import tyro
+from torch.utils.checkpoint import checkpoint
 import yaml
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
