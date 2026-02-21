@@ -391,6 +391,8 @@ class Runner:
                         torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
                         + illum_b_map
                 )
+                # Enforce physical constraint: Light cannot be negative
+                scene_lit_color_map = F.relu(scene_lit_color_map)
 
                 if cfg.use_camera_response_network:
                     image_ids = data["image_id"].to(device)
@@ -412,6 +414,8 @@ class Runner:
                     appearance_embedding,
                     use_reentrant=False,
                 )
+                # Prevent exponential explosion
+                log_residual_illum = torch.clamp(log_residual_illum, max=5.0)
                 residual_illum = torch.exp(log_residual_illum)
                 final_color_map_linear = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
 
@@ -425,6 +429,8 @@ class Runner:
                     grid_out = bi_slice(self.bilateral_grid, grid_xy, reflectance_map, image_ids.view(-1, 1))
                     colors_low = grid_out["rgb"]
                 else:
+                    # Prevent NaNs in sRGB conversion
+                    final_color_map_linear = torch.clamp(final_color_map_linear, min=1e-8)
                     final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
                     colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
 
@@ -581,6 +587,9 @@ class Runner:
                     torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
                     + illum_b_map
             )
+            # Enforce physical constraint in eval: Light cannot be negative
+            scene_lit_color_map = F.relu(scene_lit_color_map)
+
             if cfg.use_camera_response_network:
                 image_ids = data["image_id"].to(device)
                 embedding = self.appearance_embeds(image_ids)
@@ -592,6 +601,8 @@ class Runner:
             else:
                 final_color_map_linear = scene_lit_color_map
 
+            # Prevent NaNs in sRGB conversion
+            final_color_map_linear = torch.clamp(final_color_map_linear, min=1e-8)
             # Convert to sRGB for evaluation
             final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
             reflectance_map_srgb = kornia.color.linear_rgb_to_rgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)

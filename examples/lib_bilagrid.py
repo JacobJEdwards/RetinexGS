@@ -111,10 +111,20 @@ def color_correct(
             # Ignore rows of the linear system that were saturated in the input or are
             # saturated in the current corrected color estimate.
             mask = mask0[:, c] & is_unclipped(img_mat[:, c]) & is_unclipped(b)
-            ma_mat = torch.where(mask[:, None], a_mat, torch.zeros_like(a_mat))
-            mb = torch.where(mask, b, torch.zeros_like(b))
-            w = torch.linalg.lstsq(ma_mat, mb, rcond=-1)[0]
-            assert torch.all(torch.isfinite(w))
+
+            if mask.sum() > a_mat.shape[1]:
+                ma_mat = a_mat[mask]
+                mb = b[mask]
+                w = torch.linalg.lstsq(ma_mat, mb, rcond=-1)[0]
+            else:
+                # Fallback to identity if not enough unclipped pixels
+                w = torch.zeros(a_mat.shape[1], device=img.device)
+                w[num_channels * (num_channels + 1) // 2 + c] = 1.0
+
+            if not torch.all(torch.isfinite(w)):
+                w = torch.zeros(a_mat.shape[1], device=img.device)
+                w[num_channels * (num_channels + 1) // 2 + c] = 1.0
+
             warp.append(w)
         warp = torch.stack(warp, dim=-1)
         # Apply the warp to update img_mat.
