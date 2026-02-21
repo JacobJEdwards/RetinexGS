@@ -236,7 +236,7 @@ class Runner:
             list(self.illumination_field.parameters()) + list(self.retinex_net.parameters()), 
             lr=cfg.illumination_field_lr, fused=True
         )
-        
+
         self.splats, self.optimizers = create_splats_with_optimizers(
             self.parser,
             init_type=cfg.init_type,
@@ -253,7 +253,7 @@ class Runner:
             scene_scale=self.scene_scale,
             sh_degree=cfg.sh_degree,
             batch_size=cfg.batch_size,
-            feature_dim=feature_dim,
+            feature_dim=None,
             device=self.device,
             world_rank=world_rank,
             world_size=world_size,
