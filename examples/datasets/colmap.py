@@ -43,7 +43,6 @@ def _resize_image_folder(image_dir: str, resized_dir: str, factor: int) -> str:
         )
 
         if not os.path.exists(image_path):
-            print(f"Warning: Source image missing, skipping: {image_path}")
             continue
 
         if os.path.isfile(resized_path):
@@ -108,13 +107,12 @@ class Parser:
         manager.load_images()
         manager.load_points3D()
 
-        # Extract extrinsic matrices in world-to-camera format.
         imdata = manager.images
         w2c_mats = []
         camera_ids = []
         Ks_dict = dict()
         params_dict = dict()
-        imsize_dict = dict()  # width, height
+        imsize_dict = dict()
         mask_dict = dict()
         bottom = np.array([0, 0, 0, 1]).reshape(1, 4)
         for k in imdata:
@@ -124,18 +122,14 @@ class Parser:
             w2c = np.concatenate([np.concatenate([rot, trans], 1), bottom], axis=0)
             w2c_mats.append(w2c)
 
-            # support different camera intrinsics
             camera_id = im.camera_id
             camera_ids.append(camera_id)
-
-            # camera intrinsics
             cam = manager.cameras[camera_id]
             fx, fy, cx, cy = cam.fx, cam.fy, cam.cx, cam.cy
             K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
             K[:2, :] /= factor
             Ks_dict[camera_id] = K
 
-            # Get distortion parameters.
             type_ = cam.camera_type
             if type_ == 0 or type_ == "SIMPLE_PINHOLE":
                 params = np.empty(0, dtype=np.float32)
@@ -165,48 +159,30 @@ class Parser:
             params_dict[camera_id] = params
             imsize_dict[camera_id] = (cam.width // factor, cam.height // factor)
             mask_dict[camera_id] = None
-        print(
-            f"[Parser] {len(imdata)} images, taken by {len(set(camera_ids))} cameras."
-        )
+        print(f"[Parser] {len(imdata)} images, taken by {len(set(camera_ids))} cameras.")
 
         if len(imdata) == 0:
             raise ValueError("No images found in COLMAP.")
-        if not (type_ == 0 or type_ == 1):
-            print("Warning: COLMAP Camera is not PINHOLE. Images have distortion.")
 
         w2c_mats = np.stack(w2c_mats, axis=0)
-
-        # Convert extrinsics to camera-to-world.
         camtoworlds = np.linalg.inv(w2c_mats)
-
-        # Image names from COLMAP. No need for permuting the poses according to
-        # image names anymore.
         image_names = [imdata[k].name for k in imdata]
-
-        # Previous Nerf results were generated with images sorted by filename,
-        # ensure metrics are reported on the same test set.
         inds = np.argsort(image_names)
         image_names = [image_names[i] for i in inds]
         camtoworlds = camtoworlds[inds]
         camera_ids = [camera_ids[i] for i in inds]
 
-        # Load extended metadata. Used by Bilarf dataset.
-        self.extconf = {
-            "spiral_radius_scale": 1.0,
-            "no_factor_suffix": False,
-        }
+        self.extconf = {"spiral_radius_scale": 1.0, "no_factor_suffix": False}
         extconf_file = os.path.join(data_dir, "ext_metadata.json")
         if os.path.exists(extconf_file):
             with open(extconf_file) as f:
                 self.extconf.update(json.load(f))
 
-        # Load bounds if possible (only used in forward facing scenes).
         self.bounds = np.array([0.01, 1.0])
         posefile = os.path.join(data_dir, "poses_bounds.npy")
         if os.path.exists(posefile):
             self.bounds = np.load(posefile)[:, -2:]
 
-        # Load images.
         if factor > 1 and not self.extconf["no_factor_suffix"]:
             image_dir_suffix = f"_{factor}"
         else:
@@ -217,24 +193,57 @@ class Parser:
         valid_image_paths = []
         self.original_image_paths = []
 
-        def get_actual_image_path(base_name: str, target_dir: str) -> Optional[str]:
-            """Check if the resized .png exists, otherwise fallback to the original extension."""
-            base_no_ext, _ = os.path.splitext(base_name)
-            png_path = os.path.join(target_dir, base_no_ext + ".png")
-            if os.path.exists(png_path):
-                return png_path
-            orig_ext_path = os.path.join(target_dir, base_name)
-            if os.path.exists(orig_ext_path):
-                return orig_ext_path
-            return None
+        def get_actual_image_path(base_name: str, target_dir: str, source_dir: str, scale_factor: int) -> Optional[str]:
+            """Check if resized image exists. If missing, look in source and resize on-the-fly."""
+            base_no_ext, orig_ext = os.path.splitext(base_name)
+
+            # 1. Search in the target resized directory
+            for ext in [".png", ".PNG", orig_ext, ".jpg", ".JPG", ".jpeg"]:
+                path = os.path.join(target_dir, base_no_ext + ext)
+                if os.path.exists(path):
+                    return path
+
+            # 2. Not found in target. Check if the original exists in the source directory
+            orig_src_path = os.path.join(source_dir, base_name)
+            if not os.path.exists(orig_src_path):
+                # Try case insensitive extensions in source
+                for ext in [orig_ext.lower(), orig_ext.upper(), ".JPG", ".jpg", ".png"]:
+                    alt_path = os.path.join(source_dir, base_no_ext + ext)
+                    if os.path.exists(alt_path):
+                        orig_src_path = alt_path
+                        break
+                else:
+                    return None # Fully missing
+
+            # 3. Exists in source but missing in resized dir? Generate it right now.
+            if scale_factor > 1:
+                print(f"Missing resized image for '{base_name}'. Generating on-the-fly in {target_dir}...")
+                os.makedirs(target_dir, exist_ok=True)
+                try:
+                    image = imageio.imread(orig_src_path)[..., :3]
+                    resized_size = (
+                        int(round(image.shape[1] / scale_factor)),
+                        int(round(image.shape[0] / scale_factor)),
+                    )
+                    resized_image = np.array(
+                        Image.fromarray(image).resize(resized_size, Image.BICUBIC)
+                    )
+                    resized_path = os.path.join(target_dir, base_no_ext + ".png")
+                    imageio.imwrite(resized_path, resized_image)
+                    return resized_path
+                except Exception as e:
+                    print(f"Failed to resize {orig_src_path}: {e}")
+                    return None
+            else:
+                return orig_src_path
 
         if train_image_dir is not None and test_image_dir is not None:
             print("[Parser] Using separate train and test image directories.")
 
-            # Create target directories if resizing is needed
             train_target_dir = train_image_dir + image_dir_suffix if image_dir_suffix else train_image_dir
             test_target_dir = test_image_dir + image_dir_suffix if image_dir_suffix else test_image_dir
 
+            # Initial bulk resize attempt if folders don't exist
             if factor > 1:
                 if not os.path.exists(train_target_dir):
                     _resize_image_folder(train_image_dir, train_target_dir, factor)
@@ -247,12 +256,12 @@ class Parser:
                 orig_path = None
 
                 if name in self.train_filenames:
-                    img_path = get_actual_image_path(name, train_target_dir)
+                    img_path = get_actual_image_path(name, train_target_dir, train_image_dir, factor)
                     if img_path:
                         orig_path = os.path.join(train_image_dir, name)
                         matched = True
                 elif name in self.test_filenames:
-                    img_path = get_actual_image_path(name, test_target_dir)
+                    img_path = get_actual_image_path(name, test_target_dir, test_image_dir, factor)
                     if img_path:
                         orig_path = os.path.join(test_image_dir, name)
                         matched = True
@@ -263,8 +272,8 @@ class Parser:
                     valid_image_paths.append(img_path)
                     self.original_image_paths.append(orig_path)
                 else:
-                    if len(valid_indices) < 5:  # Print first few failures to avoid spam
-                        print(f"Warning: Image '{name}' not found. Train? {name in self.train_filenames}, Test? {name in self.test_filenames}")
+                    if len(valid_indices) < 10:
+                        print(f"Warning: Image '{name}' completely missing in both Source and Target directories. Train? {name in self.train_filenames}, Test? {name in self.test_filenames}")
 
         else:
             colmap_image_dir = os.path.join(data_dir, "images")
@@ -272,42 +281,27 @@ class Parser:
 
             if not os.path.exists(colmap_image_dir):
                 raise ValueError(f"Source image folder {colmap_image_dir} does not exist.")
-
             if not os.path.exists(image_dir) and factor > 1:
-                print(f"Target folder {image_dir} not found. Generating...")
                 _resize_image_folder(colmap_image_dir, image_dir, factor)
 
-            colmap_files = sorted(_get_rel_paths(colmap_image_dir))
-            image_files = sorted(_get_rel_paths(image_dir))
-
-            if factor > 1 and len(image_files) > 0 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
-                image_dir = _resize_image_folder(
-                    colmap_image_dir, image_dir + "_png", factor=factor
-                )
-                image_files = sorted(_get_rel_paths(image_dir))
-            colmap_to_image = dict(zip(colmap_files, image_files))
-
             for i, name in enumerate(image_names):
-                if name in colmap_to_image:
-                    img_path = os.path.join(image_dir, colmap_to_image[name])
-                    if os.path.exists(img_path):
-                        valid_indices.append(i)
-                        valid_image_names.append(name)
-                        valid_image_paths.append(img_path)
-                        self.original_image_paths.append(os.path.join(colmap_image_dir, name))
+                img_path = get_actual_image_path(name, image_dir, colmap_image_dir, factor)
+                if img_path:
+                    valid_indices.append(i)
+                    valid_image_names.append(name)
+                    valid_image_paths.append(img_path)
+                    self.original_image_paths.append(os.path.join(colmap_image_dir, name))
                 else:
-                    if len(valid_indices) == 0:
+                    if len(valid_indices) < 5:
                         print(f"Warning: Image '{name}' found in COLMAP but not in {image_dir}")
 
         print(f"[Parser] Validated {len(valid_indices)} files on disk against {len(image_names)} from COLMAP.")
         if len(valid_indices) < len(image_names):
             print(f"[Parser] Dropping {len(image_names) - len(valid_indices)} missing images.")
 
-        # 2. Overwrite the lists with only the valid entries
         image_names = valid_image_names
         image_paths = valid_image_paths
 
-        # 3. Filter the other parallel arrays using the valid indices
         camtoworlds = camtoworlds[np.array(valid_indices)]
         camera_ids = [camera_ids[i] for i in valid_indices]
 
@@ -326,7 +320,6 @@ class Parser:
             k: np.array(v).astype(np.int32) for k, v in point_indices.items()
         }
 
-        # Normalize the world space.
         if normalize:
             T1 = similarity_from_cameras(camtoworlds)
             camtoworlds = transform_cameras(T1, camtoworlds)
@@ -338,11 +331,7 @@ class Parser:
 
             transform = T2 @ T1
 
-            # Fix for up side down. We assume more points towards
-            # the bottom of the scene which is true when ground floor is
-            # present in the images.
             if np.median(points[:, 2]) > np.mean(points[:, 2]):
-                # rotate 180 degrees around x axis such that z is flipped
                 T3 = np.array(
                     [
                         [1.0, 0.0, 0.0, 0.0],
@@ -357,35 +346,30 @@ class Parser:
         else:
             transform = np.eye(4)
 
-        self.image_names = image_names  # List[str], (num_images,)
-        self.image_paths = image_paths  # List[str], (num_images,)
-        self.camtoworlds = camtoworlds  # np.ndarray, (num_images, 4, 4)
-        self.camera_ids = camera_ids  # List[int], (num_images,)
-        self.Ks_dict = Ks_dict  # Dict of camera_id -> K
-        self.params_dict = params_dict  # Dict of camera_id -> params
-        self.imsize_dict = imsize_dict  # Dict of camera_id -> (width, height)
-        self.mask_dict = mask_dict  # Dict of camera_id -> mask
-        self.points = points  # np.ndarray, (num_points, 3)
-        self.points_err = points_err  # np.ndarray, (num_points,)
-        self.points_rgb = points_rgb  # np.ndarray, (num_points, 3)
-        self.point_indices = point_indices  # Dict[str, np.ndarray], image_name -> [M,]
-        self.transform = transform  # np.ndarray, (4, 4)
+        self.image_names = image_names
+        self.image_paths = image_paths
+        self.camtoworlds = camtoworlds
+        self.camera_ids = camera_ids
+        self.Ks_dict = Ks_dict
+        self.params_dict = params_dict
+        self.imsize_dict = imsize_dict
+        self.mask_dict = mask_dict
+        self.points = points
+        self.points_err = points_err
+        self.points_rgb = points_rgb
+        self.point_indices = point_indices
+        self.transform = transform
 
-        # Create 0-based contiguous camera indices from COLMAP camera_ids.
-        # This is useful for camera-based embeddings/modules.
         unique_camera_ids = sorted(set(camera_ids))
         self.camera_id_to_idx = {cid: idx for idx, cid in enumerate(unique_camera_ids)}
         self.camera_indices = [self.camera_id_to_idx[cid] for cid in camera_ids]
         self.num_cameras = len(unique_camera_ids)
 
-        # Load EXIF exposure data if requested.
-        # Read from original (non-downscaled) image directories mapped previously.
         if load_exposure:
             exposure_values: List[Optional[float]] = []
             for original_path in tqdm(self.original_image_paths, desc="Loading EXIF exposure"):
                 exposure_values.append(compute_exposure_from_exif(Path(original_path)))
 
-            # Compute mean across all valid exposures and subtract
             valid_exposures = [e for e in exposure_values if e is not None]
             if valid_exposures:
                 exposure_mean = sum(valid_exposures) / len(valid_exposures)
@@ -403,8 +387,6 @@ class Parser:
         else:
             self.exposure_values = [None] * len(image_paths)
 
-        # load one image to check the size. In the case of tanksandtemples dataset, the
-        # intrinsics stored in COLMAP corresponds to 2x upsampled images.
         actual_image = imageio.imread(self.image_paths[0])[..., :3]
         actual_height, actual_width = actual_image.shape[:2]
         colmap_width, colmap_height = self.imsize_dict[self.camera_ids[0]]
@@ -416,14 +398,13 @@ class Parser:
             width, height = self.imsize_dict[camera_id]
             self.imsize_dict[camera_id] = (int(width * s_width), int(height * s_height))
 
-        # undistortion
         self.mapx_dict = dict()
         self.mapy_dict = dict()
         self.roi_undist_dict = dict()
         for camera_id in self.params_dict.keys():
             params = self.params_dict[camera_id]
             if len(params) == 0:
-                continue  # no distortion
+                continue
             assert camera_id in self.Ks_dict, f"Missing K for camera {camera_id}"
             assert (
                     camera_id in self.params_dict
@@ -462,7 +443,6 @@ class Parser:
                 mapx = (fx * x1 * r + width // 2).astype(np.float32)
                 mapy = (fy * y1 * r + height // 2).astype(np.float32)
 
-                # Use mask to define ROI
                 mask = np.logical_and(
                     np.logical_and(mapx > 0, mapy > 0),
                     np.logical_and(mapx < width - 1, mapy < height - 1),
@@ -485,7 +465,6 @@ class Parser:
             self.imsize_dict[camera_id] = (roi_undist[2], roi_undist[3])
             self.mask_dict[camera_id] = mask
 
-        # size of the scene measured by cameras
         camera_locations = camtoworlds[:, :3, 3]
         scene_center = np.mean(camera_locations, axis=0)
         dists = np.linalg.norm(camera_locations - scene_center, axis=1)
@@ -529,7 +508,6 @@ class Dataset:
                     print(f"Sample loaded image: {self.parser.image_names[0]}")
 
         else:
-            # Fallback to original modulo logic if text files are missing
             if split == "train":
                 self.indices = indices[indices % self.parser.test_every != 0]
             else:
@@ -543,13 +521,12 @@ class Dataset:
         index = self.indices[item]
         image = imageio.imread(self.parser.image_paths[index])[..., :3]
         camera_id = self.parser.camera_ids[index]
-        K = self.parser.Ks_dict[camera_id].copy()  # undistorted K
+        K = self.parser.Ks_dict[camera_id].copy()
         params = self.parser.params_dict[camera_id]
         camtoworlds = self.parser.camtoworlds[index]
         mask = self.parser.mask_dict[camera_id]
 
         if len(params) > 0:
-            # Images are distorted. Undistort them.
             mapx, mapy = (
                 self.parser.mapx_dict[camera_id],
                 self.parser.mapy_dict[camera_id],
@@ -559,7 +536,6 @@ class Dataset:
             image = image[y : y + h, x : x + w]
 
         if self.patch_size is not None:
-            # Random crop.
             h, w = image.shape[:2]
             x = np.random.randint(0, max(w - self.patch_size, 1))
             y = np.random.randint(0, max(h - self.patch_size, 1))
@@ -571,30 +547,27 @@ class Dataset:
             "K": torch.from_numpy(K).float(),
             "camtoworld": torch.from_numpy(camtoworlds).float(),
             "image": torch.from_numpy(image).float(),
-            "image_id": item,  # the index of the image in the dataset
+            "image_id": item,
             "camera_idx": self.parser.camera_indices[
                 index
-            ],  # 0-based contiguous camera index
+            ],
         }
         if mask is not None:
             data["mask"] = torch.from_numpy(mask).bool()
 
-        # Add exposure if available for this image
         exposure = self.parser.exposure_values[index]
         if exposure is not None:
             data["exposure"] = torch.tensor(exposure, dtype=torch.float32)
 
         if self.load_depths:
-            # projected points to image plane to get depths
             worldtocams = np.linalg.inv(camtoworlds)
             image_name = self.parser.image_names[index]
             point_indices = self.parser.point_indices[image_name]
             points_world = self.parser.points[point_indices]
             points_cam = (worldtocams[:3, :3] @ points_world.T + worldtocams[:3, 3:4]).T
             points_proj = (K @ points_cam.T).T
-            points = points_proj[:, :2] / points_proj[:, 2:3]  # (M, 2)
-            depths = points_cam[:, 2]  # (M,)
-            # filter out points outside the image
+            points = points_proj[:, :2] / points_proj[:, 2:3]
+            depths = points_cam[:, 2]
             selector = (
                     (points[:, 0] >= 0)
                     & (points[:, 0] < image.shape[1])
