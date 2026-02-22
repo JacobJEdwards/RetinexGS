@@ -3,21 +3,21 @@
 BASE="/workspace/datasets"
 
 DATASETS=(
-#      "Circular-bench"
-#      "chair"
-#      "4logs-earlham-park"
+      "Circular-bench"
+      "chair"
+      "4logs-earlham-park"
+      "plastic-cart-130-vert-shade"
+      "robot-under-over-exposure"
+      "Rocks2"
+      "robot-recapture"
+      "plastic-cart-130deg"
+      "Log-hicontrast"
+      "log"
+      "rocks"
+      "split-in-half-tree"
+      "small-tree"
+      "small-tree-2"
       "log-earlham-park"
-#      "plastic-cart-130-vert-shade"
-#      "robot-under-over-exposure"
-#      "Rocks2"
-#      "robot-recapture"
-#      "plastic-cart-130deg"
-#      "Log-hicontrast"
-#      "log"
-#      "rocks"
-#      "split-in-half-tree"
-#      "small-tree"
-#      "small-tree-2"
 )
 
 for DATA in "${DATASETS[@]}"; do
@@ -33,6 +33,6 @@ for DATA in "${DATASETS[@]}"; do
     # 3. PPISP
     python simple_trainer.py mcmc --data-dir "$DIR" --result-dir "$DIR/results/ppisp" --post-processing ppisp
 
-     4. GS-W (App Opt)
+#     4. GS-W (App Opt)
     python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gs-w" --app-opt
 done

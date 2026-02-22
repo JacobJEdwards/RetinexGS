@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import cv2
 import imageio.v2 as imageio
@@ -66,6 +66,8 @@ class Parser:
     def __init__(
             self,
             data_dir: str,
+            train_image_dir: Optional[str] = None,
+            test_image_dir: Optional[str] = None,
             factor: int = 1,
             normalize: bool = False,
             test_every: int = 8,
@@ -141,7 +143,7 @@ class Parser:
             elif type_ == 1 or type_ == "PINHOLE":
                 params = np.empty(0, dtype=np.float32)
                 camtype = "perspective"
-            if type_ == 2 or type_ == "SIMPLE_RADIAL":
+            elif type_ == 2 or type_ == "SIMPLE_RADIAL":
                 params = np.array([cam.k1, 0.0, 0.0, 0.0], dtype=np.float32)
                 camtype = "perspective"
             elif type_ == 3 or type_ == "RADIAL":
@@ -210,52 +212,89 @@ class Parser:
         else:
             image_dir_suffix = ""
 
-        colmap_image_dir = os.path.join(data_dir, "images")
-        image_dir = os.path.join(data_dir, "images" + image_dir_suffix)
-
-        if not os.path.exists(colmap_image_dir):
-            raise ValueError(f"Source image folder {colmap_image_dir} does not exist.")
-
-        # 2. If target directory doesn't exist, create it immediately
-        if not os.path.exists(image_dir) and factor > 1:
-            print(f"Target folder {image_dir} not found. Generating...")
-            _resize_image_folder(colmap_image_dir, image_dir, factor)
-
-        for d in [image_dir, colmap_image_dir]:
-            if not os.path.exists(d):
-                raise ValueError(f"Image folder {d} does not exist.")
-
-        # Downsampled images may have different names vs images used for COLMAP,
-        # so we need to map between the two sorted lists of files.
-        colmap_files = sorted(_get_rel_paths(colmap_image_dir))
-        image_files = sorted(_get_rel_paths(image_dir))
-
-        if factor > 1 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
-            image_dir = _resize_image_folder(
-                colmap_image_dir, image_dir + "_png", factor=factor
-            )
-            image_files = sorted(_get_rel_paths(image_dir))
-        colmap_to_image = dict(zip(colmap_files, image_files))
-
         valid_indices = []
         valid_image_names = []
         valid_image_paths = []
+        self.original_image_paths = []
 
-        print(f"[Parser] Checking {len(image_names)} images from COLMAP against {len(colmap_to_image)} files on disk...")
+        if train_image_dir is not None and test_image_dir is not None:
+            print("[Parser] Using separate train and test image directories.")
 
-        for i, name in enumerate(image_names):
-            if name in colmap_to_image:
-                # Check if the actual file exists just to be safe
-                img_path = os.path.join(image_dir, colmap_to_image[name])
-                if os.path.exists(img_path):
+            def setup_dir(src_dir):
+                if not os.path.exists(src_dir):
+                    raise ValueError(f"Source image folder {src_dir} does not exist.")
+                target_dir = src_dir + image_dir_suffix if image_dir_suffix else src_dir
+
+                if not os.path.exists(target_dir) and factor > 1:
+                    print(f"Target folder {target_dir} not found. Generating...")
+                    _resize_image_folder(src_dir, target_dir, factor)
+
+                src_files = sorted(_get_rel_paths(src_dir))
+                tgt_files = sorted(_get_rel_paths(target_dir))
+
+                if factor > 1 and len(tgt_files) > 0 and os.path.splitext(tgt_files[0])[1].lower() == ".jpg":
+                    target_dir = _resize_image_folder(src_dir, target_dir + "_png", factor=factor)
+                    tgt_files = sorted(_get_rel_paths(target_dir))
+
+                return target_dir, dict(zip(src_files, tgt_files))
+
+            train_target_dir, train_src_to_tgt = setup_dir(train_image_dir)
+            test_target_dir, test_src_to_tgt = setup_dir(test_image_dir)
+
+            for i, name in enumerate(image_names):
+                matched = False
+                if name in self.train_filenames and name in train_src_to_tgt:
+                    img_path = os.path.join(train_target_dir, train_src_to_tgt[name])
+                    orig_path = os.path.join(train_image_dir, name)
+                    matched = True
+                elif name in self.test_filenames and name in test_src_to_tgt:
+                    img_path = os.path.join(test_target_dir, test_src_to_tgt[name])
+                    orig_path = os.path.join(test_image_dir, name)
+                    matched = True
+
+                if matched and os.path.exists(img_path):
                     valid_indices.append(i)
                     valid_image_names.append(name)
                     valid_image_paths.append(img_path)
-            else:
-                # Optional: Print first few missing files to help debug
-                if len(valid_indices) == 0:
-                    print(f"Warning: Image '{name}' found in COLMAP but not in {image_dir}")
+                    self.original_image_paths.append(orig_path)
+                else:
+                    if len(valid_indices) == 0:
+                        print(f"Warning: Image '{name}' found in COLMAP but not matched in train/test dirs.")
 
+        else:
+            colmap_image_dir = os.path.join(data_dir, "images")
+            image_dir = os.path.join(data_dir, "images" + image_dir_suffix)
+
+            if not os.path.exists(colmap_image_dir):
+                raise ValueError(f"Source image folder {colmap_image_dir} does not exist.")
+
+            if not os.path.exists(image_dir) and factor > 1:
+                print(f"Target folder {image_dir} not found. Generating...")
+                _resize_image_folder(colmap_image_dir, image_dir, factor)
+
+            colmap_files = sorted(_get_rel_paths(colmap_image_dir))
+            image_files = sorted(_get_rel_paths(image_dir))
+
+            if factor > 1 and len(image_files) > 0 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
+                image_dir = _resize_image_folder(
+                    colmap_image_dir, image_dir + "_png", factor=factor
+                )
+                image_files = sorted(_get_rel_paths(image_dir))
+            colmap_to_image = dict(zip(colmap_files, image_files))
+
+            for i, name in enumerate(image_names):
+                if name in colmap_to_image:
+                    img_path = os.path.join(image_dir, colmap_to_image[name])
+                    if os.path.exists(img_path):
+                        valid_indices.append(i)
+                        valid_image_names.append(name)
+                        valid_image_paths.append(img_path)
+                        self.original_image_paths.append(os.path.join(colmap_image_dir, name))
+                else:
+                    if len(valid_indices) == 0:
+                        print(f"Warning: Image '{name}' found in COLMAP but not in {image_dir}")
+
+        print(f"[Parser] Validated {len(valid_indices)} files on disk against {len(image_names)} from COLMAP.")
         if len(valid_indices) < len(image_names):
             print(f"[Parser] Dropping {len(image_names) - len(valid_indices)} missing images.")
 
@@ -335,12 +374,11 @@ class Parser:
         self.num_cameras = len(unique_camera_ids)
 
         # Load EXIF exposure data if requested.
-        # Always read from original (non-downscaled) images since PNG doesn't support EXIF.
+        # Read from original (non-downscaled) image directories mapped previously.
         if load_exposure:
             exposure_values: List[Optional[float]] = []
-            for image_name in tqdm(image_names, desc="Loading EXIF exposure"):
-                original_path = Path(colmap_image_dir) / image_name
-                exposure_values.append(compute_exposure_from_exif(original_path))
+            for original_path in tqdm(self.original_image_paths, desc="Loading EXIF exposure"):
+                exposure_values.append(compute_exposure_from_exif(Path(original_path)))
 
             # Compute mean across all valid exposures and subtract
             valid_exposures = [e for e in exposure_values if e is not None]
@@ -577,16 +615,24 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data/360_v2/garden")
+    parser.add_argument("--train_image_dir", type=str, default=None, help="Directory containing the training images.")
+    parser.add_argument("--test_image_dir", type=str, default=None, help="Directory containing the testing images.")
     parser.add_argument("--factor", type=int, default=4)
     args = parser.parse_args()
 
     # Parse COLMAP data.
     parser = Parser(
-        data_dir=args.data_dir, factor=args.factor, normalize=True, test_every=8
+        data_dir=args.data_dir,
+        train_image_dir=args.train_image_dir,
+        test_image_dir=args.test_image_dir,
+        factor=args.factor,
+        normalize=True,
+        test_every=8
     )
     dataset = Dataset(parser, split="train", load_depths=True)
     print(f"Dataset: {len(dataset)} images.")
 
+    os.makedirs("results", exist_ok=True)
     writer = imageio.get_writer("results/points.mp4", fps=30)
     for data in tqdm(dataset, desc="Plotting points"):
         image = data["image"].numpy().astype(np.uint8)
