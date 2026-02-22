@@ -58,6 +58,8 @@ class Config:
     data_factor: int = 4
     # Directory to save results
     result_dir: str = "results/garden"
+    train_image_dir: str = ""
+    test_image_dir: str = ""
     # Every N images there is a test image
     test_every: int = 8
     # Random crop size for training  (experimental)
@@ -354,6 +356,8 @@ class Runner:
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
             load_exposure=cfg.load_exposure,
+            train_image_dir=cfg.train_image_dir,
+            test_image_dir=cfg.test_image_dir,
         )
         self.trainset = Dataset(
             self.parser,

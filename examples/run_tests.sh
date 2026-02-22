@@ -20,19 +20,28 @@ DATASETS=(
       "log-earlham-park"
 )
 
+TRAIN_IMAGE_DIRS = (
+      "retinexformer_FiveK"
+      "retinexformer_MST_Plus_Plus_4x1800"
+      "retinexformer_SDSD_outdoor"
+      "retinexformer_LOL_v1"
+      "retinexformer_MST_Plus_Plus_8x1150"
+      "retinexformer_SID"
+      "retinexformer_LOL_v2_real"
+      "retinexformer_NTIRE"
+      "retinexformer_SMID"
+      "retinexformer_LOL_v2_synthetic"
+      "retinexformer_SDSD_indoor"
+)
+
 for DATA in "${DATASETS[@]}"; do
-    echo "Processing: $DATA"
+  for TRAIN_IMAGE_DIR in "${TRAIN_IMAGE_DIRS[@]}"; do
+    echo "Processing: $DATA with $TRAIN_IMAGE_DIR"
+
     DIR="$BASE/$DATA"
+    TRAIN_DIR = "$DIR/retinex/$TRAIN_IMAGE_DIR"
+    TEST_DIR = "$DIR/images"
 
     # 1. Standard gsplat
-    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gsplat"
-
-    # 2. Bilateral Grid
-    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/bilateral_grid" --post-processing bilateral_grid
-
-    # 3. PPISP
-    python simple_trainer.py mcmc --data-dir "$DIR" --result-dir "$DIR/results/ppisp" --post-processing ppisp
-
-#     4. GS-W (App Opt)
-    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gs-w" --app-opt
+    python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/retinexformer/$TRAIN_IMAGE_DIR" --train-image-dir "$TRAIN_DIR" --test-image-dir "$TEST_DIR"
 done
