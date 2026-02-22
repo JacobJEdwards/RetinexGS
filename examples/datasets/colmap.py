@@ -217,49 +217,54 @@ class Parser:
         valid_image_paths = []
         self.original_image_paths = []
 
+        def get_actual_image_path(base_name: str, target_dir: str) -> Optional[str]:
+            """Check if the resized .png exists, otherwise fallback to the original extension."""
+            base_no_ext, _ = os.path.splitext(base_name)
+            png_path = os.path.join(target_dir, base_no_ext + ".png")
+            if os.path.exists(png_path):
+                return png_path
+            orig_ext_path = os.path.join(target_dir, base_name)
+            if os.path.exists(orig_ext_path):
+                return orig_ext_path
+            return None
+
         if train_image_dir is not None and test_image_dir is not None:
             print("[Parser] Using separate train and test image directories.")
 
-            def setup_dir(src_dir):
-                if not os.path.exists(src_dir):
-                    raise ValueError(f"Source image folder {src_dir} does not exist.")
-                target_dir = src_dir + image_dir_suffix if image_dir_suffix else src_dir
+            # Create target directories if resizing is needed
+            train_target_dir = train_image_dir + image_dir_suffix if image_dir_suffix else train_image_dir
+            test_target_dir = test_image_dir + image_dir_suffix if image_dir_suffix else test_image_dir
 
-                if not os.path.exists(target_dir) and factor > 1:
-                    print(f"Target folder {target_dir} not found. Generating...")
-                    _resize_image_folder(src_dir, target_dir, factor)
-
-                src_files = sorted(_get_rel_paths(src_dir))
-                tgt_files = sorted(_get_rel_paths(target_dir))
-
-                if factor > 1 and len(tgt_files) > 0 and os.path.splitext(tgt_files[0])[1].lower() == ".jpg":
-                    target_dir = _resize_image_folder(src_dir, target_dir + "_png", factor=factor)
-                    tgt_files = sorted(_get_rel_paths(target_dir))
-
-                return target_dir, dict(zip(src_files, tgt_files))
-
-            train_target_dir, train_src_to_tgt = setup_dir(train_image_dir)
-            test_target_dir, test_src_to_tgt = setup_dir(test_image_dir)
+            if factor > 1:
+                if not os.path.exists(train_target_dir):
+                    _resize_image_folder(train_image_dir, train_target_dir, factor)
+                if not os.path.exists(test_target_dir):
+                    _resize_image_folder(test_image_dir, test_target_dir, factor)
 
             for i, name in enumerate(image_names):
                 matched = False
-                if name in self.train_filenames and name in train_src_to_tgt:
-                    img_path = os.path.join(train_target_dir, train_src_to_tgt[name])
-                    orig_path = os.path.join(train_image_dir, name)
-                    matched = True
-                elif name in self.test_filenames and name in test_src_to_tgt:
-                    img_path = os.path.join(test_target_dir, test_src_to_tgt[name])
-                    orig_path = os.path.join(test_image_dir, name)
-                    matched = True
+                img_path = None
+                orig_path = None
 
-                if matched and os.path.exists(img_path):
+                if name in self.train_filenames:
+                    img_path = get_actual_image_path(name, train_target_dir)
+                    if img_path:
+                        orig_path = os.path.join(train_image_dir, name)
+                        matched = True
+                elif name in self.test_filenames:
+                    img_path = get_actual_image_path(name, test_target_dir)
+                    if img_path:
+                        orig_path = os.path.join(test_image_dir, name)
+                        matched = True
+
+                if matched and img_path and orig_path:
                     valid_indices.append(i)
                     valid_image_names.append(name)
                     valid_image_paths.append(img_path)
                     self.original_image_paths.append(orig_path)
                 else:
-                    if len(valid_indices) == 0:
-                        print(f"Warning: Image '{name}' found in COLMAP but not matched in train/test dirs.")
+                    if len(valid_indices) < 5:  # Print first few failures to avoid spam
+                        print(f"Warning: Image '{name}' not found. Train? {name in self.train_filenames}, Test? {name in self.test_filenames}")
 
         else:
             colmap_image_dir = os.path.join(data_dir, "images")

@@ -20,7 +20,7 @@ DATASETS=(
 #      "log-earlham-park"
 )
 
-TRAIN_IMAGE_DIRS = (
+TRAIN_IMAGE_DIRS=(
       "retinexformer_FiveK"
       "retinexformer_MST_Plus_Plus_4x1800"
       "retinexformer_SDSD_outdoor"
@@ -39,9 +39,10 @@ for DATA in "${DATASETS[@]}"; do
     echo "Processing: $DATA with $TRAIN_IMAGE_DIR"
 
     DIR="$BASE/$DATA"
-    TRAIN_DIR = "$DIR/retinex/$TRAIN_IMAGE_DIR"
-    TEST_DIR = "$DIR/images"
+    TRAIN_DIR="$DIR/retinex/$TRAIN_IMAGE_DIR"
+    TEST_DIR="$DIR/images"
 
     # 1. Standard gsplat
     python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/retinexformer/$TRAIN_IMAGE_DIR" --train-image-dir "$TRAIN_DIR" --test-image-dir "$TEST_DIR"
+  done
 done
