@@ -439,11 +439,12 @@ class Runner:
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                loss += 0.05 * self.loss_log_tv(residual_illum)
-                loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
+                loss += 0.0 * self.loss_log_tv(residual_illum)
+                loss += 0.1 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3,
+                                                                                                                1, 2))
 
                 loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))
-                loss += 0.5 * loss_chroma_cont
+                loss += 0.05 * loss_chroma_cont
 
                 loss_ref_const = self.loss_patch_consistency(
                     reflectance_map.permute(0, 3, 1, 2),
@@ -596,29 +597,29 @@ class Runner:
             colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
             colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
 
-            colors_low_aligned = color_correct(colors_low, pixels)
-            colors_enh_aligned = color_correct(colors_enh, pixels)
+            # colors_low_aligned = color_correct(colors_low, pixels)
+            # colors_enh_aligned = color_correct(colors_enh, pixels)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
 
             if world_rank == 0:
                 pixels_p = pixels.permute(0, 3, 1, 2)
-                colors_p = colors_low_aligned.permute(0, 3, 1, 2)
-                colors_enh_p = colors_enh_aligned.permute(0, 3, 1, 2)
+                colors_p = colors_low.permute(0, 3, 1, 2)
+                colors_enh_p = colors_enh.permute(0, 3, 1, 2)
                 orig_name = data["image_name"][0]  # batch_size=1 so it's a 1-element list
                 orig_stem = os.path.splitext(orig_name)[0]
                 orig_stem = orig_stem.replace("/", "_").replace("\\", "_")  # safe for folders
 
                 if cfg.save_images:
-                    canvas_list_low = [pixels, colors_low_aligned]
+                    canvas_list_low = [pixels, colors_low]
 
                     canvas_eval_low = (
                         torch.cat(canvas_list_low, dim=2).squeeze(0).cpu().numpy()
                     )
                     canvas_eval_low = (canvas_eval_low * 255).astype(np.uint8)
 
-                    canvas_list_enh = [pixels, colors_enh_aligned]
+                    canvas_list_enh = [pixels, colors_enh]
                     canvas_eval_enh = (
                         torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
                     )
@@ -768,8 +769,11 @@ class Runner:
 
         video_dir = f"{cfg.result_dir}/videos"
         os.makedirs(video_dir, exist_ok=True)
-        video_path = f"{video_dir}/traj_{step}.mp4"
-        video_writer = imageio.get_writer(video_path, fps=30)
+
+        video_path_color = f"{video_dir}/traj_{step}_color.mp4"
+        video_path_depth = f"{video_dir}/traj_{step}_depth.mp4"
+        video_writer_color = imageio.get_writer(video_path_color, fps=30)
+        video_writer_depth = imageio.get_writer(video_path_depth, fps=30)
 
         for i in tqdm.trange(len(camtoworlds_all_torch), desc="Rendering trajectory"):
             cam_c2w = camtoworlds_all_torch[i : i + 1]
@@ -791,21 +795,26 @@ class Runner:
             colors_traj_linear = renders_traj[..., 0:3]
             colors_traj_srgb = kornia.color.linear_rgb_to_rgb(colors_traj_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
             colors_traj = torch.clamp(colors_traj_srgb, 0.0, 1.0)
+
             depths_traj = renders_traj[..., 3:4]
             depths_traj_norm = (depths_traj - depths_traj.min()) / (
                     depths_traj.max() - depths_traj.min() + 1e-10
             )
 
-            canvas_traj_list = [colors_traj, depths_traj_norm.repeat(1, 1, 1, 3)]
-            canvas_traj = torch.cat(canvas_traj_list, dim=2).squeeze(0).cpu().numpy()
-            canvas_traj_uint8 = (canvas_traj * 255).astype(np.uint8)
-            video_writer.append_data(canvas_traj_uint8)
+            canvas_color = colors_traj.squeeze(0).cpu().numpy()
+            canvas_color_uint8 = (canvas_color * 255).astype(np.uint8)
 
-        video_writer.close()
-        print(f"Video saved to {video_path}")
+            canvas_depth = depths_traj_norm.repeat(1, 1, 1, 3).squeeze(0).cpu().numpy()
+            canvas_depth_uint8 = (canvas_depth * 255).astype(np.uint8)
+
+            video_writer_color.append_data(canvas_color_uint8)
+            video_writer_depth.append_data(canvas_depth_uint8)
+
+        video_writer_color.close()
+        video_writer_depth.close()
+        print(f"Videos saved to {video_path_color} and {video_path_depth}")
 
         self.writer.flush()
-
 
 def objective(trial: optuna.Trial):
     cfg = Config()
