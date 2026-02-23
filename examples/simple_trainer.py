@@ -36,7 +36,7 @@ from lib_bilagrid import color_correct, BilateralGrid, bi_slice
 from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss, GeometryAwareSmoothingLoss, GrayWorldLoss, LogTotalVariationLoss, ChromaticityContinuityLoss
-from losses import ExclusionLoss, PatchConsistencyLoss
+from losses import ExclusionLoss, PatchConsistencyLoss, ExposureLoss
 from utils import IlluminationField, sh_to_rgb, quaternion_to_matrix
 from rendering_double import rasterization_dual
 from gsplat import export_splats
@@ -216,11 +216,13 @@ class Runner:
             )
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
+        self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.5).to(self.device)
         self.loss_tv = TotalVariationLoss().to(self.device)
         self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
         self.loss_log_tv = LogTotalVariationLoss().to(self.device)
         self.loss_chromaticity = ChromaticityContinuityLoss().to(self.device)
         self.loss_patch_consistency = PatchConsistencyLoss().to(self.device)
+        self.loss_gray_world = GrayWorldLoss().to(self.device)
 
         self.retinex_net = MultiScaleRetinexNet(
             in_channels=3,
@@ -410,7 +412,7 @@ class Runner:
                     use_reentrant=False,
                 )
                 log_residual_illum = torch.clamp(log_residual_illum, max=5.0)
-                residual_illum = torch.sigmoid(log_residual_illum) * 2.0
+                residual_illum = torch.sigmoid(log_residual_illum) * 1.2
                 final_color_map_linear = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
 
                 if cfg.use_bilateral_grid:
@@ -446,12 +448,18 @@ class Runner:
                 loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))
                 loss += 0.05 * loss_chroma_cont
 
+                loss_exposure_val = self.loss_exposure(final_color_map_linear.permute(0, 3, 1, 2))
+                loss += 0.1 * loss_exposure_val
+
                 loss_ref_const = self.loss_patch_consistency(
                     reflectance_map.permute(0, 3, 1, 2),
                     intrinsic_maps["depth"].permute(0, 3, 1, 2),
                     camtoworlds, Ks
                 )
                 loss += 0.2 * loss_ref_const
+
+                if cfg.lambda_gray_world > 0.0:
+                    loss += cfg.lambda_gray_world * self.loss_gray_world(reflectance_map.permute(0, 3, 1, 2))
 
                 if cfg.lambda_illum_reg > 0.0:
                     loss += cfg.lambda_illum_reg * ((illum_A - torch.eye(3, device=device)).pow(2).mean() + illum_b.pow(2).mean())

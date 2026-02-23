@@ -40,7 +40,7 @@ class Config:
     sh_degree_interval: int = 1000
     init_opa: float = 0.1
     init_scale: float = 1.0
-    ssim_lambda: float = 0.4
+    ssim_lambda: float = 0.3
 
     near_plane: float = 0.01
     far_plane: float = 1e10
@@ -85,9 +85,9 @@ class Config:
     lambda_illum_smoothness: float = 0.0
     lambda_tv_loss: float = 0.0
     lambda_reflectance_reg: float = 0
-    lambda_gray_world: float = 0
+    lambda_gray_world: float = 0.01
     lambda_camera_reg: float = 0.0
-    lambda_illum_reg: float = 0.01
+    lambda_illum_reg: float = 0.05
 
     appearance_embedding_lr: float = 6e-3
     camera_net_lr: float = 3e-4
