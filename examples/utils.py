@@ -506,7 +506,7 @@ class CameraResponseNet(nn.Module):
         params = self.mlp_head(hidden_features.float())  # [B, 6]
 
         c, d = params.split(3, dim=-1)  # 2 x [B, 3]
-        return c, d
+        return torch.nn.functional.softplus(c), d
 
 class AutomaticWeightedLoss(nn.Module):
     def __init__(self, num: int) -> None:

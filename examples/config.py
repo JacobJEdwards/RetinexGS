@@ -87,7 +87,7 @@ class Config:
     lambda_reflectance_reg: float = 0
     lambda_gray_world: float = 0
     lambda_camera_reg: float = 0.0
-    lambda_illum_reg: float = 0.0
+    lambda_illum_reg: float = 0.01
 
     appearance_embedding_lr: float = 6e-3
     camera_net_lr: float = 3e-4

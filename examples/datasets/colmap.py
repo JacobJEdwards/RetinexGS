@@ -65,7 +65,7 @@ class Parser:
     def __init__(
             self,
             data_dir: str,
-            factor: int = 4,
+            factor: int = 1,
             normalize: bool = False,
             test_every: int = 8,
             load_exposure: bool = False,
