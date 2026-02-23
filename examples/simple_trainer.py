@@ -36,7 +36,7 @@ from lib_bilagrid import color_correct, BilateralGrid, bi_slice
 from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss, GeometryAwareSmoothingLoss, GrayWorldLoss, LogTotalVariationLoss, ChromaticityContinuityLoss
-from losses import ExclusionLoss, PatchConsistencyLoss, ExposureLoss
+from losses import ExclusionLoss, PatchConsistencyLoss
 from utils import IlluminationField, sh_to_rgb, quaternion_to_matrix
 from rendering_double import rasterization_dual
 from gsplat import export_splats
@@ -216,13 +216,11 @@ class Runner:
             )
 
         self.loss_exclusion = ExclusionLoss().to(self.device)
-        self.loss_exposure = ExposureLoss(patch_size=16, mean_val=0.5).to(self.device)
         self.loss_tv = TotalVariationLoss().to(self.device)
         self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
         self.loss_log_tv = LogTotalVariationLoss().to(self.device)
         self.loss_chromaticity = ChromaticityContinuityLoss().to(self.device)
         self.loss_patch_consistency = PatchConsistencyLoss().to(self.device)
-        self.loss_gray_world = GrayWorldLoss().to(self.device)
 
         self.retinex_net = MultiScaleRetinexNet(
             in_channels=3,
@@ -280,6 +278,7 @@ class Runner:
                 self.device
             )
 
+        # Running stats for prunning & growing.
         n_gauss = len(self.splats["means"])
         self.running_stats = {
             "grad2d": torch.zeros(n_gauss, device=self.device),  # norm of the gradient
@@ -390,6 +389,7 @@ class Runner:
                         torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
                         + illum_b_map
                 )
+                # Enforce physical constraint: Light cannot be negative
                 scene_lit_color_map = F.relu(scene_lit_color_map)
 
                 if cfg.use_camera_response_network:
@@ -403,6 +403,7 @@ class Runner:
                 else:
                     scene_lit_color_map_cam = scene_lit_color_map
 
+                # Hybrid Step: 2D CNN correction
                 image_ids = data["image_id"].to(device)
                 appearance_embedding = self.appearance_embeds(image_ids)
                 log_residual_illum = checkpoint(
@@ -411,8 +412,9 @@ class Runner:
                     appearance_embedding,
                     use_reentrant=False,
                 )
+                # Prevent exponential explosion
                 log_residual_illum = torch.clamp(log_residual_illum, max=5.0)
-                residual_illum = torch.sigmoid(log_residual_illum) * 1.2
+                residual_illum = torch.exp(log_residual_illum)
                 final_color_map_linear = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
 
                 if cfg.use_bilateral_grid:
@@ -425,10 +427,12 @@ class Runner:
                     grid_out = bi_slice(self.bilateral_grid, grid_xy, reflectance_map, image_ids.view(-1, 1))
                     colors_low = grid_out["rgb"]
                 else:
+                    # Prevent NaNs in sRGB conversion
                     final_color_map_linear = torch.clamp(final_color_map_linear, min=1e-8)
                     final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
                     colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
 
+                # Illumination for visualization
                 gray_color = torch.full_like(reflectance_map, 0.5)
                 illum_color_map_linear = (
                         torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
@@ -441,15 +445,14 @@ class Runner:
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                loss += 0.0 * self.loss_log_tv(residual_illum)
-                loss += 0.1 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3,
-                                                                                                                1, 2))
+                # Regularization
+                loss += 0.1 * self.loss_gray_world(reflectance_map.permute(0, 3, 1, 2))
+                loss += 0.05 * self.loss_log_tv(residual_illum)
+                loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
 
+                # New consistency terms
                 loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))
-                loss += 0.05 * loss_chroma_cont
-
-                loss_exposure_val = self.loss_exposure(final_color_map_linear.permute(0, 3, 1, 2))
-                loss += 0.1 * loss_exposure_val
+                loss += 0.5 * loss_chroma_cont
 
                 loss_ref_const = self.loss_patch_consistency(
                     reflectance_map.permute(0, 3, 1, 2),
@@ -457,9 +460,6 @@ class Runner:
                     camtoworlds, Ks
                 )
                 loss += 0.2 * loss_ref_const
-
-                if cfg.lambda_gray_world > 0.0:
-                    loss += cfg.lambda_gray_world * self.loss_gray_world(reflectance_map.permute(0, 3, 1, 2))
 
                 if cfg.lambda_illum_reg > 0.0:
                     loss += cfg.lambda_illum_reg * ((illum_A - torch.eye(3, device=device)).pow(2).mean() + illum_b.pow(2).mean())
@@ -585,6 +585,7 @@ class Runner:
                     torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
                     + illum_b_map
             )
+            # Enforce physical constraint in eval: Light cannot be negative
             scene_lit_color_map = F.relu(scene_lit_color_map)
 
             if cfg.use_camera_response_network:
@@ -598,7 +599,9 @@ class Runner:
             else:
                 final_color_map_linear = scene_lit_color_map
 
+            # Prevent NaNs in sRGB conversion
             final_color_map_linear = torch.clamp(final_color_map_linear, min=1e-8)
+            # Convert to sRGB for evaluation
             final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
             reflectance_map_srgb = kornia.color.linear_rgb_to_rgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
@@ -823,6 +826,7 @@ class Runner:
         print(f"Videos saved to {video_path_color} and {video_path_depth}")
 
         self.writer.flush()
+
 
 def objective(trial: optuna.Trial):
     cfg = Config()
