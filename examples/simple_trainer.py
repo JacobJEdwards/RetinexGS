@@ -446,7 +446,6 @@ class Runner:
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
                 # Regularization
-                loss += 0.1 * self.loss_gray_world(reflectance_map.permute(0, 3, 1, 2))
                 loss += 0.05 * self.loss_log_tv(residual_illum)
                 loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
 
