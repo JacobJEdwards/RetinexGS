@@ -33,6 +33,6 @@ for DATA in "${DATASETS[@]}"; do
     # 3. PPISP
     python simple_trainer.py mcmc --data-dir "$DIR" --result-dir "$DIR/results/ppisp" --post-processing ppisp
 
-     4. GS-W (App Opt)
+#     4. GS-W (App Opt)
     python simple_trainer.py default --data-dir "$DIR" --result-dir "$DIR/results/gs-w" --app-opt
 done
