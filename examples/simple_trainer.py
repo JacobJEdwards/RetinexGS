@@ -324,7 +324,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )
 
-            if step == cfg.learning_steps:
+            if step == 0:
                 if cfg.use_camera_response_network:
                     for param in self.camera_response_net.parameters():
                         param.requires_grad = False
@@ -334,6 +334,17 @@ class Runner:
                     param.requires_grad = False
                 for param in self.retinex_net.parameters():
                     param.requires_grad = False
+
+            if step == cfg.learning_steps:
+                if cfg.use_camera_response_network:
+                    for param in self.camera_response_net.parameters():
+                        param.requires_grad = True
+                    for param in self.appearance_embeds.parameters():
+                        param.requires_grad = True
+                for param in self.illumination_field.parameters():
+                    param.requires_grad = True
+                for param in self.retinex_net.parameters():
+                    param.requires_grad = True
 
             with torch.autocast(enabled=False, device_type=device):
                 camtoworlds = data["camtoworld"].to(device)
@@ -377,10 +388,10 @@ class Runner:
                 illum_A_map = illum_A.view(1, height, width, 3, 3)
                 illum_b_map = illum_b.view(1, height, width, 3)
 
-                scene_lit_color_map = (
-                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
-                        + illum_b_map
-                )
+                illum_scale = torch.diagonal(illum_A_map, dim1=-2, dim2=-1)
+
+                # Apply strictly as per-channel scale + bias
+                scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
                 scene_lit_color_map = F.relu(scene_lit_color_map)
 
                 if cfg.use_camera_response_network:
@@ -422,8 +433,7 @@ class Runner:
                 # Illumination for visualization
                 gray_color = torch.full_like(reflectance_map, 0.5)
                 illum_color_map = (
-                                          torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
-                                          + illum_b_map
+                                          (gray_color * illum_scale) + illum_b_map
                                   ) * residual_illum.permute(0, 2, 3, 1)
                 illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
 
@@ -433,6 +443,7 @@ class Runner:
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
+                loss += 0.2 * F.l1_loss(reflectance_map, pixels)
 
                 # 1. Illumination Spatial Smoothness (TV)
                 loss += 0.01 * self.loss_tv(residual_illum)
