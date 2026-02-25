@@ -450,6 +450,10 @@ class Runner:
                 loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
                 loss += 0.05 * torch.mean(log_residual_illum ** 2)
 
+                # Keep embeddings close to 0 to prevent drift
+                if cfg.use_camera_response_network:
+                    loss += 0.01 * torch.mean(appearance_embedding ** 2)
+
                 # New consistency terms
                 loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))
                 loss += 0.5 * loss_chroma_cont
