@@ -224,7 +224,7 @@ class Runner:
 
         self.retinex_net = MultiScaleRetinexNet(
             in_channels=3,
-            out_channels=3,
+            out_channels=1,
             embed_dim=cfg.appearance_embedding_dim,
         ).to(self.device)
 
@@ -448,6 +448,7 @@ class Runner:
                 # Regularization
                 loss += 0.05 * self.loss_log_tv(residual_illum)
                 loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
+                loss += 0.05 * torch.mean(log_residual_illum ** 2)
 
                 # New consistency terms
                 loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))

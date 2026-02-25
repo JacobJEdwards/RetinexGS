@@ -635,6 +635,5 @@ class MultiScaleRetinexNet(nn.Module):
 
         d1_nested = self.nested_dec(torch.cat([d1, e0_modulated], dim=1)) + d1
 
-        final_illumination = self.out_conv(d1_nested)
-
+        final_illumination = torch.tanh(self.out_conv(d1_nested)) * 2.0
         return final_illumination
