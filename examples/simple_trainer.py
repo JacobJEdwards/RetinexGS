@@ -410,12 +410,13 @@ class Runner:
                 appearance_embedding = self.appearance_embeds(image_ids)
                 log_residual_illum = checkpoint(
                     self.retinex_net,
-                    scene_lit_color_map_cam.permute(0, 3, 1, 2),
+                    scene_lit_color_map_cam.detach().permute(0, 3, 1, 2),
                     appearance_embedding,
                     use_reentrant=False,
                 )
                 log_residual_illum = torch.clamp(log_residual_illum, max=5.0)
                 residual_illum = torch.exp(log_residual_illum)
+
                 final_color_map = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
 
                 if cfg.use_bilateral_grid:
@@ -443,7 +444,6 @@ class Runner:
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
-                loss += 0.2 * F.l1_loss(reflectance_map, pixels)
 
                 # 1. Illumination Spatial Smoothness (TV)
                 loss += 0.01 * self.loss_tv(residual_illum)
@@ -453,9 +453,7 @@ class Runner:
 
                 # 3. Camera / Appearance Regularization
                 if cfg.use_camera_response_network:
-                    # Keep embeddings small to prevent drift
                     loss += 0.01 * torch.mean(appearance_embedding ** 2)
-                    # Force CRN to stay close to identity (scale=1, shift=0)
                     loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
                 # 4. Illumination Field Regularization (A -> Identity, b -> 0)
@@ -573,6 +571,8 @@ class Runner:
             if cfg.use_view_dirs:
                 cam_origin = camtoworlds.squeeze(0)[:3, 3]
                 view_dirs_input = points_3d_world_flat - cam_origin
+
+            view_dirs_input = view_dirs_input.detach() if view_dirs_input is not None else None
             illum_A, illum_b = self.illumination_field(
                 points_3d_world_flat,
                 view_dirs=view_dirs_input,
@@ -580,10 +580,9 @@ class Runner:
             )
             illum_A_map = illum_A.view(1, height, width, 3, 3)
             illum_b_map = illum_b.view(1, height, width, 3)
-            scene_lit_color_map = (
-                    torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
-                    + illum_b_map
-            )
+            illum_scale = torch.diagonal(illum_A_map, dim1=-2, dim2=-1)
+
+            scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
             scene_lit_color_map = F.relu(scene_lit_color_map)
 
             if cfg.use_camera_response_network:
