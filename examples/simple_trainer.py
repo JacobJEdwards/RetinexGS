@@ -606,11 +606,11 @@ class Runner:
             final_color_map_linear = torch.clamp(final_color_map_linear, min=1e-8)
             # Convert to sRGB for evaluation
             final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-            reflectance_map_srgb = kornia.color.linear_rgb_to_rgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
             colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
             # colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
-            colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
+            reflectance_map_srgb = kornia.color.linear_rgb_to_rgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+            colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
 
 
             torch.cuda.synchronize()
