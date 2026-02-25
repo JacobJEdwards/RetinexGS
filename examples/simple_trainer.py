@@ -166,10 +166,8 @@ class Runner:
 
         self.parser = Parser(
             data_dir=str(cfg.data_dir),
-            # factor=cfg.data_factor,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
-            # is_mip360=True,
         )
         self.trainset = Dataset(self.parser, patch_size=cfg.patch_size)
         self.valset = Dataset(self.parser, split="val")
@@ -215,12 +213,7 @@ class Runner:
                 self.appearance_embeds.parameters(), lr=cfg.appearance_embedding_lr, fused=True
             )
 
-        self.loss_exclusion = ExclusionLoss().to(self.device)
         self.loss_tv = TotalVariationLoss().to(self.device)
-        self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
-        self.loss_log_tv = LogTotalVariationLoss().to(self.device)
-        self.loss_chromaticity = ChromaticityContinuityLoss().to(self.device)
-        self.loss_patch_consistency = PatchConsistencyLoss().to(self.device)
 
         self.retinex_net = MultiScaleRetinexNet(
             in_channels=3,
@@ -278,10 +271,9 @@ class Runner:
                 self.device
             )
 
-        # Running stats for prunning & growing.
         n_gauss = len(self.splats["means"])
         self.running_stats = {
-            "grad2d": torch.zeros(n_gauss, device=self.device),  # norm of the gradient
+            "grad2d": torch.zeros(n_gauss, device=self.device),
             "count": torch.zeros(n_gauss, device=self.device, dtype=torch.int),
         }
 
@@ -389,7 +381,6 @@ class Runner:
                         torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
                         + illum_b_map
                 )
-                # Enforce physical constraint: Light cannot be negative
                 scene_lit_color_map = F.relu(scene_lit_color_map)
 
                 if cfg.use_camera_response_network:
@@ -412,10 +403,9 @@ class Runner:
                     appearance_embedding,
                     use_reentrant=False,
                 )
-                # Prevent exponential explosion
                 log_residual_illum = torch.clamp(log_residual_illum, max=5.0)
                 residual_illum = torch.exp(log_residual_illum)
-                final_color_map_linear = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
+                final_color_map = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
 
                 if cfg.use_bilateral_grid:
                     grid_y, grid_x = torch.meshgrid(
@@ -427,47 +417,41 @@ class Runner:
                     grid_out = bi_slice(self.bilateral_grid, grid_xy, reflectance_map, image_ids.view(-1, 1))
                     colors_low = grid_out["rgb"]
                 else:
-                    # Prevent NaNs in sRGB conversion
-                    final_color_map_linear = torch.clamp(final_color_map_linear, min=1e-8)
-                    final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-                    colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
+                    colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
                 # Illumination for visualization
                 gray_color = torch.full_like(reflectance_map, 0.5)
-                illum_color_map_linear = (
-                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
-                        + illum_b_map
-                ) * residual_illum.permute(0, 2, 3, 1)
-                illum_map = torch.clamp(kornia.color.linear_rgb_to_rgb(illum_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1), 0.0, 1.0)
+                illum_color_map = (
+                                          torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
+                                          + illum_b_map
+                                  ) * residual_illum.permute(0, 2, 3, 1)
+                illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
 
                 info["means2d"].retain_grad()
+
+                # --- SIMPLIFIED LOSS ---
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                # Regularization
-                loss += 0.05 * self.loss_log_tv(residual_illum)
-                loss += 0.5 * self.loss_geometry_smooth(illum_map.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
-                loss += 0.05 * torch.mean(log_residual_illum ** 2)
+                # 1. Illumination Spatial Smoothness (TV)
+                loss += 0.01 * self.loss_tv(residual_illum)
 
-                # Keep embeddings close to 0 to prevent drift
+                # 2. Illumination Achromatic/Identity Prior (forces L to stay close to 1.0, resolving color ambiguity)
+                loss += 0.05 * torch.mean((residual_illum - 1.0) ** 2)
+
+                # 3. Camera / Appearance Regularization
                 if cfg.use_camera_response_network:
+                    # Keep embeddings small to prevent drift
                     loss += 0.01 * torch.mean(appearance_embedding ** 2)
+                    # Force CRN to stay close to identity (scale=1, shift=0)
+                    loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
-                # New consistency terms
-                loss_chroma_cont = self.loss_chromaticity(illum_color_map_linear.permute(0, 3, 1, 2))
-                loss += 0.5 * loss_chroma_cont
-
-                loss_ref_const = self.loss_patch_consistency(
-                    reflectance_map.permute(0, 3, 1, 2),
-                    intrinsic_maps["depth"].permute(0, 3, 1, 2),
-                    camtoworlds, Ks
-                )
-                loss += 0.2 * loss_ref_const
-
+                # 4. Illumination Field Regularization (A -> Identity, b -> 0)
                 if cfg.lambda_illum_reg > 0.0:
                     loss += cfg.lambda_illum_reg * ((illum_A - torch.eye(3, device=device)).pow(2).mean() + illum_b.pow(2).mean())
 
+                # 5. SH Band Regularization
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
 
@@ -547,6 +531,7 @@ class Runner:
 
             pixels = data["image"].to(device) / 255.0
 
+            masks = data["mask"].to(device) if "mask" in data else None
             height, width = pixels.shape[1:3]
 
             torch.cuda.synchronize()
@@ -588,30 +573,21 @@ class Runner:
                     torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
                     + illum_b_map
             )
-            # Enforce physical constraint in eval: Light cannot be negative
             scene_lit_color_map = F.relu(scene_lit_color_map)
 
             if cfg.use_camera_response_network:
                 image_ids = data["image_id"].to(device)
                 embedding = self.appearance_embeds(image_ids)
                 c, d = self.camera_response_net(embedding)
-                final_color_map_linear = (
+                final_color_map = (
                         c[:, None, None, :] * scene_lit_color_map + d[:, None, None, :]
                 )
-
             else:
-                final_color_map_linear = scene_lit_color_map
+                final_color_map = scene_lit_color_map
 
-            # Prevent NaNs in sRGB conversion
-            final_color_map_linear = torch.clamp(final_color_map_linear, min=1e-8)
-            # Convert to sRGB for evaluation
-            final_color_map_srgb = kornia.color.linear_rgb_to_rgb(final_color_map_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-
-            colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
-            # colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
-            reflectance_map_srgb = kornia.color.linear_rgb_to_rgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-            colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
-
+            # Natively evaluate and output in sRGB - Removed linear_rgb_to_rgb
+            colors_low = torch.clamp(final_color_map, 0.0, 1.0)
+            colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
@@ -620,9 +596,9 @@ class Runner:
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_p = colors_low.permute(0, 3, 1, 2)
                 colors_enh_p = colors_enh.permute(0, 3, 1, 2)
-                orig_name = data["image_name"][0]  # batch_size=1 so it's a 1-element list
+                orig_name = data["image_name"][0]
                 orig_stem = os.path.splitext(orig_name)[0]
-                orig_stem = orig_stem.replace("/", "_").replace("\\", "_")  # safe for folders
+                orig_stem = orig_stem.replace("/", "_").replace("\\", "_")
 
                 if cfg.save_images:
                     canvas_list_low = [pixels, colors_low]
@@ -664,6 +640,7 @@ class Runner:
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
                 metrics["lpips"].append(self.lpips(colors_p, pixels_p))
 
+                # Compute metrics on reflectance ("enh") map
                 metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
                 metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
                 metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
@@ -716,8 +693,6 @@ class Runner:
 
             with open(f"{self.stats_dir}/{stage}_step{step:04d}.json", "w") as f:
                 json.dump(stats_eval, f)
-            # with open(f"{self.stats_dir}/{stage}_raw_step{step:04d}.json", "w") as f:
-            #     json.dump(raw_metrics, f)
             for k_stat, v_stat in stats_eval.items():
                 self.writer.add_scalar(f"{stage}/{k_stat}", v_stat, step)
             self.writer.flush()
@@ -805,9 +780,8 @@ class Runner:
 
             renders_traj, _, _, _, _ = out
 
-            colors_traj_linear = renders_traj[..., 0:3]
-            colors_traj_srgb = kornia.color.linear_rgb_to_rgb(colors_traj_linear.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-            colors_traj = torch.clamp(colors_traj_srgb, 0.0, 1.0)
+            # Removed linear_rgb_to_rgb conversion
+            colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
 
             depths_traj = renders_traj[..., 3:4]
             depths_traj_norm = (depths_traj - depths_traj.min()) / (
@@ -882,9 +856,10 @@ def objective(trial: optuna.Trial):
             with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
                 stats = json.load(f)
 
-            psnr = stats.get("psnr", 0)
-            ssim = stats.get("ssim", 0)
-            lpips = stats.get("lpips", 0)
+            # Updated to track the reflectance target
+            psnr = stats.get("psnr_enh", 0)
+            ssim = stats.get("ssim_enh", 0)
+            lpips = stats.get("lpips_enh", 0)
 
             total_psnr += psnr
             total_ssim += ssim
@@ -897,7 +872,6 @@ def objective(trial: optuna.Trial):
             torch.cuda.empty_cache()
 
     return total_psnr / count, total_ssim / count, total_lpips / count
-
 
 
 def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
@@ -931,9 +905,6 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         runner.train()
 
 
-slice_func = None
-total_variation_loss = None
-
 if __name__ == "__main__":
     configs = {
         "default": (
@@ -951,7 +922,6 @@ if __name__ == "__main__":
             ),
         ),
     }
-    # config = tyro.extras.overridable_config_cli(configs)
     config = tyro.cli(
         Config,
     )
@@ -960,27 +930,3 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     cli(main, config, verbose=True)
-
-    # storage = optuna.storages.JournalStorage(
-    #     optuna.storages.journal.JournalFileBackend("optuna_study.log")
-    # )
-    #
-    # study = optuna.create_study(
-    #     directions=["maximize", "maximize", "minimize"],
-    #     storage=storage,
-    #     study_name="gaussian_splatting_hyperparam_opt",
-    #     load_if_exists=True,
-    # )
-    # study.optimize(objective, n_trials=50, catch=(RuntimeError, ValueError), gc_after_trial=True,
-    #                show_progress_bar=True)
-    #
-    # print("Study statistics: ")
-    # print(f"  Number of finished trials: {len(study.trials)}")
-    #
-    # print("Best trials (Pareto front):")
-    # for i, trial in enumerate(study.best_trials):
-    #     print(f"  Trial {i}:")
-    #     print(f"    Values: PSNR={trial.values[0]:.4f}, SSIM={trial.values[1]:.4f}, LPIPS={trial.values[2]:.4f}")
-    #     print("    Params: ")
-    #     for key, value in trial.params.items():
-    #         print(f"      {key}: {value}")
