@@ -94,7 +94,7 @@ class Config:
     illumination_field_lr: float = 6e-5
     loss_lr: float = 1e-4
 
-    learning_steps: int = 3000
+    learning_steps: int = 1500
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]

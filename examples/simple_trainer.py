@@ -14,7 +14,6 @@ import torch
 import torch.nn.functional as F
 import tqdm
 import tyro
-from torch.utils.checkpoint import checkpoint
 import yaml
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -31,7 +30,6 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from utils import AutomaticWeightedLoss
 from lib_bilagrid import color_correct, BilateralGrid, bi_slice
 from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
@@ -48,7 +46,6 @@ from utils import (
     rgb_to_sh,
     set_random_seed,
 )
-from retinex import MultiScaleRetinexNet
 
 
 def create_splats_with_optimizers(
@@ -185,6 +182,7 @@ class Runner:
                 self.illumination_field, device_ids=[local_rank]
             )
 
+        # Removed retinex_net from the optimizer
         self.illum_field_optimizer = torch.optim.Adam(
             self.illumination_field.parameters(), lr=cfg.illumination_field_lr, fused=True
         )
@@ -214,20 +212,7 @@ class Runner:
             )
 
         self.loss_tv = TotalVariationLoss().to(self.device)
-
-        self.retinex_net = MultiScaleRetinexNet(
-            in_channels=3,
-            out_channels=1,
-            embed_dim=cfg.appearance_embedding_dim,
-        ).to(self.device)
-
-        if world_size > 1:
-            self.retinex_net = DDP(self.retinex_net, device_ids=[local_rank])
-
-        self.illum_field_optimizer = torch.optim.Adam(
-            list(self.illumination_field.parameters()) + list(self.retinex_net.parameters()),
-            lr=cfg.illumination_field_lr, fused=True
-        )
+        self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
 
         self.splats, self.optimizers = create_splats_with_optimizers(
             self.parser,
@@ -324,6 +309,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )
 
+            # Initialize with lighting frozen
             if step == 0:
                 if cfg.use_camera_response_network:
                     for param in self.camera_response_net.parameters():
@@ -332,18 +318,15 @@ class Runner:
                         param.requires_grad = False
                 for param in self.illumination_field.parameters():
                     param.requires_grad = False
-                for param in self.retinex_net.parameters():
-                    param.requires_grad = False
 
-            if step == cfg.learning_steps:
+            # Unfreeze lighting networks AFTER Gaussians have formed a base structure
+            if step == 1500:
                 if cfg.use_camera_response_network:
                     for param in self.camera_response_net.parameters():
                         param.requires_grad = True
                     for param in self.appearance_embeds.parameters():
                         param.requires_grad = True
                 for param in self.illumination_field.parameters():
-                    param.requires_grad = True
-                for param in self.retinex_net.parameters():
                     param.requires_grad = True
 
             with torch.autocast(enabled=False, device_type=device):
@@ -379,45 +362,31 @@ class Runner:
                     cam_origin = camtoworlds.squeeze(0)[:3, 3]
                     view_dirs_input = world_position_map.view(-1, 3) - cam_origin
 
+                # 1. Local 3D Illumination (Shadows/Bounces)
                 illum_A, illum_b = self.illumination_field(
                     world_position_map.view(-1, 3),
                     view_dirs=view_dirs_input,
                     normals=world_normal_map.view(-1, 3),
                 )
-
                 illum_A_map = illum_A.view(1, height, width, 3, 3)
                 illum_b_map = illum_b.view(1, height, width, 3)
 
-                illum_scale = torch.diagonal(illum_A_map, dim1=-2, dim2=-1)
+                # Extract diagonal and use softplus to ensure light is strictly positive
+                illum_scale = F.softplus(torch.diagonal(illum_A_map, dim1=-2, dim2=-1))
 
-                # Apply strictly as per-channel scale + bias
+                # Apply local lighting: I = R * L + b
                 scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
-                scene_lit_color_map = F.relu(scene_lit_color_map)
 
+                # 2. Global Camera Response (Exposure / White Balance)
                 if cfg.use_camera_response_network:
                     image_ids = data["image_id"].to(device)
-                    embedding = self.appearance_embeds(image_ids)
-                    c, d = self.camera_response_net(embedding)
-                    scene_lit_color_map_cam = (
-                            c[:, None, None, :] * scene_lit_color_map
-                            + d[:, None, None, :]
+                    appearance_embedding = self.appearance_embeds(image_ids)
+                    c, d = self.camera_response_net(appearance_embedding)
+                    final_color_map = (
+                            c[:, None, None, :] * scene_lit_color_map + d[:, None, None, :]
                     )
                 else:
-                    scene_lit_color_map_cam = scene_lit_color_map
-
-                # Hybrid Step: 2D CNN correction
-                image_ids = data["image_id"].to(device)
-                appearance_embedding = self.appearance_embeds(image_ids)
-                log_residual_illum = checkpoint(
-                    self.retinex_net,
-                    scene_lit_color_map_cam.detach().permute(0, 3, 1, 2),
-                    appearance_embedding,
-                    use_reentrant=False,
-                )
-                log_residual_illum = torch.clamp(log_residual_illum, max=5.0)
-                residual_illum = torch.exp(log_residual_illum)
-
-                final_color_map = scene_lit_color_map_cam * residual_illum.permute(0, 2, 3, 1)
+                    final_color_map = scene_lit_color_map
 
                 if cfg.use_bilateral_grid:
                     grid_y, grid_x = torch.meshgrid(
@@ -431,36 +400,36 @@ class Runner:
                 else:
                     colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
-                # Illumination for visualization
+                # Illumination map for visualization
                 gray_color = torch.full_like(reflectance_map, 0.5)
-                illum_color_map = (
-                                          (gray_color * illum_scale) + illum_b_map
-                                  ) * residual_illum.permute(0, 2, 3, 1)
+                illum_color_map = (gray_color * illum_scale) + illum_b_map
                 illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
 
                 info["means2d"].retain_grad()
 
-                # --- SIMPLIFIED LOSS ---
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                # 1. Illumination Spatial Smoothness (TV)
-                loss += 0.01 * self.loss_tv(residual_illum)
+                # --- NEW DISENTANGLEMENT PRIORS ---
 
-                # 2. Illumination Achromatic/Identity Prior (forces L to stay close to 1.0, resolving color ambiguity)
-                loss += 0.05 * torch.mean((residual_illum - 1.0) ** 2)
+                # 1. Achromatic Prior: Penalize RGB variance in the illumination scale.
+                # This forces the lighting to primarily affect brightness (shadows) rather than color.
+                illum_scale_mean = illum_scale.mean(dim=-1, keepdim=True)
+                loss += 0.1 * F.mse_loss(illum_scale, illum_scale_mean.expand_as(illum_scale))
 
-                # 3. Camera / Appearance Regularization
+                # 2. Smoothness Prior: Force local lighting to be spatially smooth.
+                # Because the MLP is forced to be smooth, sharp textures MUST be learned by the splats.
+                loss += 0.05 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
+
+                # 3. Bias Suppression: Force the network to rely on the multiplication scale, not the additive bias
+                loss += 0.05 * torch.mean(illum_b_map ** 2)
+
+                # 4. Camera Regularization
                 if cfg.use_camera_response_network:
                     loss += 0.01 * torch.mean(appearance_embedding ** 2)
                     loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
-                # 4. Illumination Field Regularization (A -> Identity, b -> 0)
-                if cfg.lambda_illum_reg > 0.0:
-                    loss += cfg.lambda_illum_reg * ((illum_A - torch.eye(3, device=device)).pow(2).mean() + illum_b.pow(2).mean())
-
-                # 5. SH Band Regularization
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
 
@@ -474,7 +443,8 @@ class Runner:
                 self.writer.flush()
 
             if step in [i - 1 for i in cfg.save_steps] or step == max_steps - 1:
-                data_save = {"step": step, "splats": self.splats.state_dict(), "illumination_field": self.illumination_field.state_dict(), "retinex_net": self.retinex_net.state_dict()}
+                # Removed retinex_net from payload
+                data_save = {"step": step, "splats": self.splats.state_dict(), "illumination_field": self.illumination_field.state_dict()}
                 torch.save(data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt")
 
             for optimizer in self.optimizers.values():
@@ -572,7 +542,6 @@ class Runner:
                 cam_origin = camtoworlds.squeeze(0)[:3, 3]
                 view_dirs_input = points_3d_world_flat - cam_origin
 
-            view_dirs_input = view_dirs_input.detach() if view_dirs_input is not None else None
             illum_A, illum_b = self.illumination_field(
                 points_3d_world_flat,
                 view_dirs=view_dirs_input,
@@ -580,10 +549,10 @@ class Runner:
             )
             illum_A_map = illum_A.view(1, height, width, 3, 3)
             illum_b_map = illum_b.view(1, height, width, 3)
-            illum_scale = torch.diagonal(illum_A_map, dim1=-2, dim2=-1)
 
+            # Use softplus diagonal to maintain physics bounds
+            illum_scale = F.softplus(torch.diagonal(illum_A_map, dim1=-2, dim2=-1))
             scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
-            scene_lit_color_map = F.relu(scene_lit_color_map)
 
             if cfg.use_camera_response_network:
                 image_ids = data["image_id"].to(device)
@@ -595,7 +564,7 @@ class Runner:
             else:
                 final_color_map = scene_lit_color_map
 
-            # Natively evaluate and output in sRGB - Removed linear_rgb_to_rgb
+            # Direct sRGB output clamps
             colors_low = torch.clamp(final_color_map, 0.0, 1.0)
             colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
 
@@ -650,7 +619,7 @@ class Runner:
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
                 metrics["lpips"].append(self.lpips(colors_p, pixels_p))
 
-                # Compute metrics on reflectance ("enh") map
+                # Track unlit enhancements to verify splat quality directly
                 metrics["psnr_enh"].append(self.psnr(colors_enh_p, pixels_p))
                 metrics["ssim_enh"].append(self.ssim(colors_enh_p, pixels_p))
                 metrics["lpips_enh"].append(self.lpips(colors_enh_p, pixels_p))
@@ -790,7 +759,7 @@ class Runner:
 
             renders_traj, _, _, _, _ = out
 
-            # Removed linear_rgb_to_rgb conversion
+            # Output is natively sRGB, no linear scaling required
             colors_traj = torch.clamp(renders_traj[..., 0:3], 0.0, 1.0)
 
             depths_traj = renders_traj[..., 3:4]
@@ -866,7 +835,6 @@ def objective(trial: optuna.Trial):
             with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
                 stats = json.load(f)
 
-            # Updated to track the reflectance target
             psnr = stats.get("psnr_enh", 0)
             ssim = stats.get("ssim_enh", 0)
             lpips = stats.get("lpips_enh", 0)
@@ -932,6 +900,7 @@ if __name__ == "__main__":
             ),
         ),
     }
+
     config = tyro.cli(
         Config,
     )
