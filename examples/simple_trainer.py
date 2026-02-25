@@ -547,7 +547,6 @@ class Runner:
 
             pixels = data["image"].to(device) / 255.0
 
-            masks = data["mask"].to(device) if "mask" in data else None
             height, width = pixels.shape[1:3]
 
             torch.cuda.synchronize()
@@ -610,10 +609,9 @@ class Runner:
             reflectance_map_srgb = kornia.color.linear_rgb_to_rgb(reflectance_map.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
             colors_low = torch.clamp(final_color_map_srgb, 0.0, 1.0)
-            colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
+            # colors_enh = torch.clamp(reflectance_map_srgb, 0.0, 1.0)
+            colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
 
-            # colors_low_aligned = color_correct(colors_low, pixels)
-            # colors_enh_aligned = color_correct(colors_enh, pixels)
 
             torch.cuda.synchronize()
             ellipse_time_total += max(time.time() - tic, 1e-10)
