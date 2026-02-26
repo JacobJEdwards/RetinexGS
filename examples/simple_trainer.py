@@ -420,8 +420,6 @@ class Runner:
                     # 6. Exclusion Loss
                     loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
 
-                loss += 0.005 * self.splats["sh0"].pow(2).mean()
-
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
 
