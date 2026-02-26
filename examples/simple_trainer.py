@@ -420,10 +420,6 @@ class Runner:
                     loss += 0.01 * torch.mean(appearance_embedding ** 2)
                     loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
-                # 5. Reflectance Smoothness (Total Variation)
-                # Kicks low-frequency shadows out of the splats and into the MLP
-                loss += 0.05 * self.loss_tv(reflectance_map.permute(0, 3, 1, 2))
-
                 # 6. Illumination Anchoring
                 # Prevents scale drift by pulling the lighting scale toward 1.0
                 loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
