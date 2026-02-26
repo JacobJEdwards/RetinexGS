@@ -310,7 +310,7 @@ class Runner:
             )
 
             # Initialize with lighting frozen
-            if step == 0:
+            if step == 4000:
                 if cfg.use_camera_response_network:
                     for param in self.camera_response_net.parameters():
                         param.requires_grad = False
@@ -318,16 +318,6 @@ class Runner:
                         param.requires_grad = False
                 for param in self.illumination_field.parameters():
                     param.requires_grad = False
-
-            # Unfreeze lighting networks AFTER Gaussians have formed a base structure
-            if step == 1500:
-                if cfg.use_camera_response_network:
-                    for param in self.camera_response_net.parameters():
-                        param.requires_grad = True
-                    for param in self.appearance_embeds.parameters():
-                        param.requires_grad = True
-                for param in self.illumination_field.parameters():
-                    param.requires_grad = True
 
             with torch.autocast(enabled=False, device_type=device):
                 camtoworlds = data["camtoworld"].to(device)
