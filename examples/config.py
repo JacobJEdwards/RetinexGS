@@ -65,8 +65,8 @@ class Config:
     appearance_embeddings: bool = True
     appearance_embedding_dim: int = 64
 
-    use_view_dirs: bool = True
-    use_normals: bool = True
+    use_view_dirs: bool = False
+    use_normals: bool = False
     use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
     use_gradient_aware_loss: bool = False
@@ -74,7 +74,7 @@ class Config:
     use_yuv_colourspace: bool = False
     save_images: bool = True
     save_ckpt: bool = False
-    use_bilateral_grid: bool = True
+    use_bilateral_grid: bool = False
     uncertainty_weighting: bool = False
 
     postfix: str = "_contrast"
