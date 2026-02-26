@@ -66,7 +66,7 @@ class Config:
     appearance_embedding_dim: int = 64
 
     use_view_dirs: bool = False
-    use_normals: bool = False
+    use_normals: bool = True
     use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
     use_gradient_aware_loss: bool = False
