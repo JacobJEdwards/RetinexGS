@@ -213,6 +213,8 @@ class Runner:
 
         self.loss_tv = TotalVariationLoss().to(self.device)
         self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
+        self.exclusion_loss = ExclusionLoss().to(self.device)
+
 
         self.splats, self.optimizers = create_splats_with_optimizers(
             self.parser,
@@ -417,6 +419,21 @@ class Runner:
                 if cfg.use_camera_response_network:
                     loss += 0.01 * torch.mean(appearance_embedding ** 2)
                     loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
+
+                # 5. Reflectance Smoothness (Total Variation)
+                # Kicks low-frequency shadows out of the splats and into the MLP
+                loss += 0.05 * self.loss_tv(reflectance_map.permute(0, 3, 1, 2))
+
+                # 6. Illumination Anchoring
+                # Prevents scale drift by pulling the lighting scale toward 1.0
+                loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
+
+                # 7. Exclusion Loss
+                # Forces texture edges and shadow edges to separate
+                loss += 0.1 * self.exclusion_loss(
+                    reflectance_map.permute(0, 3, 1, 2),
+                    illum_scale.permute(0, 3, 1, 2)
+                )
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
