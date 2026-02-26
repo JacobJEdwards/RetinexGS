@@ -406,33 +406,28 @@ class Runner:
 
                 # --- NEW DISENTANGLEMENT PRIORS ---
 
-                # 1. Achromatic Prior: Penalize RGB variance in the illumination scale.
-                # This forces the lighting to primarily affect brightness (shadows) rather than color.
-                illum_scale_mean = illum_scale.mean(dim=-1, keepdim=True)
-                loss += 0.1 * F.mse_loss(illum_scale, illum_scale_mean.expand_as(illum_scale))
+                if step < 4000:
+                    # 1. Achromatic Prior
+                    illum_scale_mean = illum_scale.mean(dim=-1, keepdim=True)
+                    loss += 0.1 * F.mse_loss(illum_scale, illum_scale_mean.expand_as(illum_scale))
 
-                # 2. Smoothness Prior: Force local lighting to be spatially smooth.
-                # Because the MLP is forced to be smooth, sharp textures MUST be learned by the splats.
-                loss += 0.001 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(0,
-                                                                                                        3, 1, 2))
+                    # 2. Geometry Smoothness
+                    loss += 0.001 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
 
-                # 4. Camera Regularization
-                if cfg.use_camera_response_network:
-                    loss += 0.01 * torch.mean(appearance_embedding ** 2)
-                    loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
+                    # 3. Camera Regularization
+                    if cfg.use_camera_response_network:
+                        loss += 0.01 * torch.mean(appearance_embedding ** 2)
+                        loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
-                loss += 0.5 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
+                    # 4. 3D KNN Smoothness
+                    loss += 0.05 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
 
-                # # 6. Illumination Anchoring
-                # # Prevents scale drift by pulling the lighting scale toward 1.0
-                # loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
+                    # 5. Illumination Anchoring
+                    loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
 
-                # 7. Exclusion Loss
-                # Forces texture edges and shadow edges to separate
-                loss += 0.1 * self.exclusion_loss(
-                    reflectance_map.permute(0, 3, 1, 2),
-                    illum_scale.permute(0, 3, 1, 2)
-                )
+                    # 6. Exclusion Loss
+                    loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
+
 
                 # 1. Punish excessively large splats (kills the giant fog clouds)
                 loss += 0.05 * torch.mean(torch.exp(self.splats["scales"]))
