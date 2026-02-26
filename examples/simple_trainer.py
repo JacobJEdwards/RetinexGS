@@ -34,7 +34,7 @@ from lib_bilagrid import color_correct, BilateralGrid, bi_slice
 from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
 from losses import TotalVariationLoss, GeometryAwareSmoothingLoss, GrayWorldLoss, LogTotalVariationLoss, ChromaticityContinuityLoss
-from losses import ExclusionLoss, PatchConsistencyLoss
+from losses import ExclusionLoss, PatchConsistencyLoss, Stochastic3DKNNSmoothnessLoss
 from utils import IlluminationField, sh_to_rgb, quaternion_to_matrix
 from rendering_double import rasterization_dual
 from gsplat import export_splats
@@ -214,6 +214,7 @@ class Runner:
         self.loss_tv = TotalVariationLoss().to(self.device)
         self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
         self.exclusion_loss = ExclusionLoss().to(self.device)
+        self.loss_3d_knn = Stochastic3DKNNSmoothnessLoss(sample_size=4000, k=4).to(self.device)
 
 
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -420,9 +421,11 @@ class Runner:
                     loss += 0.01 * torch.mean(appearance_embedding ** 2)
                     loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
-                # 6. Illumination Anchoring
-                # Prevents scale drift by pulling the lighting scale toward 1.0
-                loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
+                loss += 0.5 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
+
+                # # 6. Illumination Anchoring
+                # # Prevents scale drift by pulling the lighting scale toward 1.0
+                # loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
 
                 # 7. Exclusion Loss
                 # Forces texture edges and shadow edges to separate
@@ -430,6 +433,14 @@ class Runner:
                     reflectance_map.permute(0, 3, 1, 2),
                     illum_scale.permute(0, 3, 1, 2)
                 )
+
+                # 1. Punish excessively large splats (kills the giant fog clouds)
+                loss += 0.05 * torch.mean(torch.exp(self.splats["scales"]))
+
+                # 2. Force opacities to be binary (kills the semi-transparent haze)
+                # This pushes sigmoid(opacity) towards 0 or 1, penalizing the 0.5 range
+                opacities = torch.sigmoid(self.splats["opacities"])
+                loss += 0.01 * torch.mean(opacities * (1.0 - opacities))
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()

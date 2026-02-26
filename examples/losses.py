@@ -831,6 +831,47 @@ class PatchConsistencyLoss(nn.Module):
 
         return photometric_loss
 
+class Stochastic3DKNNSmoothnessLoss(torch.nn.Module):
+    def __init__(self, sample_size: int = 4000, k: int = 4):
+        """
+        sample_size: Number of splats to randomly sample per step (keeps it fast)
+        k: Number of nearest neighbors to smooth against
+        """
+        super().__init__()
+        self.sample_size = sample_size
+        self.k = k
+
+    def forward(self, means: torch.Tensor, sh0: torch.Tensor) -> torch.Tensor:
+        num_splats = means.shape[0]
+
+        # If we have fewer splats than the sample size, use all of them
+        actual_sample_size = min(self.sample_size, num_splats)
+
+        # Randomly sample a subset of splats
+        idx = torch.randint(0, num_splats, (actual_sample_size,), device=means.device)
+        sampled_means = means[idx]
+        sampled_sh0 = sh0[idx]
+
+        # Compute pairwise distance matrix for the sample
+        # dist shape: (actual_sample_size, actual_sample_size)
+        dist = torch.cdist(sampled_means, sampled_means)
+
+        # Get K nearest neighbors (K+1 because the 0th closest is the point itself)
+        _, knn_idx = torch.topk(dist, self.k + 1, largest=False, dim=1)
+        knn_idx = knn_idx[:, 1:] # Shape: (actual_sample_size, K)
+
+        # Gather neighbors' base colors
+        neighbors_sh0 = sampled_sh0[knn_idx] # Shape: (actual_sample_size, K, 3)
+
+        # Calculate Mean Squared Error between each splat and its K neighbors
+        sampled_sh0_expanded = sampled_sh0.unsqueeze(1).expand(-1, self.k, -1)
+
+        # We optionally weight the loss by distance so we don't blur across deep geometric gaps
+        neighbor_distances = torch.gather(dist, 1, knn_idx).unsqueeze(-1)
+        weight = torch.exp(-neighbor_distances) # Drops off as points get further apart
+
+        loss = torch.mean(weight * (sampled_sh0_expanded - neighbors_sh0) ** 2)
+        return loss
 
 if __name__ == "__main__":
     x_in_low = torch.rand(1, 3, 399, 499)  # Pred normal-light
