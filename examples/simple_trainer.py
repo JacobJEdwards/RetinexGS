@@ -545,8 +545,8 @@ class Runner:
             scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
 
             if cfg.use_camera_response_network:
-                image_ids = data["image_id"].to(device)
-                embedding = self.appearance_embeds(image_ids)
+                safe_image_ids = torch.zeros_like(data["image_id"]).to(device)
+                embedding = self.appearance_embeds(safe_image_ids)
                 c, d = self.camera_response_net(embedding)
                 final_color_map = (
                         c[:, None, None, :] * scene_lit_color_map + d[:, None, None, :]
