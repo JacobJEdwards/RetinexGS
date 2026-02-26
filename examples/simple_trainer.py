@@ -410,10 +410,8 @@ class Runner:
 
                 # 2. Smoothness Prior: Force local lighting to be spatially smooth.
                 # Because the MLP is forced to be smooth, sharp textures MUST be learned by the splats.
-                loss += 0.05 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
-
-                # 3. Bias Suppression: Force the network to rely on the multiplication scale, not the additive bias
-                loss += 0.05 * torch.mean(illum_b_map ** 2)
+                loss += 0.001 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(0,
+                                                                                                        3, 1, 2))
 
                 # 4. Camera Regularization
                 if cfg.use_camera_response_network:

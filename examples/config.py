@@ -36,7 +36,7 @@ class Config:
     init_type: str = "sfm"
     init_num_pts: int = 100_000
     init_extent: float = 3.0
-    sh_degree: int = 3
+    sh_degree: int = 0
     sh_degree_interval: int = 1000
     init_opa: float = 0.1
     init_scale: float = 1.0
