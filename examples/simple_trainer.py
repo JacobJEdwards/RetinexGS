@@ -414,15 +414,13 @@ class Runner:
                         loss += 0.01 * torch.mean(appearance_embedding ** 2)
                         loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
-                    # 4. 3D KNN Smoothness
-                    loss += 0.05 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
-
                     # 5. Illumination Anchoring
                     loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
 
                     # 6. Exclusion Loss
                     loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
 
+                loss += 0.05 * self.splats["sh0"].pow(2).mean()
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
