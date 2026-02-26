@@ -393,11 +393,6 @@ class Runner:
                 else:
                     colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
-                # Illumination map for visualization
-                gray_color = torch.full_like(reflectance_map, 0.5)
-                illum_color_map = (gray_color * illum_scale) + illum_b_map
-                illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
-
                 info["means2d"].retain_grad()
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
@@ -428,14 +423,6 @@ class Runner:
                     # 6. Exclusion Loss
                     loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
 
-
-                # 1. Punish excessively large splats (kills the giant fog clouds)
-                loss += 0.05 * torch.mean(torch.exp(self.splats["scales"]))
-
-                # 2. Force opacities to be binary (kills the semi-transparent haze)
-                # This pushes sigmoid(opacity) towards 0 or 1, penalizing the 0.5 range
-                opacities = torch.sigmoid(self.splats["opacities"])
-                loss += 0.01 * torch.mean(opacities * (1.0 - opacities))
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
