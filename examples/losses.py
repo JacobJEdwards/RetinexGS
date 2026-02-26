@@ -842,6 +842,10 @@ class Stochastic3DKNNSmoothnessLoss(torch.nn.Module):
         self.k = k
 
     def forward(self, means: torch.Tensor, sh0: torch.Tensor) -> torch.Tensor:
+        # FIX: Squeeze the SH dimension if it exists ([N, 1, 3] -> [N, 3])
+        if sh0.dim() == 3 and sh0.shape[1] == 1:
+            sh0 = sh0.squeeze(1)
+
         num_splats = means.shape[0]
 
         # If we have fewer splats than the sample size, use all of them
@@ -850,10 +854,9 @@ class Stochastic3DKNNSmoothnessLoss(torch.nn.Module):
         # Randomly sample a subset of splats
         idx = torch.randint(0, num_splats, (actual_sample_size,), device=means.device)
         sampled_means = means[idx]
-        sampled_sh0 = sh0[idx]
+        sampled_sh0 = sh0[idx] # Shape: (actual_sample_size, 3)
 
         # Compute pairwise distance matrix for the sample
-        # dist shape: (actual_sample_size, actual_sample_size)
         dist = torch.cdist(sampled_means, sampled_means)
 
         # Get K nearest neighbors (K+1 because the 0th closest is the point itself)
