@@ -54,8 +54,8 @@ class Config:
     sh0_lr: float = 2.5e-3
     shN_lr: float = 2.5e-3 / 20
 
-    opacity_reg: float = 0.0
-    scale_reg: float = 0.0
+    opacity_reg: float = 0.05
+    scale_reg: float = 0.05
 
     tb_every: int = 1000
     tb_save_image: bool = True
@@ -63,7 +63,7 @@ class Config:
     lpips_net: Literal["vgg", "alex"] = "alex"
 
     appearance_embeddings: bool = True
-    appearance_embedding_dim: int = 64
+    appearance_embedding_dim: int = 32
 
     use_view_dirs: bool = False
     use_normals: bool = True
