@@ -40,7 +40,7 @@ class Config:
     sh_degree_interval: int = 1000
     init_opa: float = 0.1
     init_scale: float = 1.0
-    ssim_lambda: float = 0.2
+    ssim_lambda: float = 0.4
 
     near_plane: float = 0.01
     far_plane: float = 1e10
