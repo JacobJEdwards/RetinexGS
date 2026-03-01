@@ -6,13 +6,15 @@ DATASETS=(
     "Circular-bench"
     "chair"
     "4logs-earlham-park"
-    "plastic-cart-130-vert-shade"
     "robot-under-over-exposure"
     "Rocks2"
     "robot-recapture"
     "plastic-cart-130deg"
     "Log-hicontrast"
-    "log"
+    "rocks"
+    "split-in-half-tree"
+    "small-tree"
+    "log-earlham-park"
 )
 
 for DATA in "${DATASETS[@]}"; do
