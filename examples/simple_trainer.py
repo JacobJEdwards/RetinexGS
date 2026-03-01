@@ -411,7 +411,7 @@ class Runner:
 
                 # --- NEW DISENTANGLEMENT PRIORS ---
 
-                if step < 4000:
+                if True:
                     # 1. Achromatic Prior
                     illum_scale_mean = illum_scale.mean(dim=-1, keepdim=True)
                     loss += 0.1 * F.mse_loss(illum_scale, illum_scale_mean.expand_as(illum_scale))
@@ -427,12 +427,14 @@ class Runner:
                     # 5. Illumination Anchoring
                     loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
 
+                    # loss += 0.05 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
+
                     # 6. Exclusion Loss
                     loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
 
                     # 7. Exposure Anchoring for Base Splats
                     # Forces the "unlit" splats to look like a normally exposed image
-                    loss += 0.1 * self.exposure_loss(reflectance_map.permute(0, 3, 1, 2))
+                    loss += 0.5 * self.exposure_loss(reflectance_map.permute(0, 3, 1, 2))
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
