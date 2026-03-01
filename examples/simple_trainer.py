@@ -899,6 +899,10 @@ class Runner:
             if world_rank == 0:
                 if cfg.save_images:
                     # Save Original Input and Enhanced Output (Reflectance)
+                    orig_name = data["image_name"][0]
+                    orig_stem = os.path.splitext(orig_name)[0]
+                    orig_stem = orig_stem.replace("/", "_").replace("\\", "_")
+
                     canvas_list_enh = [pixels, colors_enh]
                     canvas_eval_enh = (
                         torch.cat(canvas_list_enh, dim=2).squeeze(0).cpu().numpy()
@@ -925,9 +929,16 @@ class Runner:
                             illum_np,
                         )
                         imageio.imwrite(
-                            f"{self.render_dir}/{stage}_step{step}_{i:04d}_reconstructed_low.png",
+                            f"{self.render_dir}/{stage}_step{step}_{i:04d}_reconstructed_low_{orig_stem}.png",
                             recon_np,
                         )
+
+                    colors_enh_np = colors_enh.squeeze(0).cpu().numpy()
+
+                    imageio.imwrite(
+                        f"{self.render_dir}/{stage}_enh_{i:04d}_{orig_stem}.png",
+                        (colors_enh_np * 255).astype(np.uint8),
+                    )
 
                 # Metrics
                 pixels_p = pixels.permute(0, 3, 1, 2)
