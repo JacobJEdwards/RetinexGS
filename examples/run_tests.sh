@@ -3,18 +3,18 @@
 BASE="/workspace/datasets"
 
 DATASETS=(
-#    "Circular-bench"
-#    "chair"
+    "Circular-bench"
+    "chair"
     "4logs-earlham-park"
-#    "robot-under-over-exposure"
-#    "Rocks2"
-#    "robot-recapture"
-#    "plastic-cart-130deg"
-#    "Log-hicontrast"
-#    "rocks"
-#    "split-in-half-tree"
-#    "small-tree"
-#    "log-earlham-park"
+    "robot-under-over-exposure"
+    "Rocks2"
+    "robot-recapture"
+    "plastic-cart-130deg"
+    "Log-hicontrast"
+    "rocks"
+    "split-in-half-tree"
+    "small-tree"
+    "log-earlham-park"
 )
 
 for DATA in "${DATASETS[@]}"; do
