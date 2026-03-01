@@ -33,7 +33,8 @@ from config import Config
 from lib_bilagrid import color_correct, BilateralGrid, bi_slice
 from utils import CameraResponseNet
 from rendering_intrinsics import rasterize_intrinsics
-from losses import TotalVariationLoss, GeometryAwareSmoothingLoss, GrayWorldLoss, LogTotalVariationLoss, ChromaticityContinuityLoss
+from losses import TotalVariationLoss, GeometryAwareSmoothingLoss, GrayWorldLoss, LogTotalVariationLoss, \
+    ChromaticityContinuityLoss, ExposureLoss
 from losses import ExclusionLoss, PatchConsistencyLoss, Stochastic3DKNNSmoothnessLoss
 from utils import IlluminationField, sh_to_rgb, quaternion_to_matrix
 from rendering_double import rasterization_dual
@@ -215,6 +216,7 @@ class Runner:
         self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
         self.exclusion_loss = ExclusionLoss().to(self.device)
         self.loss_3d_knn = Stochastic3DKNNSmoothnessLoss(sample_size=4000, k=4).to(self.device)
+        self.exposure_loss = ExposureLoss(patch_size=16, mean_val=0.5).to(self.device)
 
 
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -312,8 +314,7 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )
 
-            # Initialize with lighting frozen
-            if step == 4000:
+            if step == 0:
                 if cfg.use_camera_response_network:
                     for param in self.camera_response_net.parameters():
                         param.requires_grad = False
@@ -321,6 +322,15 @@ class Runner:
                         param.requires_grad = False
                 for param in self.illumination_field.parameters():
                     param.requires_grad = False
+
+            if step == 1000:
+                if cfg.use_camera_response_network:
+                    for param in self.camera_response_net.parameters():
+                        param.requires_grad = True
+                    for param in self.appearance_embeds.parameters():
+                        param.requires_grad = True
+                for param in self.illumination_field.parameters():
+                    param.requires_grad = True
 
             with torch.autocast(enabled=False, device_type=device):
                 camtoworlds = data["camtoworld"].to(device)
@@ -419,6 +429,10 @@ class Runner:
 
                     # 6. Exclusion Loss
                     loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
+
+                    # 7. Exposure Anchoring for Base Splats
+                    # Forces the "unlit" splats to look like a normally exposed image
+                    loss += 0.1 * self.exposure_loss(reflectance_map.permute(0, 3, 1, 2))
 
                 if cfg.lambda_shn_reg > 0.0:
                     loss += cfg.lambda_shn_reg * self.splats["shN"].pow(2).mean()
