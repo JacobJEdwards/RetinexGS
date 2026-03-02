@@ -870,16 +870,16 @@ class Runner:
             illumination_map = None
             colors_reconstructed = None
 
-            if image_ids is not None and self.retinex_embeds is not None:
-                retinex_embedding = self.retinex_embeds(image_ids)
-
-                _, illumination_map, _ = self.get_retinex_output(
-                    pixels=pixels,
-                    retinex_embedding=retinex_embedding
-                )
-
-                colors_reconstructed = colors_enh * illumination_map.permute(0, 2, 3, 1)
-                colors_reconstructed = torch.clamp(colors_reconstructed, 0.0, 1.0)
+            # if image_ids is not None and self.retinex_embeds is not None:
+            #     retinex_embedding = self.retinex_embeds(image_ids)
+            #
+            #     _, illumination_map, _ = self.get_retinex_output(
+            #         pixels=pixels,
+            #         retinex_embedding=retinex_embedding
+            #     )
+            #
+            #     colors_reconstructed = colors_enh * illumination_map.permute(0, 2, 3, 1)
+            #     colors_reconstructed = torch.clamp(colors_reconstructed, 0.0, 1.0)
 
             if world_rank == 0:
                 if cfg.save_images:
@@ -934,9 +934,9 @@ class Runner:
                 metrics["psnr"].append(self.psnr(colors_enh_p, pixels_p))
 
                 # If we have reconstruction, we can measure how well we fit the input (low light)
-                if colors_reconstructed is not None:
-                    colors_rec_p = colors_reconstructed.permute(0, 3, 1, 2)
-                    metrics["psnr_reconstruction"].append(self.psnr(colors_rec_p, pixels_p))
+                # if colors_reconstructed is not None:
+                #     colors_rec_p = colors_reconstructed.permute(0, 3, 1, 2)
+                #     metrics["psnr_reconstruction"].append(self.psnr(colors_rec_p, pixels_p))
 
         if world_rank == 0:
             avg_ellipse_time = (
