@@ -196,11 +196,6 @@ class Runner:
         ).to(self.device)
         self.loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(self.device)
         self.histogram_loss = HistogramLoss().to(self.device)
-        self.loss_white_preservation = WhitePreservationLoss(
-            luminance_threshold=cfg.luminance_threshold,
-            chroma_tolerance=cfg.chroma_tolerance,
-            gain=cfg.gain,
-        ).to(self.device)
         self.loss_chroma = ChromaLoss().to(self.device)
 
 
@@ -216,7 +211,6 @@ class Runner:
             "exposure_val": cfg.lambda_illum_exposure,
             "adaptive_curve": cfg.lambda_illum_curve,
             "smooth_edge_aware": cfg.lambda_edge_aware_smooth,
-            "white_preservation": cfg.lambda_white_preservation,
             "histogram_loss": cfg.lambda_histogram,
             "variance": cfg.lambda_illum_variance,
             "chroma": cfg.lambda_chroma,
@@ -225,7 +219,7 @@ class Runner:
         self.loss_names = [
             "reflect_spa", "perceptual_color", "exposure_val",
             "adaptive_curve", "smooth_edge_aware",
-            "white_preservation", "histogram_loss", "variance", "chroma"
+            "histogram_loss", "variance", "chroma"
         ]
 
         self.fixed_losses = [
@@ -458,13 +452,6 @@ class Runner:
         else:
             loss_smooth_edge_aware = torch.tensor(0.0, device=device)
 
-        if cfg.loss_white_preservation:
-            loss_white_preservation = self.loss_white_preservation(
-                input_image=pixels, reflectance_map=reflectance_map.permute(0, 2,3,1),
-            )
-        else:
-            loss_white_preservation = torch.tensor(0.0, device=device)
-
         if cfg.loss_histogram:
             loss_histogram = self.histogram_loss(reflectance_map, self.target_histogram_dist)
         else:
@@ -495,7 +482,6 @@ class Runner:
             "exposure_val": loss_exposure_val,
             "adaptive_curve": loss_adaptive_curve,
             "smooth_edge_aware": loss_smooth_edge_aware,
-            "white_preservation": loss_white_preservation,
             "histogram_loss": loss_histogram,
             "variance": loss_variance,
             "chroma": loss_chroma,
@@ -909,29 +895,29 @@ class Runner:
                     )
                     canvas_eval_enh = (canvas_eval_enh * 255).astype(np.uint8)
 
-                    imageio.imwrite(
-                        f"{self.render_dir}/{stage}_step{step}_{i:04d}_orig_vs_enh.png",
-                        canvas_eval_enh,
-                    )
+                    # imageio.imwrite(
+                    #     f"{self.render_dir}/{stage}_step{step}_{i:04d}_orig_vs_enh.png",
+                    #     canvas_eval_enh,
+                    # )
 
                     # Save Retinex Decomposition if available
-                    if illumination_map is not None and colors_reconstructed is not None:
-                        # Illumination Map (heatmap/grayscale usually, but here RGB)
-                        illum_np = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
-                        illum_np = (illum_np * 255).astype(np.uint8)
-
-                        # Reconstructed Low Light
-                        recon_np = colors_reconstructed.squeeze(0).cpu().numpy()
-                        recon_np = (recon_np * 255).astype(np.uint8)
-
-                        imageio.imwrite(
-                            f"{self.render_dir}/{stage}_step{step}_{i:04d}_illumination.png",
-                            illum_np,
-                        )
-                        imageio.imwrite(
-                            f"{self.render_dir}/{stage}_step{step}_{i:04d}_reconstructed_low_{orig_stem}.png",
-                            recon_np,
-                        )
+                    # if illumination_map is not None and colors_reconstructed is not None:
+                    #     # Illumination Map (heatmap/grayscale usually, but here RGB)
+                    #     illum_np = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                    #     illum_np = (illum_np * 255).astype(np.uint8)
+                    #
+                    #     # Reconstructed Low Light
+                    #     recon_np = colors_reconstructed.squeeze(0).cpu().numpy()
+                    #     recon_np = (recon_np * 255).astype(np.uint8)
+                    #
+                    #     imageio.imwrite(
+                    #         f"{self.render_dir}/{stage}_step{step}_{i:04d}_illumination.png",
+                    #         illum_np,
+                    #     )
+                    #     imageio.imwrite(
+                    #         f"{self.render_dir}/{stage}_step{step}_{i:04d}_reconstructed_low_{orig_stem}.png",
+                    #         recon_np,
+                    #     )
 
                     colors_enh_np = colors_enh.squeeze(0).cpu().numpy()
 
@@ -1273,12 +1259,6 @@ def objective(trial: optuna.Trial) -> tuple[float, float, float]:
     if cfg.loss_exposure:
         cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.1, 10.0, log=True)
         cfg.exposure_loss_patch_size = trial.suggest_categorical("exposure_loss_patch_size", [32, 64, 128])
-
-    cfg.loss_white_preservation = trial.suggest_categorical("loss_white_preservation", [True, False])
-    if cfg.loss_white_preservation:
-        cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1.0, 20.0, log=True)
-        cfg.chroma_tolerance = trial.suggest_float("chroma_tolerance", 1.0, 10.0, log=True)
-        cfg.gain = trial.suggest_float("gain", 0.5, 10.0, log=True)
 
     cfg.loss_histogram = trial.suggest_categorical("loss_histogram", [True, False])
     if cfg.loss_histogram:
