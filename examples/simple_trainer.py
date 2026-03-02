@@ -966,7 +966,6 @@ class Runner:
 
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.eval(step, "val")
-                self.eval(step, "train")
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.render_traj(step)
 
@@ -1032,7 +1031,12 @@ class Runner:
             colors_reconstructed = None
 
             if image_ids is not None and self.retinex_embeds is not None:
-                retinex_embedding = self.retinex_embeds(image_ids)
+                if stage == "val":
+                    eval_image_ids = torch.zeros_like(image_ids)
+                else:
+                    eval_image_ids = image_ids
+
+                retinex_embedding = self.retinex_embeds(eval_image_ids)
 
                 _, illumination_map, _ = self.get_retinex_output(
                     pixels=pixels,
