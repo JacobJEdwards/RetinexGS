@@ -806,7 +806,6 @@ class Runner:
 
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.eval(step, "val")
-                self.eval(step, "train")
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.render_traj(step)
 
