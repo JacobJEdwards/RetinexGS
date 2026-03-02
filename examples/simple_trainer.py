@@ -756,8 +756,8 @@ class Runner:
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
                 loss = (
-                    (cfg.lambda_low * low_loss
-                        + (1.0 - cfg.lambda_low) * enh_loss) * 0.5
+                        cfg.lambda_low * low_loss
+                        + (1.0 - cfg.lambda_low) * enh_loss
                         + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
                 )
 
@@ -813,7 +813,7 @@ class Runner:
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
-                loss += (((1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low) * 0.5)
+                loss += (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
                 # --- NEW DISENTANGLEMENT PRIORS ---
 
