@@ -929,7 +929,9 @@ class Runner:
                 self.scaler.step(optimizer)
 
             self.scaler.step(self.retinex_optimiser)
-            # self.retinex_optimizer.step()
+            self.scaler.step(self.illum_field_optimizer)
+            self.scaler.step(self.appearance_embeds_optimizer)
+            self.scaler.step(self.camera_response_optimizer)
 
             self.scaler.update()
 
@@ -937,6 +939,9 @@ class Runner:
                 optimizer.zero_grad()
 
             self.retinex_optimiser.zero_grad()
+            self.illum_field_optimizer.zero_grad()
+            self.appearance_embeds_optimizer.zero_grad()
+            self.camera_response_optimizer.zero_grad()
 
             for scheduler in schedulers:
                 scheduler.step()
