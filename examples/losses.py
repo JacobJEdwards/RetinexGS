@@ -111,6 +111,106 @@ class ExposureLoss(nn.Module):
         d = torch.mean(torch.pow(mean - mean_val, 2))
         return d
 
+class GeometryAwareSmoothingLoss(nn.Module):
+    def __init__(self, weight: float = 1.0):
+        super(GeometryAwareSmoothingLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, illumination: Tensor, normals: Tensor) -> Tensor:
+        # Penalizes illumination changes that are not consistent with geometry
+        # illumination: [B, 3, H, W], normals: [B, 3, H, W]
+        def get_grad(x):
+            dx = x[:, :, :, 1:] - x[:, :, :, :-1]
+            dy = x[:, :, 1:, :] - x[:, :, :-1, :]
+            return dx, dy
+
+        illum_dx, illum_dy = get_grad(illumination)
+        norm_dx, norm_dy = get_grad(normals)
+
+        # Basic idea: lighting changes should be small where the surface is flat (norm_grad is small)
+        # Weight TV loss by the flatness of the geometry
+        flatness_x = torch.exp(-norm_dx.pow(2).sum(dim=1, keepdim=True))
+        flatness_y = torch.exp(-norm_dy.pow(2).sum(dim=1, keepdim=True))
+
+        loss = (illum_dx.pow(2) * flatness_x).mean() + (illum_dy.pow(2) * flatness_y).mean()
+        return self.weight * loss
+
+class TotalVariationLoss(nn.Module):
+    def __init__(self, weight: float = 1.0) -> None:
+        super(TotalVariationLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, x: Tensor) -> Tensor:
+        diff_h = x[:, :, 1:, :] - x[:, :, :-1, :]
+        diff_w = x[:, :, :, 1:] - x[:, :, :, :-1]
+
+        tv_h = torch.pow(diff_h, 2).sum()
+        tv_w = torch.pow(diff_w, 2).sum()
+
+        loss = (tv_h + tv_w) / x.numel()
+
+        return self.weight * loss
+
+class Stochastic3DKNNSmoothnessLoss(torch.nn.Module):
+    def __init__(self, sample_size: int = 4000, k: int = 4):
+        """
+        sample_size: Number of splats to randomly sample per step (keeps it fast)
+        k: Number of nearest neighbors to smooth against
+        """
+        super().__init__()
+        self.sample_size = sample_size
+        self.k = k
+
+    def forward(self, means: torch.Tensor, sh0: torch.Tensor) -> torch.Tensor:
+        # FIX: Squeeze the SH dimension if it exists ([N, 1, 3] -> [N, 3])
+        if sh0.dim() == 3 and sh0.shape[1] == 1:
+            sh0 = sh0.squeeze(1)
+
+        num_splats = means.shape[0]
+
+        # If we have fewer splats than the sample size, use all of them
+        actual_sample_size = min(self.sample_size, num_splats)
+
+        # Randomly sample a subset of splats
+        idx = torch.randint(0, num_splats, (actual_sample_size,), device=means.device)
+        sampled_means = means[idx]
+        sampled_sh0 = sh0[idx] # Shape: (actual_sample_size, 3)
+
+        # Compute pairwise distance matrix for the sample
+        dist = torch.cdist(sampled_means, sampled_means)
+
+        # Get K nearest neighbors (K+1 because the 0th closest is the point itself)
+        _, knn_idx = torch.topk(dist, self.k + 1, largest=False, dim=1)
+        knn_idx = knn_idx[:, 1:] # Shape: (actual_sample_size, K)
+
+        # Gather neighbors' base colors
+        neighbors_sh0 = sampled_sh0[knn_idx] # Shape: (actual_sample_size, K, 3)
+
+        # Calculate Mean Squared Error between each splat and its K neighbors
+        sampled_sh0_expanded = sampled_sh0.unsqueeze(1).expand(-1, self.k, -1)
+
+        # We optionally weight the loss by distance so we don't blur across deep geometric gaps
+        neighbor_distances = torch.gather(dist, 1, knn_idx).unsqueeze(-1)
+        weight = torch.exp(-neighbor_distances) # Drops off as points get further apart
+
+        loss = torch.mean(weight * (sampled_sh0_expanded - neighbors_sh0) ** 2)
+        return loss
+
+class TotalVariationLoss(nn.Module):
+    def __init__(self, weight: float = 1.0) -> None:
+        super(TotalVariationLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, x: Tensor) -> Tensor:
+        diff_h = x[:, :, 1:, :] - x[:, :, :-1, :]
+        diff_w = x[:, :, :, 1:] - x[:, :, :, :-1]
+
+        tv_h = torch.pow(diff_h, 2).sum()
+        tv_w = torch.pow(diff_w, 2).sum()
+
+        loss = (tv_h + tv_w) / x.numel()
+
+        return self.weight * loss
 
 
 class SpatialLoss(nn.Module):

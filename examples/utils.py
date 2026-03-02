@@ -8,9 +8,36 @@ import matplotlib.pyplot as plt
 from matplotlib import colormaps
 import einops
 import torch
+import tinycudann as tcnn
 import torch.nn as nn
 import torch.nn.functional as F
 
+
+def quaternion_to_matrix(quaternions: Tensor) -> Tensor:
+    quaternions = F.normalize(quaternions, p=2, dim=-1)
+
+    w, x, y, z = torch.unbind(quaternions, -1)
+
+    x2, y2, z2 = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
+
+    mat = torch.stack(
+        [
+            1 - 2 * (y2 + z2),
+            2 * (xy - wz),
+            2 * (xz + wy),
+            2 * (xy + wz),
+            1 - 2 * (x2 + z2),
+            2 * (yz - wx),
+            2 * (xz - wy),
+            2 * (yz + wx),
+            1 - 2 * (x2 + y2),
+            ],
+        dim=-1,
+    )
+
+    return mat.reshape(quaternions.shape[:-1] + (3, 3))
 
 class CrossAttention(nn.Module):
     def __init__(
@@ -384,3 +411,166 @@ class AutomaticWeightedLoss(nn.Module):
         for i, loss in enumerate(x):
             loss_sum += 0.5 / (self.params[i] ** 2) * loss + torch.log(1 + self.params[i] ** 2)
         return loss_sum
+
+class PositionalEncoder(nn.Module):
+    def __init__(self, num_freqs: int):
+        super().__init__()
+        self.freq_bands = 2.0 ** torch.linspace(0.0, num_freqs - 1, num_freqs)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [..., 3]
+        # returns: [..., 3 * 2 * num_freqs]
+        x = x.unsqueeze(-1)  # [..., 3, 1]
+        projs = x * self.freq_bands.to(x.device)  # [..., 3, N_freqs]
+        return torch.cat([torch.sin(projs), torch.cos(projs)], dim=-1).flatten(-2)
+
+
+class IlluminationField(nn.Module):
+    def __init__(
+            self,
+            scene_scale: float,
+            num_freqs: int = 4,
+            dir_num_freqs: int = 4,
+            hidden_dim: int = 64,
+            num_layers: int = 2,
+            use_view_dirs: bool = True,
+            use_normals: bool = True,
+    ):
+        super().__init__()
+        self.scene_scale = scene_scale
+        self.use_view_dirs = use_view_dirs
+        self.use_normals = use_normals
+
+        self.hidden_dim = hidden_dim
+
+        per_level_scale = 1.4472692012786865
+        self.encoder = tcnn.Encoding(
+            n_input_dims=3,
+            encoding_config={
+                "otype": "HashGrid",
+                "n_levels": 16,
+                "n_features_per_level": 2,
+                "log2_hashmap_size": 19,
+                "base_resolution": 16,
+                "per_level_scale": per_level_scale,
+            },
+            dtype=torch.float32,
+        )
+        pos_in_dim = self.encoder.n_output_dims
+
+        self.dir_in_dim = 0
+        if self.use_view_dirs:
+            self.dir_encoder = PositionalEncoder(dir_num_freqs)
+            self.dir_in_dim += 3 * 2 * dir_num_freqs
+
+        self.normal_in_dim = 0
+        if self.use_normals:
+            self.normal_encoder = PositionalEncoder(num_freqs)
+            self.normal_in_dim += 3 * 2 * num_freqs
+
+        in_dim = pos_in_dim + self.dir_in_dim + self.normal_in_dim
+
+        self.mlp_base = tcnn.Network(
+            n_input_dims=in_dim,
+            n_output_dims=hidden_dim,
+            network_config={
+                "otype": "FullyFusedMLP",
+                "activation": "LeakyReLU",
+                "output_activation": "None",
+                "n_neurons": hidden_dim,
+                "n_hidden_layers": num_layers - 1,
+            },
+        )
+
+        self.mlp_head = nn.Linear(hidden_dim, 12)
+
+        with torch.no_grad():
+            self.mlp_head.weight.data.normal_(0.0, 1e-4)
+            self.mlp_head.bias.data.zero_()
+
+    def forward(
+            self,
+            x: Tensor,
+            view_dirs: Tensor | None = None,
+            normals: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
+        # x: [N, 3]
+        normalized_x = x / (2.0 * self.scene_scale) + 0.5
+        normalized_x = torch.clamp(normalized_x, 0.0, 1.0)
+        encoded_x = self.encoder(normalized_x)
+
+        mlp_input = [encoded_x]
+
+        if self.use_view_dirs:
+            if view_dirs is not None:
+                encoded_dirs = self.dir_encoder(F.normalize(view_dirs, dim=-1))
+                mlp_input.append(encoded_dirs)
+            else:
+                zeros = torch.zeros(x.shape[0], self.dir_in_dim, device=x.device)
+                mlp_input.append(zeros)
+
+        if self.use_normals:
+            if normals is not None:
+                encoded_normals = self.normal_encoder(F.normalize(normals, dim=-1))
+                mlp_input.append(encoded_normals)
+            else:
+                zeros = torch.zeros(x.shape[0], self.normal_in_dim, device=x.device)
+                mlp_input.append(zeros)
+
+        mlp_input_tensor = torch.cat(mlp_input, dim=-1)
+
+        hidden_features = self.mlp_base(mlp_input_tensor)
+        residual_dim = min(mlp_input_tensor.shape[1], self.hidden_dim)
+        residual = mlp_input_tensor[:, :residual_dim]
+
+        if residual_dim == self.hidden_dim:
+            hidden_features = hidden_features.clone() + residual
+        else:
+            padded_residual = torch.zeros(
+                mlp_input_tensor.shape[0],
+                self.hidden_dim,
+                device=mlp_input_tensor.device,
+            )
+            padded_residual[:, :residual_dim] = residual
+            hidden_features = hidden_features.clone() + padded_residual
+
+        params = self.mlp_head(hidden_features.float())
+
+        matrix_A_flat = params[..., :9]
+        bias_b = params[..., 9:]
+
+        num_points = x.shape[0]
+        identity = torch.eye(3, device=x.device).unsqueeze(0).expand(num_points, -1, -1)
+        matrix_A = matrix_A_flat.view(num_points, 3, 3) + identity
+
+        return matrix_A, bias_b
+
+
+class CameraResponseNet(nn.Module):
+    def __init__(self, embedding_dim: int, hidden_dim: int = 32) -> None:
+        super().__init__()
+        self.mlp_base = tcnn.Network(
+            n_input_dims=embedding_dim,
+            n_output_dims=hidden_dim,
+            network_config={
+                "otype": "FullyFusedMLP",
+                "activation": "LeakyReLU",
+                "output_activation": "None",
+                "n_neurons": hidden_dim,
+                "n_hidden_layers": 2,
+            },
+        )
+        self.mlp_head = nn.Linear(hidden_dim, 6)
+
+        with torch.no_grad():
+            self.mlp_head.weight.zero_()
+            self.mlp_head.bias.zero_()
+            self.mlp_head.bias.data[0:3] = 1.0
+
+    def forward(self, embedding: Tensor) -> tuple[Tensor, Tensor]:
+        # embedding: [B, D_embed]
+        hidden_features = self.mlp_base(embedding)
+        params = self.mlp_head(hidden_features.float())  # [B, 6]
+
+        c, d = params.split(3, dim=-1)  # 2 x [B, 3]
+        return torch.nn.functional.softplus(c), d

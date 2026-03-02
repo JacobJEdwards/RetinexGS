@@ -35,7 +35,8 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from utils import AutomaticWeightedLoss
+from examples.rendering_intrinsics import rasterize_intrinsics
+from utils import AutomaticWeightedLoss, CameraResponseNet, IlluminationField
 from gsplat.distributed import cli
 from losses import (
     ExposureLoss,
@@ -45,7 +46,7 @@ from losses import (
     HistogramLoss,
     WhitePreservationLoss,
     PerceptualColorLoss,
-    ChromaLoss,
+    ChromaLoss, ExclusionLoss, Stochastic3DKNNSmoothnessLoss, GeometryAwareSmoothingLoss, TotalVariationLoss,
 )
 from gsplat import export_splats, rasterization
 from gsplat.optimizers import SelectiveAdam
@@ -187,6 +188,38 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
+
+        self.illumination_field = IlluminationField(
+            self.scene_scale,
+            use_view_dirs=False,
+            use_normals=True,
+        ).to(self.device)
+
+        if world_size > 1:
+            self.illumination_field = DDP(
+                self.illumination_field, device_ids=[local_rank]
+            )
+
+        # Removed retinex_net from the optimizer
+        self.illum_field_optimizer = torch.optim.Adam(
+            self.illumination_field.parameters(), lr=6e-5, fused=True
+        )
+
+        self.camera_response_net = CameraResponseNet(
+            embedding_dim=32
+        ).to(self.device)
+        self.camera_response_optimizer = torch.optim.Adam(
+            self.camera_response_net.parameters(), lr=3e-4, fused=True
+        )
+
+        num_train_images = len(self.trainset)
+        self.appearance_embeds = torch.nn.Embedding(
+            num_train_images, 32
+        ).to(self.device)
+        self.appearance_embeds_optimizer = torch.optim.Adam(
+            self.appearance_embeds.parameters(), lr=6e-4, fused=True
+        )
+
         self.loss_perceptual_colour = PerceptualColorLoss().to(self.device)
         self.loss_exposure = ExposureLoss(patch_size=cfg.exposure_loss_patch_size,
                                           mean_val=cfg.exposure_mean_val).to(self.device)
@@ -202,6 +235,12 @@ class Runner:
             gain=cfg.gain,
         ).to(self.device)
         self.loss_chroma = ChromaLoss().to(self.device)
+
+        self.loss_tv = TotalVariationLoss().to(self.device)
+        self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
+        self.exclusion_loss = ExclusionLoss().to(self.device)
+        self.loss_3d_knn = Stochastic3DKNNSmoothnessLoss(sample_size=4000, k=4).to(self.device)
+        self.exposure_loss = ExposureLoss(patch_size=16, mean_val=0.5).to(self.device)
 
 
         target_hist = torch.tensor(stats.norm.pdf(
@@ -597,6 +636,12 @@ class Runner:
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
         ]
 
+        schedulers.append(
+            CosineAnnealingLR(
+                self.camera_response_optimizer, T_max=max_steps, eta_min=0
+            )
+        )
+
         # schedulers.extend([
         #     CosineAnnealingLR(
         #         self.retinex_optimiser,
@@ -636,6 +681,22 @@ class Runner:
 
                 for param in self.retinex_embeds.parameters():
                     param.requires_grad = False
+
+            if step == 0:
+                for param in self.camera_response_net.parameters():
+                    param.requires_grad = False
+                for param in self.appearance_embeds.parameters():
+                    param.requires_grad = False
+                for param in self.illumination_field.parameters():
+                    param.requires_grad = False
+
+            if step == 1000:
+                for param in self.camera_response_net.parameters():
+                    param.requires_grad = True
+                for param in self.appearance_embeds.parameters():
+                    param.requires_grad = True
+                for param in self.illumination_field.parameters():
+                    param.requires_grad = True
 
             with (torch.autocast(enabled=False, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
@@ -699,6 +760,86 @@ class Runner:
                         + (1.0 - cfg.lambda_low) * enh_loss
                         + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
                 )
+
+                base_reflectance_sh = torch.cat(
+                    [self.splats["sh0"], self.splats["shN"]], 1
+                )
+
+                intrinsic_maps, _, info = rasterize_intrinsics(
+                    means=self.splats["means"],
+                    quats=self.splats["quats"],
+                    scales=torch.exp(self.splats["scales"]),
+                    opacities=torch.sigmoid(self.splats["opacities"]),
+                    base_reflectance_sh=base_reflectance_sh,
+                    viewmats=torch.linalg.inv(camtoworlds.float()),
+                    Ks=Ks,
+                    width=width,
+                    height=height,
+                    sh_degree=sh_degree_to_use,
+                )
+
+                reflectance_map = intrinsic_maps["reflectance"]
+                world_position_map = intrinsic_maps["world_position"]
+                world_normal_map = intrinsic_maps["world_normal"]
+
+                view_dirs_input = None
+
+                # 1. Local 3D Illumination (Shadows/Bounces)
+                illum_A, illum_b = self.illumination_field(
+                    world_position_map.view(-1, 3),
+                    view_dirs=view_dirs_input,
+                    normals=world_normal_map.view(-1, 3),
+                )
+                illum_A_map = illum_A.view(1, height, width, 3, 3)
+                illum_b_map = illum_b.view(1, height, width, 3)
+
+                # Extract diagonal and use softplus to ensure light is strictly positive
+                illum_scale = F.softplus(torch.diagonal(illum_A_map, dim1=-2, dim2=-1))
+
+                # Apply local lighting: I = R * L + b
+                scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
+
+                # 2. Global Camera Response (Exposure / White Balance)
+                image_ids = data["image_id"].to(device)
+                appearance_embedding = self.appearance_embeds(image_ids)
+                c, d = self.camera_response_net(appearance_embedding)
+                final_color_map = (
+                        c[:, None, None, :] * scene_lit_color_map + d[:, None, None, :]
+                )
+
+                colors_low = torch.clamp(final_color_map, 0.0, 1.0)
+
+                info["means2d"].retain_grad()
+
+                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
+                ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
+                loss += (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
+
+                # --- NEW DISENTANGLEMENT PRIORS ---
+
+                if True:
+                    # 1. Achromatic Prior
+                    illum_scale_mean = illum_scale.mean(dim=-1, keepdim=True)
+                    loss += 0.1 * F.mse_loss(illum_scale, illum_scale_mean.expand_as(illum_scale))
+
+                    # 2. Geometry Smoothness
+                    loss += 0.001 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
+
+                    # 3. Camera Regularization
+                    loss += 0.01 * torch.mean(appearance_embedding ** 2)
+                    loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
+
+                    # 5. Illumination Anchoring
+                    loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
+
+                    # loss += 0.05 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
+
+                    # 6. Exclusion Loss
+                    loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
+
+                    # 7. Exposure Anchoring for Base Splats
+                    # Forces the "unlit" splats to look like a normally exposed image
+                    loss += 0.5 * self.exposure_loss(reflectance_map.permute(0, 3, 1, 2))
 
                 self.cfg.strategy.step_pre_backward(
                     params=self.splats,

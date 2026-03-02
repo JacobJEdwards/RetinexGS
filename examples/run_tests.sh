@@ -21,5 +21,5 @@ for DATA in "${DATASETS[@]}"; do
     echo "Processing: $DATA"
     DIR="$BASE/$DATA"
 
-    python simple_trainer.py --data-dir "$DIR" --result-dir "$DIR/results/2d"
+    python simple_trainer.py --data-dir "$DIR" --result-dir "$DIR/results/retinexgs"
 done
