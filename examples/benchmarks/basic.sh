@@ -1,5 +1,7 @@
+export PYTORCH_ALLOC_CONF=expandable_segments:True
+
 SCENE_DIR="/workspace/360_v2"
-RESULT_DIR="/workspace/2d"
+RESULT_DIR="/workspace/retinexgs"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
 POSTFIXES="contrast variance multiexposure"
 
