@@ -28,7 +28,7 @@ from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMe
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal
 
-from datasets.colmap import Dataset, Parser
+from datasets.colmap_360 import Dataset, Parser
 from datasets.traj import (
     generate_ellipse_path_z,
     generate_interpolated_path,
@@ -177,6 +177,7 @@ class Runner:
             data_dir=str(cfg.data_dir),
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
+            postfix=cfg.postfix,
         )
 
         self.scaler = GradScaler(enabled=False)

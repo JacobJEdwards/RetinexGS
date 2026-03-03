@@ -10,9 +10,10 @@ for POSTFIX in $POSTFIXES;
       echo "Running $SCENE"
 
       NEW_RESULT_DIR=$RESULT_DIR/"$POSTFIX"/"$SCENE"
+      DATADIR=$SCENE_DIR/"$SCENE"/
 
       CUDA_VISIBLE_DEVICES=0 python simple_trainer.py --disable_viewer \
-          --data_dir $SCENE_DIR/"$SCENE"/ \
+          --data_dir $DATADIR \
           --postfix $POSTFIX \
           --result_dir $NEW_RESULT_DIR
   done
