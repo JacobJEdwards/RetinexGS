@@ -16,7 +16,7 @@ import tyro
 import viser
 import yaml
 from gsplat.color_correct import color_correct_affine, color_correct_quadratic
-from datasets.colmap import Dataset, Parser
+from datasets.colmap_360 import Dataset, Parser
 from datasets.traj import (
     generate_ellipse_path_z,
     generate_interpolated_path,
@@ -72,6 +72,7 @@ class Config:
     camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
     # Load EXIF exposure metadata from images (if available)
     load_exposure: bool = True
+    postfix: str = "_org"
 
     # Port for the viewer server
     port: int = 8080
@@ -352,10 +353,9 @@ class Runner:
         # Load data: Training data should contain initial points and colors.
         self.parser = Parser(
             data_dir=cfg.data_dir,
-            factor=1,
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
-            load_exposure=cfg.load_exposure,
+            postfix=cfg.postfix
         )
         self.trainset = Dataset(
             self.parser,
