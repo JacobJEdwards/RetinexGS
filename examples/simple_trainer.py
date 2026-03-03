@@ -710,19 +710,28 @@ class Runner:
 
                 height, width = pixels.shape[1:3]
 
-                renders_enh, _, info = self.rasterize_splats(
-                    camtoworlds=camtoworlds,
+                base_reflectance_sh = torch.cat(
+                    [self.splats["sh0"], self.splats["shN"]], 1
+                )
+
+                intrinsic_maps, _, info = rasterize_intrinsics(
+                    means=self.splats["means"],
+                    quats=self.splats["quats"],
+                    scales=torch.exp(self.splats["scales"]),
+                    opacities=torch.sigmoid(self.splats["opacities"]),
+                    base_reflectance_sh=base_reflectance_sh,
+                    viewmats=torch.linalg.inv(camtoworlds.float()),
                     Ks=Ks,
                     width=width,
                     height=height,
                     sh_degree=sh_degree_to_use,
-                    near_plane=cfg.near_plane,
-                    far_plane=cfg.far_plane,
-                    render_mode="RGB",
-                    masks=masks,
                 )
 
-                colors_enh = torch.clamp(renders_enh[..., :3], 0.0, 1.0)
+                reflectance_map = intrinsic_maps["reflectance"]
+                world_position_map = intrinsic_maps["world_position"]
+                world_normal_map = intrinsic_maps["world_normal"]
+
+                colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
 
                 info["means2d"].retain_grad()
@@ -762,26 +771,6 @@ class Runner:
                         + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
                 )
 
-                base_reflectance_sh = torch.cat(
-                    [self.splats["sh0"], self.splats["shN"]], 1
-                )
-
-                intrinsic_maps, _, info = rasterize_intrinsics(
-                    means=self.splats["means"],
-                    quats=self.splats["quats"],
-                    scales=torch.exp(self.splats["scales"]),
-                    opacities=torch.sigmoid(self.splats["opacities"]),
-                    base_reflectance_sh=base_reflectance_sh,
-                    viewmats=torch.linalg.inv(camtoworlds.float()),
-                    Ks=Ks,
-                    width=width,
-                    height=height,
-                    sh_degree=sh_degree_to_use,
-                )
-
-                reflectance_map = intrinsic_maps["reflectance"]
-                world_position_map = intrinsic_maps["world_position"]
-                world_normal_map = intrinsic_maps["world_normal"]
 
                 view_dirs_input = None
 
