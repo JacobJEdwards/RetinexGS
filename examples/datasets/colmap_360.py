@@ -445,6 +445,9 @@ class Dataset:
             data["points"] = torch.from_numpy(points).float()
             data["depths"] = torch.from_numpy(depths).float()
 
+        image_name = self.parser.image_names[index]
+        data["image_name"] = image_name
+
         return data
 
 
