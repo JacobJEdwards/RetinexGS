@@ -812,7 +812,7 @@ class Runner:
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
-                loss += (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
+                loss_3d = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
                 loss_terms_for_uncertainty = []
 
@@ -838,7 +838,7 @@ class Runner:
                     loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
                     if not cfg.uncertainty_weighting:
-                        loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                        loss_3d += cfg.lambda_illum_smoothness * loss_illum_smoothness
                     else:
                         loss_terms_for_uncertainty.append(loss_illum_smoothness)
 
@@ -855,7 +855,7 @@ class Runner:
                         )
 
                         if not cfg.uncertainty_weighting:
-                            loss += cfg.lambda_exclusion * loss_exclusion
+                            loss_3d += cfg.lambda_exclusion * loss_exclusion
                         else:
                             loss_terms_for_uncertainty.append(loss_exclusion)
 
@@ -866,9 +866,7 @@ class Runner:
                     else:
                         loss_terms_for_uncertainty.append(loss_illum_tv)
 
-                if cfg.lambda_shn_reg > 0.0:
-                    loss_shn_reg = self.splats["shN"].pow(2).mean()
-                    loss += cfg.lambda_shn_reg * loss_shn_reg
+                loss += loss_3d * 0.7
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
