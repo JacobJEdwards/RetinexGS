@@ -35,7 +35,7 @@ from datasets.traj import (
     generate_spiral_path,
 )
 from config import Config
-from examples.utils import ConvexWeightedLoss
+from utils import ConvexWeightedLoss
 from rendering_intrinsics import rasterize_intrinsics
 from utils import AutomaticWeightedLoss, CameraResponseNet, IlluminationField
 from gsplat.distributed import cli
