@@ -305,7 +305,7 @@ class Runner:
 
 
         if cfg.uncertainty_weighting:
-            self.awl = AutomaticWeightedLoss(len(self.loss_names) - len(self.fixed_losses)).to(self.device)
+            self.awl = AutomaticWeightedLoss(2).to(self.device)
             param_groups.append({"params": self.awl.parameters(), "lr": cfg.loss_opt_lr})
 
         if cfg.learnt_weighting:
@@ -767,7 +767,7 @@ class Runner:
                 )
                 enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
 
-                loss = (
+                loss_2d = (
                         cfg.lambda_low * low_loss
                         + (1.0 - cfg.lambda_low) * enh_loss
                         + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
@@ -866,7 +866,15 @@ class Runner:
                     else:
                         loss_terms_for_uncertainty.append(loss_illum_tv)
 
-                loss += loss_3d * 0.7
+                if cfg.uncertainty_weighting:
+                    if len(loss_terms_for_uncertainty) > 0:
+                        loss_3d = loss_3d + sum(loss_terms_for_uncertainty)
+
+                    loss = self.awl(loss_2d, loss_3d)
+                else:
+                    loss = loss_2d + loss_3d
+
+                loss = loss_2d + loss_3d * 0.7
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
