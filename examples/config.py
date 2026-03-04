@@ -120,6 +120,10 @@ class Config:
     retinex_embedding_lr: float = 5e-5
     loss_opt_lr: float = 1e-4
 
+    appearance_embedding_lr: float = 6e-3
+    camera_net_lr: float = 3e-4
+    illumination_field_lr: float = 6e-5
+
     retinex_embedding_dim: int = 128
 
     freeze_step: int = 10_000
