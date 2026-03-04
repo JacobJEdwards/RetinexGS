@@ -407,9 +407,15 @@ class AutomaticWeightedLoss(nn.Module):
         self.params = torch.nn.Parameter(params)
 
     def forward(self, *x: Tensor) -> Tensor:
+        raw_weights = [0.5 / (self.params[i] ** 2) for i in range(len(x))]
+        total_weight = sum(raw_weights)
+
         loss_sum = 0
         for i, loss in enumerate(x):
-            loss_sum += 0.5 / (self.params[i] ** 2) * loss + torch.log(1 + self.params[i] ** 2)
+            normalized_weight = raw_weights[i] / total_weight
+
+            loss_sum += normalized_weight * loss + torch.log(1 + self.params[i] ** 2)
+
         return loss_sum
 
 class PositionalEncoder(nn.Module):

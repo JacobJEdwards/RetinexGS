@@ -836,10 +836,10 @@ class Runner:
                     loss_shn_reg = self.splats["shN"].pow(2).mean()
                     loss_3d += cfg.lambda_shn_reg * loss_shn_reg
 
-                loss = loss_2d * cfg.lambda_2d + loss_3d * cfg.lambda_3d
-
-                loss_consistency = F.l1_loss(illum_map.permute(0, 3, 1, 2), gt_illumination_map)
-                loss += cfg.lambda_consistency * loss_consistency
+                if cfg.uncertainty_weighting:
+                    loss = self.awl(loss_2d, loss_3d)
+                else:
+                    loss = loss_2d * cfg.lambda_2d + loss_3d * cfg.lambda_3d
 
                 if cfg.opacity_reg > 0.0:
                     loss += (

@@ -99,7 +99,7 @@ class Config:
     loss_reflectance_spa: bool = False
     loss_chroma: bool = False
 
-    uncertainty_weighting: bool = False
+    uncertainty_weighting: bool = True
     learnt_weighting: bool = False
 
     lambda_exclusion: float = 0.3
