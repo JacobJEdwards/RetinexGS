@@ -128,7 +128,7 @@ class Config:
     camera_net_lr: float = 3e-4
     illumination_field_lr: float = 6e-5
 
-    retinex_embedding_dim: int = 128
+    retinex_embedding_dim: int = 64
 
     freeze_step: int = 10_000
 
