@@ -675,29 +675,6 @@ class Runner:
                 step // cfg.sh_degree_interval, cfg.sh_degree
             )  # Defined early
 
-            if step == cfg.freeze_step:
-                for param in self.retinex_net.parameters():
-                    param.requires_grad = False
-
-                for param in self.retinex_embeds.parameters():
-                    param.requires_grad = False
-
-            if step == 0:
-                for param in self.camera_response_net.parameters():
-                    param.requires_grad = False
-                for param in self.appearance_embeds.parameters():
-                    param.requires_grad = False
-                for param in self.illumination_field.parameters():
-                    param.requires_grad = False
-
-            if step == 1000:
-                for param in self.camera_response_net.parameters():
-                    param.requires_grad = True
-                for param in self.appearance_embeds.parameters():
-                    param.requires_grad = True
-                for param in self.illumination_field.parameters():
-                    param.requires_grad = True
-
             with (torch.autocast(enabled=False, device_type=device)):
                 camtoworlds = data["camtoworld"].to(device)
                 Ks = data["K"].to(device)
