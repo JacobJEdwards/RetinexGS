@@ -634,6 +634,7 @@ class Runner:
 
         schedulers: list[ExponentialLR | ChainedScheduler | CosineAnnealingLR] = [
             ExponentialLR(self.optimizers["means"], gamma=0.01 ** (1.0 / max_steps)),
+            CosineAnnealingLR(self.illum_field_optimizer, T_max=max_steps, eta_min=0),
         ]
 
         schedulers.append(
@@ -724,40 +725,40 @@ class Runner:
 
                 info["means2d"].retain_grad()
 
-                # retinex_loss, _, gt_illumination_map, gt_reflectance_target = self.retinex_train_step(
-                #     images_ids=image_ids,
-                #     pixels=pixels,
-                #     step=step,
-                # )
-                #
-                # # gt_illumination_map = gt_illumination_map.detach()
-                # # gt_reflectance_target = gt_reflectance_target.detach()
-                #
-                # gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1)
-                #
-                # colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
-                # colors_low = torch.clamp(colors_low, 0.0, 1.0)
-                #
-                # loss_reconstruct_low = F.l1_loss(colors_low, pixels)
-                #
-                # ssim_loss_low = 1.0 - self.ssim(
-                #     colors_low.permute(0, 3, 1, 2),
-                #     pixels.permute(0, 3, 1, 2),
-                # )
-                # low_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
-                #
-                # loss_reconstruct_enh = F.l1_loss(colors_enh, gt_reflectance_target_permuted)
-                # ssim_loss_enh = 1.0 - self.ssim(
-                #     colors_enh.permute(0, 3, 1, 2),
-                #     gt_reflectance_target_permuted.permute(0, 3, 1, 2),
-                # )
-                # enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
-                #
-                # loss_2d = (
-                #         cfg.lambda_low * low_loss
-                #         + (1.0 - cfg.lambda_low) * enh_loss
-                #         + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
-                # )
+                retinex_loss, _, gt_illumination_map, gt_reflectance_target = self.retinex_train_step(
+                    images_ids=image_ids,
+                    pixels=pixels,
+                    step=step,
+                )
+
+                # gt_illumination_map = gt_illumination_map.detach()
+                # gt_reflectance_target = gt_reflectance_target.detach()
+
+                gt_reflectance_target_permuted = gt_reflectance_target.permute(0, 2, 3, 1)
+
+                colors_low = colors_enh * gt_illumination_map.permute(0, 2, 3, 1)
+                colors_low = torch.clamp(colors_low, 0.0, 1.0)
+
+                loss_reconstruct_low = F.l1_loss(colors_low, pixels)
+
+                ssim_loss_low = 1.0 - self.ssim(
+                    colors_low.permute(0, 3, 1, 2),
+                    pixels.permute(0, 3, 1, 2),
+                )
+                low_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
+
+                loss_reconstruct_enh = F.l1_loss(colors_enh, gt_reflectance_target_permuted)
+                ssim_loss_enh = 1.0 - self.ssim(
+                    colors_enh.permute(0, 3, 1, 2),
+                    gt_reflectance_target_permuted.permute(0, 3, 1, 2),
+                )
+                enh_loss = (1.0 - cfg.ssim_lambda) * loss_reconstruct_enh + cfg.ssim_lambda * ssim_loss_enh
+
+                loss_2d = (
+                        cfg.lambda_low * low_loss
+                        + (1.0 - cfg.lambda_low) * enh_loss
+                        + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
+                )
 
                 cam_origin = camtoworlds.squeeze(0)[:3, 3]
                 view_dirs_input = points_3d_world_flat - cam_origin
@@ -842,7 +843,7 @@ class Runner:
                     loss_shn_reg = self.splats["shN"].pow(2).mean()
                     loss_3d += cfg.lambda_shn_reg * loss_shn_reg
 
-                loss = loss_3d
+                loss = loss_2d + loss_3d
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
@@ -866,7 +867,8 @@ class Runner:
 
 
             self.scaler.scale(loss).backward()
-            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss= ",
+
+            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
                           f"sh_deg={sh_degree_to_use}"]
             pbar.set_description("| ".join(desc_parts))
 
@@ -875,6 +877,8 @@ class Runner:
                 self.writer.add_scalar("train/loss", loss.item(), step)
                 self.writer.add_scalar("train/l1low", loss_reconstruct_low.item(), step)
                 self.writer.add_scalar("train/ssim_low", ssim_loss_low.item(), step)
+                self.writer.add_scalar("train/l1enh", loss_reconstruct_enh.item(), step)
+                self.writer.add_scalar("train/ssim_enh", ssim_loss_enh.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
                 if cfg.tb_save_image:
