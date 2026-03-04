@@ -298,7 +298,8 @@ class Runner:
 
 
         if cfg.uncertainty_weighting:
-            self.awl = ConvexWeightedLoss().to(self.device)
+            # self.awl = ConvexWeightedLoss().to(self.device)
+            self.awl = AutomaticWeightedLoss(2).to(self.device)
             param_groups.append({"params": self.awl.parameters(), "lr": cfg.loss_opt_lr})
 
         if cfg.learnt_weighting:
