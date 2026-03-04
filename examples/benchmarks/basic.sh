@@ -17,7 +17,7 @@ for POSTFIX in $POSTFIXES;
           --data_dir $DATADIR \
           --postfix $POSTFIX \
           --result_dir $NEW_RESULT_DIR_PPISP \
-          --postprocessing ppisp
+          --post-processing ppisp
 
       NEW_RESULT_DIR_BILAT=$RESULT_DIR_BILAT/"$POSTFIX"/"$SCENE"
 
@@ -25,7 +25,7 @@ for POSTFIX in $POSTFIXES;
           --data_dir $DATADIR \
           --postfix $POSTFIX \
           --result_dir $NEW_RESULT_DIR_BILAT \
-          --postprocessing bilateral_grid
+          --post-processing bilateral_grid
 
   done
 done
