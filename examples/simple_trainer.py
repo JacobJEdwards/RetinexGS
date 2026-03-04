@@ -836,7 +836,7 @@ class Runner:
                     if cfg.uncertainty_weighting:
                         loss = self.awl(loss_2d, loss_3d)
                     else:
-                        loss = loss_2d + loss_3d * 1.5
+                        loss = loss_2d + loss_3d
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
