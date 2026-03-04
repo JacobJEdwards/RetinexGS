@@ -730,6 +730,8 @@ class Runner:
                 reflectance_map = intrinsic_maps["reflectance"]
                 world_position_map = intrinsic_maps["world_position"]
                 world_normal_map = intrinsic_maps["world_normal"]
+                points_3d_world_flat = world_position_map.view(-1, 3)
+                world_normals_flat = world_normal_map.view(-1, 3)
 
                 colors_enh = torch.clamp(reflectance_map, 0.0, 1.0)
                 pixels = torch.clamp(pixels, 0.0, 1.0)
@@ -771,25 +773,25 @@ class Runner:
                         + retinex_loss * (cfg.lambda_illumination if step < cfg.freeze_step else 0.0)
                 )
 
-
                 view_dirs_input = None
+                if True:
+                    cam_origin = camtoworlds.squeeze(0)[:3, 3]
+                    view_dirs_input = points_3d_world_flat - cam_origin
 
-                # 1. Local 3D Illumination (Shadows/Bounces)
                 illum_A, illum_b = self.illumination_field(
-                    world_position_map.view(-1, 3),
+                    points_3d_world_flat,
                     view_dirs=view_dirs_input,
-                    normals=world_normal_map.view(-1, 3),
+                    normals=world_normals_flat,
                 )
+
                 illum_A_map = illum_A.view(1, height, width, 3, 3)
                 illum_b_map = illum_b.view(1, height, width, 3)
 
-                # Extract diagonal and use softplus to ensure light is strictly positive
-                illum_scale = F.softplus(torch.diagonal(illum_A_map, dim1=-2, dim2=-1))
+                scene_lit_color_map = (
+                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
+                        + illum_b_map
+                )
 
-                # Apply local lighting: I = R * L + b
-                scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
-
-                # 2. Global Camera Response (Exposure / White Balance)
                 image_ids = data["image_id"].to(device)
                 appearance_embedding = self.appearance_embeds(image_ids)
                 c, d = self.camera_response_net(appearance_embedding)
@@ -799,45 +801,74 @@ class Runner:
 
                 colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
+                gray_color = torch.full_like(reflectance_map, 0.5)
+                illum_color_map = (
+                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
+                        + illum_b_map
+                )
+                illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
+
                 info["means2d"].retain_grad()
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss += (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                # --- NEW DISENTANGLEMENT PRIORS ---
+                loss_terms_for_uncertainty = []
 
-                if True:
-                    # 1. Achromatic Prior
-                    illum_scale_mean = illum_scale.mean(dim=-1, keepdim=True)
-                    loss += 0.1 * F.mse_loss(illum_scale, illum_scale_mean.expand_as(illum_scale))
+                if cfg.lambda_illum_smoothness > 0:
+                    with torch.no_grad():
+                        rand_points = (
+                                              torch.rand(4096, 3, device=device) * 2 - 1
+                                      ) * self.scene_scale
+                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
+                        perturbed_points = rand_points + perturbation
 
-                    # 2. Geometry Smoothness
-                    loss += 0.001 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(0, 3, 1, 2))
+                    color_A, color_b = self.illumination_field(rand_points)
+                    color_A_perturbed, color_b_perturbed = self.illumination_field(
+                        perturbed_points
+                    )
 
-                    # 3. Camera Regularization
-                    loss += 0.01 * torch.mean(appearance_embedding ** 2)
-                    loss += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
+                    loss_A_smooth = (
+                        (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
+                    )
+                    loss_b_smooth = (
+                        (color_b - color_b_perturbed).norm(dim=-1).mean()
+                    )
+                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
-                    # 5. Illumination Anchoring
-                    loss += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
+                    if not cfg.uncertainty_weighting:
+                        loss += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    else:
+                        loss_terms_for_uncertainty.append(loss_illum_smoothness)
 
-                    # loss += 0.05 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
+                reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
+                illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
 
-                    # 6. Exclusion Loss
-                    loss += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1, 2))
+                if cfg.lambda_exclusion > 0.0:
+                    if (
+                            reflectance_map_for_loss.shape[2] > 3
+                            and reflectance_map_for_loss.shape[3] > 3
+                    ):
+                        loss_exclusion = self.exclusion_loss(
+                            reflectance_map_for_loss, illum_map_for_loss
+                        )
 
-                    # 7. Exposure Anchoring for Base Splats
-                    # Forces the "unlit" splats to look like a normally exposed image
-                    loss += 0.5 * self.exposure_loss(reflectance_map.permute(0, 3, 1, 2))
+                        if not cfg.uncertainty_weighting:
+                            loss += cfg.lambda_exclusion * loss_exclusion
+                        else:
+                            loss_terms_for_uncertainty.append(loss_exclusion)
 
-                self.cfg.strategy.step_pre_backward(
-                    params=self.splats,
-                    optimizers=self.optimizers,
-                    state=self.strategy_state,
-                    step=step,
-                    info=info,
-                )
+                if cfg.lambda_tv_loss > 0.0:
+                    loss_illum_tv = self.loss_tv(illum_map_for_loss)
+                    if not cfg.uncertainty_weighting:
+                        loss += cfg.lambda_tv_loss * loss_illum_tv
+                    else:
+                        loss_terms_for_uncertainty.append(loss_illum_tv)
+
+                if cfg.lambda_shn_reg > 0.0:
+                    loss_shn_reg = self.splats["shN"].pow(2).mean()
+                    loss += cfg.lambda_shn_reg * loss_shn_reg
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
@@ -849,6 +880,16 @@ class Runner:
                             cfg.scale_reg
                             * torch.abs(torch.exp(self.splats["scales"])).mean()
                     )
+
+
+                self.cfg.strategy.step_pre_backward(
+                    params=self.splats,
+                    optimizers=self.optimizers,
+                    state=self.strategy_state,
+                    step=step,
+                    info=info,
+                )
+
 
             self.scaler.scale(loss).backward()
 

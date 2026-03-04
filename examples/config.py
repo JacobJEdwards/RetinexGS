@@ -102,6 +102,16 @@ class Config:
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
 
+    lambda_exclusion: float = 0.3
+    lambda_shn_reg: float = 0.8
+
+    lambda_illum_smoothness: float = 0.0
+    lambda_tv_loss: float = 0.0
+    lambda_reflectance_reg: float = 0
+    lambda_gray_world: float = 0
+    lambda_camera_reg: float = 0.0
+    lambda_illum_reg: float = 0.0
+
     save_images: bool = True
 
     postfix: str = "_org"
