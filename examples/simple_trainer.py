@@ -541,7 +541,7 @@ class Runner:
             "chroma": loss_chroma,
         }
 
-        if cfg.uncertainty_weighting:
+        if False:
             awl_individual_losses = {k: v for k, v in individual_losses.items() if k not in self.fixed_losses}
             total_loss = self.awl(*awl_individual_losses.values())
 
@@ -814,8 +814,6 @@ class Runner:
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss_3d = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                loss_terms_for_uncertainty = []
-
                 if cfg.lambda_illum_smoothness > 0:
                     with torch.no_grad():
                         rand_points = (
@@ -837,10 +835,8 @@ class Runner:
                     )
                     loss_illum_smoothness = loss_A_smooth + loss_b_smooth
 
-                    if not cfg.uncertainty_weighting:
+                    if True:
                         loss_3d += cfg.lambda_illum_smoothness * loss_illum_smoothness
-                    else:
-                        loss_terms_for_uncertainty.append(loss_illum_smoothness)
 
                 reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
                 illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
@@ -854,22 +850,15 @@ class Runner:
                             reflectance_map_for_loss, illum_map_for_loss
                         )
 
-                        if not cfg.uncertainty_weighting:
+                        if True:
                             loss_3d += cfg.lambda_exclusion * loss_exclusion
-                        else:
-                            loss_terms_for_uncertainty.append(loss_exclusion)
 
                 if cfg.lambda_tv_loss > 0.0:
                     loss_illum_tv = self.loss_tv(illum_map_for_loss)
-                    if not cfg.uncertainty_weighting:
-                        loss += cfg.lambda_tv_loss * loss_illum_tv
-                    else:
-                        loss_terms_for_uncertainty.append(loss_illum_tv)
+                    if True:
+                        loss_3d += cfg.lambda_tv_loss * loss_illum_tv
 
                 if cfg.uncertainty_weighting:
-                    if len(loss_terms_for_uncertainty) > 0:
-                        loss_3d = loss_3d + sum(loss_terms_for_uncertainty)
-
                     loss = self.awl(loss_2d, loss_3d)
                 else:
                     loss = loss_2d + loss_3d
