@@ -866,8 +866,7 @@ class Runner:
 
 
             self.scaler.scale(loss).backward()
-
-            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss={retinex_loss.item():.3f} ",
+            desc_parts = [f"loss={loss.item():.3f}", f"retinex_loss= ",
                           f"sh_deg={sh_degree_to_use}"]
             pbar.set_description("| ".join(desc_parts))
 
@@ -876,8 +875,6 @@ class Runner:
                 self.writer.add_scalar("train/loss", loss.item(), step)
                 self.writer.add_scalar("train/l1low", loss_reconstruct_low.item(), step)
                 self.writer.add_scalar("train/ssim_low", ssim_loss_low.item(), step)
-                self.writer.add_scalar("train/l1enh", loss_reconstruct_enh.item(), step)
-                self.writer.add_scalar("train/ssim_enh", ssim_loss_enh.item(), step)
                 self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
                 if cfg.tb_save_image:
