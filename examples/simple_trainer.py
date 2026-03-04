@@ -207,7 +207,7 @@ class Runner:
         )
 
         self.camera_response_net = CameraResponseNet(
-            embedding_dim=64
+            embedding_dim=cfg.retinex_embedding_dim
         ).to(self.device)
         self.camera_response_optimizer = torch.optim.Adam(
             self.camera_response_net.parameters(), lr=3e-4, fused=True
@@ -836,7 +836,7 @@ class Runner:
                     loss_shn_reg = self.splats["shN"].pow(2).mean()
                     loss_3d += cfg.lambda_shn_reg * loss_shn_reg
 
-                loss = loss_2d + loss_3d
+                loss = loss_2d * cfg.lambda_2d + loss_3d * cfg.lambda_3d
 
                 loss_consistency = F.l1_loss(illum_map.permute(0, 3, 1, 2), gt_illumination_map)
                 loss += cfg.lambda_consistency * loss_consistency
