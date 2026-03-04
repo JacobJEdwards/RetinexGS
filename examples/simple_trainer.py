@@ -215,7 +215,7 @@ class Runner:
 
         num_train_images = len(self.trainset)
         self.appearance_embeds = torch.nn.Embedding(
-            num_train_images, 64
+            num_train_images, cfg.retinex_embedding_dim
         ).to(self.device)
         self.appearance_embeds_optimizer = torch.optim.Adam(
             self.appearance_embeds.parameters(), lr=6e-3, fused=True
@@ -285,16 +285,9 @@ class Runner:
 
 
         self.retinex_embed_dim = cfg.retinex_embedding_dim
-        self.retinex_embeds = nn.Embedding(
-            len(self.trainset), self.retinex_embed_dim
-        ).to(self.device)
-
-        if world_size > 1:
-            self.retinex_embeds = DDP(self.retinex_embeds, device_ids=[local_rank])
 
         param_groups = [
             {"params": self.retinex_net.parameters(), "lr": cfg.retinex_opt_lr * math.sqrt(cfg.batch_size)},
-            {"params": self.retinex_embeds.parameters(), "lr": cfg.retinex_embedding_lr * math.sqrt(cfg.batch_size)},
             {"params": self.target_histogram_dist, "lr": 1e-3}
         ]
 
@@ -462,7 +455,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        retinex_embedding = self.retinex_embeds(images_ids)
+        retinex_embedding = self.appearance_embeds(images_ids)
 
         (
             input_image_for_net,
@@ -845,6 +838,9 @@ class Runner:
 
                 loss = loss_2d + loss_3d
 
+                loss_consistency = F.l1_loss(illum_map.permute(0, 3, 1, 2), gt_illumination_map)
+                loss += cfg.lambda_consistency * loss_consistency
+
                 if cfg.opacity_reg > 0.0:
                     loss += (
                             cfg.opacity_reg
@@ -908,7 +904,7 @@ class Runner:
                     json.dump(stats_save, f)
                 data_save = {"step": step, "splats": self.splats.state_dict(), "retinex_net":
                     self.retinex_net.module.state_dict() if isinstance(self.retinex_net, DDP) else self.retinex_net.state_dict(),
-                             "retinex_embeds": self.retinex_embeds.state_dict(),
+                             "appearance_embeds": self.appearance_embeds.state_dict(),
                              }
                 torch.save(
                     data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
@@ -1036,13 +1032,13 @@ class Runner:
             illumination_map = None
             colors_reconstructed = None
 
-            if image_ids is not None and self.retinex_embeds is not None:
+            if image_ids is not None and self.appearance_embeds is not None:
                 if stage == "val":
                     eval_image_ids = torch.zeros_like(image_ids)
                 else:
                     eval_image_ids = image_ids
 
-                retinex_embedding = self.retinex_embeds(eval_image_ids)
+                retinex_embedding = self.appearance_embeds(eval_image_ids)
 
                 _, illumination_map, _ = self.get_retinex_output(
                     pixels=pixels,
@@ -1300,7 +1296,7 @@ class Runner:
 
             pixels_groundtruth = data_groundtruth["image"].to(device) / 255.0
 
-            retinex_embedding = self.retinex_embeds(image_ids)
+            retinex_embedding = self.appearance_embeds(image_ids)
 
             (
                 _, # input_image_for_net
@@ -1365,8 +1361,9 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
             {k: torch.cat([ckpt["retinex_net"][k] for ckpt in ckpts]) for k in runner.retinex_net.state_dict().keys()}
         )
 
-        runner.retinex_embeds.load_state_dict(
-            {k: torch.cat([ckpt["retinex_embeds"][k] for ckpt in ckpts]) for k in runner.retinex_embeds.state_dict().keys()}
+        runner.appearance_embeds.load_state_dict(
+            {k: torch.cat([ckpt["appearence_embeds"][k] for ckpt in ckpts]) for k in
+             runner.appearance_embeds.state_dict().keys()}
         )
 
         step = ckpts[0]["step"]
