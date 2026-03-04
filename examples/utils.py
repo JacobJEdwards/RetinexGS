@@ -418,6 +418,15 @@ class AutomaticWeightedLoss(nn.Module):
 
         return loss_sum
 
+class ConvexWeightedLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.alpha_logit = nn.Parameter(torch.tensor(0.0))
+
+    def forward(self, loss_2d: torch.Tensor, loss_3d: torch.Tensor) -> torch.Tensor:
+        alpha = torch.sigmoid(self.alpha_logit)
+        return alpha * loss_2d + (1.0 - alpha) * loss_3d
+
 class PositionalEncoder(nn.Module):
     def __init__(self, num_freqs: int):
         super().__init__()
