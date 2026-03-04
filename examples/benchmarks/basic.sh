@@ -9,7 +9,7 @@ for POSTFIX in $POSTFIXES;
   do
   for SCENE in $SCENE_LIST;
   do
-      echo "Running $SCENE"
+      echo "Running $SCENE on $POSTFIX"
 
       NEW_RESULT_DIR=$RESULT_DIR/"$POSTFIX"/"$SCENE"
       DATADIR=$SCENE_DIR/"$SCENE"/
