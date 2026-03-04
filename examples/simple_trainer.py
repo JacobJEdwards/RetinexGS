@@ -240,7 +240,6 @@ class Runner:
         self.loss_tv = TotalVariationLoss().to(self.device)
         self.loss_geometry_smooth = GeometryAwareSmoothingLoss().to(self.device)
         self.exclusion_loss = ExclusionLoss().to(self.device)
-        self.loss_3d_knn = Stochastic3DKNNSmoothnessLoss(sample_size=4000, k=4).to(self.device)
         self.exposure_loss = ExposureLoss(patch_size=16, mean_val=0.5).to(self.device)
 
 
@@ -774,24 +773,23 @@ class Runner:
                 )
 
                 view_dirs_input = None
-                if True:
-                    cam_origin = camtoworlds.squeeze(0)[:3, 3]
-                    view_dirs_input = points_3d_world_flat - cam_origin
 
+                # 1. Local 3D Illumination (Shadows/Bounces)
                 illum_A, illum_b = self.illumination_field(
-                    points_3d_world_flat,
+                    world_position_map.view(-1, 3),
                     view_dirs=view_dirs_input,
-                    normals=world_normals_flat,
+                    normals=world_normal_map.view(-1, 3),
                 )
-
                 illum_A_map = illum_A.view(1, height, width, 3, 3)
                 illum_b_map = illum_b.view(1, height, width, 3)
 
-                scene_lit_color_map = (
-                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, reflectance_map)
-                        + illum_b_map
-                )
+                # Extract diagonal and use softplus to ensure light is strictly positive
+                illum_scale = F.softplus(torch.diagonal(illum_A_map, dim1=-2, dim2=-1))
 
+                # Apply local lighting: I = R * L + b
+                scene_lit_color_map = (reflectance_map * illum_scale) + illum_b_map
+
+                # 2. Global Camera Response (Exposure / White Balance)
                 image_ids = data["image_id"].to(device)
                 appearance_embedding = self.appearance_embeds(image_ids)
                 c, d = self.camera_response_net(appearance_embedding)
@@ -801,69 +799,44 @@ class Runner:
 
                 colors_low = torch.clamp(final_color_map, 0.0, 1.0)
 
-                gray_color = torch.full_like(reflectance_map, 0.5)
-                illum_color_map = (
-                        torch.einsum("bhwij,bhwj->bhwi", illum_A_map, gray_color)
-                        + illum_b_map
-                )
-                illum_map = torch.clamp(illum_color_map, 0.0, 1.0)
-
                 info["means2d"].retain_grad()
 
                 loss_reconstruct_low = F.l1_loss(colors_low, pixels)
                 ssim_loss_low = 1.0 - self.ssim(colors_low.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2))
                 loss_3d = (1.0 - cfg.ssim_lambda) * loss_reconstruct_low + cfg.ssim_lambda * ssim_loss_low
 
-                if cfg.lambda_illum_smoothness > 0:
-                    with torch.no_grad():
-                        rand_points = (
-                                              torch.rand(4096, 3, device=device) * 2 - 1
-                                      ) * self.scene_scale
-                        perturbation = (torch.rand_like(rand_points) - 0.5) * 2e-3
-                        perturbed_points = rand_points + perturbation
+                # --- NEW DISENTANGLEMENT PRIORS ---
 
-                    color_A, color_b = self.illumination_field(rand_points)
-                    color_A_perturbed, color_b_perturbed = self.illumination_field(
-                        perturbed_points
-                    )
+                if True:
+                    # 1. Achromatic Prior
+                    illum_scale_mean = illum_scale.mean(dim=-1, keepdim=True)
+                    loss_3d += 0.1 * F.mse_loss(illum_scale, illum_scale_mean.expand_as(illum_scale))
 
-                    loss_A_smooth = (
-                        (color_A - color_A_perturbed).norm(dim=(-2, -1)).mean()
-                    )
-                    loss_b_smooth = (
-                        (color_b - color_b_perturbed).norm(dim=-1).mean()
-                    )
-                    loss_illum_smoothness = loss_A_smooth + loss_b_smooth
+                    # 2. Geometry Smoothness
+                    loss_3d += 0.001 * self.loss_geometry_smooth(illum_scale.permute(0, 3, 1, 2), world_normal_map.permute(
+                        0, 3, 1, 2))
 
-                    if True:
-                        loss_3d += cfg.lambda_illum_smoothness * loss_illum_smoothness
+                    # 3. Camera Regularization
+                    loss_3d += 0.01 * torch.mean(appearance_embedding ** 2)
+                    loss_3d += 0.1 * (torch.mean((c - 1.0)**2) + torch.mean(d**2))
 
-                reflectance_map_for_loss = reflectance_map.permute(0, 3, 1, 2)
-                illum_map_for_loss = illum_map.permute(0, 3, 1, 2)
+                    # 5. Illumination Anchoring
+                    loss_3d += 0.01 * F.mse_loss(illum_scale, torch.ones_like(illum_scale))
 
-                if cfg.lambda_exclusion > 0.0:
-                    if (
-                            reflectance_map_for_loss.shape[2] > 3
-                            and reflectance_map_for_loss.shape[3] > 3
-                    ):
-                        loss_exclusion = self.exclusion_loss(
-                            reflectance_map_for_loss, illum_map_for_loss
-                        )
+                    # loss += 0.05 * self.loss_3d_knn(self.splats["means"], self.splats["sh0"])
 
-                        if True:
-                            loss_3d += cfg.lambda_exclusion * loss_exclusion
+                    # 6. Exclusion Loss
+                    loss_3d += 0.1 * self.exclusion_loss(reflectance_map.permute(0, 3, 1, 2), illum_scale.permute(0, 3, 1,
+                                                                                                                 2))
 
-                if cfg.lambda_tv_loss > 0.0:
-                    loss_illum_tv = self.loss_tv(illum_map_for_loss)
-                    if True:
-                        loss_3d += cfg.lambda_tv_loss * loss_illum_tv
+                    # 7. Exposure Anchoring for Base Splats
+                    # Forces the "unlit" splats to look like a normally exposed image
+                    loss_3d += 0.5 * self.exposure_loss(reflectance_map.permute(0, 3, 1, 2))
 
-                if cfg.uncertainty_weighting:
-                    loss = self.awl(loss_2d, loss_3d)
-                else:
-                    loss = loss_2d + loss_3d
-
-                loss = loss_2d + loss_3d * 0.7
+                    if cfg.uncertainty_weighting:
+                        loss = self.awl(loss_2d, loss_3d)
+                    else:
+                        loss = loss_2d + loss_3d + 0.7
 
                 if cfg.opacity_reg > 0.0:
                     loss += (
