@@ -118,7 +118,7 @@ class Config:
 
     save_images: bool = True
 
-    postfix: str = "_org"
+    postfix: str = ""
 
     retinex_opt_lr: float = 2e-3
     retinex_embedding_lr: float = 5e-5
