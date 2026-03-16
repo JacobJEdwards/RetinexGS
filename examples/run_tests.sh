@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE="/workspace/datasets"
+BASE="/home/retinex-gs/datasets"
 
 DATASETS=(
     "Circular-bench"
