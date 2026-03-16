@@ -178,7 +178,7 @@ class Runner:
             data_dir=str(cfg.data_dir),
             normalize=cfg.normalize_world_space,
             test_every=cfg.test_every,
-            postfix=cfg.postfix,
+            # postfix=cfg.postfix,
         )
 
         self.scaler = GradScaler(enabled=False)
