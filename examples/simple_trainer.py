@@ -202,7 +202,6 @@ class Runner:
                 self.illumination_field, device_ids=[local_rank]
             )
 
-        # Removed retinex_net from the optimizer
         self.illum_field_optimizer = torch.optim.Adam(
             self.illumination_field.parameters(), lr=6e-5, fused=True
         )
@@ -363,7 +362,6 @@ class Runner:
                 self.device
             )
 
-        # Running stats for prunning & growing.
         n_gauss = len(self.splats["means"])
         self.running_stats = {
             "grad2d": torch.zeros(n_gauss, device=self.device),  # norm of the gradient
@@ -615,7 +613,7 @@ class Runner:
 
         return total_loss, input_image_for_net, illumination_map, reflectance_map
 
-    def train(self):
+    def train(self, trial: optuna.Trial | None = None):
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
@@ -970,24 +968,27 @@ class Runner:
 
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.eval(step, "val")
+                if trial is not None:
+                    with open(f"{self.stats_dir}/val_step{step:04d}.json") as f:
+                        s = json.load(f)
+
+                    current_ssim = s.get("ssim", 0)
+                    trial.report(current_ssim, step)
+
+                    if trial.should_prune():
+                        raise optuna.exceptions.TrialPruned()
+
             if step in [i - 1 for i in cfg.eval_steps]:
                 self.render_traj(step)
 
     @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
-        """
-        Evaluate the model on the specified stage (train/val).
-        Calculates metrics and saves rendered images, including Retinex decomposition
-        (Illumination and Reconstructed Low-light) if available.
-        """
         print(f"Running evaluation for step {step} on '{stage}' set...")
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
 
-        # Select the appropriate dataset and loader
         if stage == "train":
-            # Use self.trainset_eval which has no patching (full resolution)
             dataset = self.trainset
         else:
             dataset = self.valset
@@ -1052,7 +1053,6 @@ class Runner:
 
             if world_rank == 0:
                 if cfg.save_images:
-                    # Save Original Input and Enhanced Output (Reflectance)
                     orig_name = data["image_name"][0]
                     orig_stem = os.path.splitext(orig_name)[0]
                     orig_stem = orig_stem.replace("/", "_").replace("\\", "_")
@@ -1068,13 +1068,10 @@ class Runner:
                         canvas_eval_enh,
                     )
 
-                    # Save Retinex Decomposition if available
                     if illumination_map is not None and colors_reconstructed is not None:
-                        # Illumination Map (heatmap/grayscale usually, but here RGB)
                         illum_np = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
                         illum_np = (illum_np * 255).astype(np.uint8)
 
-                        # Reconstructed Low Light
                         recon_np = colors_reconstructed.squeeze(0).cpu().numpy()
                         recon_np = (recon_np * 255).astype(np.uint8)
 
@@ -1094,7 +1091,6 @@ class Runner:
                         (colors_enh_np * 255).astype(np.uint8),
                     )
 
-                # Metrics
                 pixels_p = pixels.permute(0, 3, 1, 2)
                 colors_enh_p = colors_enh.permute(0, 3, 1, 2)
 
@@ -1102,7 +1098,6 @@ class Runner:
                 metrics["ssim"].append(self.ssim(colors_enh_p, pixels_p))
                 metrics["psnr"].append(self.psnr(colors_enh_p, pixels_p))
 
-                # If we have reconstruction, we can measure how well we fit the input (low light)
                 if colors_reconstructed is not None:
                     colors_rec_p = colors_reconstructed.permute(0, 3, 1, 2)
                     metrics["psnr_reconstruction"].append(self.psnr(colors_rec_p, pixels_p))
@@ -1379,113 +1374,136 @@ color_correct = None
 slice_func = None
 total_variation_loss = None
 
-def objective(trial: optuna.Trial) -> tuple[float, float, float]:
-    cfg = Config()
+def objective(trial: optuna.Trial, cfg: Config) -> float:
+    cfg.save_ply = False
+    cfg.save_images = False
+    cfg.tb_save_image = False
+    cfg.tb_every = 10000
 
-    cfg.means_lr = trial.suggest_float("means_lr", 1e-5, 5e-4, log=True)
-    cfg.opacities_lr = trial.suggest_float("opacities_lr", 1e-3, 0.1, log=True)
-    cfg.scales_lr = trial.suggest_float("scales_lr", 1e-3, 0.02, log=True)
+    cfg.max_steps = 4000
+    cfg.eval_steps = [999, 1999, 2999, 3999]
 
-    cfg.lambda_low = trial.suggest_float("lambda_low", 0.5, 0.95)
+    cfg.means_lr = trial.suggest_float("means_lr", 1e-5, 1e-3, log=True)
+    cfg.scales_lr = trial.suggest_float("scales_lr", 1e-4, 5e-2, log=True)
+    cfg.opacities_lr = trial.suggest_float("opacities_lr", 1e-3, 1e-1, log=True)
+    cfg.quats_lr = trial.suggest_float("quats_lr", 1e-4, 1e-2, log=True)
+    cfg.sh0_lr = trial.suggest_float("sh0_lr", 1e-4, 1e-2, log=True)
+    cfg.shN_lr = trial.suggest_float("shN_lr", 1e-5, 1e-3, log=True)
 
-    cfg.ssim_lambda = trial.suggest_float("ssim_lambda", 0.1, 0.5)
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-3, log=True)
+    cfg.appearance_embedding_lr = trial.suggest_float("appearance_embedding_lr", 1e-5, 5e-2, log=True)
+    cfg.camera_net_lr = trial.suggest_float("camera_net_lr", 1e-5, 5e-3, log=True)
+    cfg.illumination_field_lr = trial.suggest_float("illumination_field_lr", 1e-6, 1e-3, log=True)
+    cfg.loss_opt_lr = trial.suggest_float("loss_opt_lr", 1e-6, 1e-3, log=True)
 
-    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.1, 2.0, log=True)
+    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [16, 32, 64, 128])
+    cfg.allow_chromatic_illumination = trial.suggest_categorical("allow_chromatic_illumination", [True, False])
 
-    cfg.retinex_embedding_dim = trial.suggest_categorical("retinex_embedding_dim", [32, 64, 128])
+    cfg.ssim_lambda = trial.suggest_float("ssim_lambda", 0.05, 0.8)
+    cfg.lambda_low = trial.suggest_float("lambda_low", 0.1, 0.9)
+    cfg.lambda_illumination = trial.suggest_float("lambda_illumination", 0.01, 5.0, log=True)
+    cfg.lambda_2d = trial.suggest_float("lambda_2d", 0.1, 1.0)
+    cfg.lambda_3d = trial.suggest_float("lambda_3d", 0.1, 1.0)
 
-    cfg.retinex_opt_lr = trial.suggest_float(
-        "retinex_opt_lr", 1e-4, 1e-2, log=True
-    )
-    cfg.retinex_embedding_lr = trial.suggest_float(
-        "retinex_embedding_lr", 1e-5, 1e-2, log=True
-    )
+    if trial.suggest_categorical("use_opacity_reg", [True, False]):
+        cfg.opacity_reg = trial.suggest_float("opacity_reg", 1e-4, 1e-1, log=True)
+    else:
+        cfg.opacity_reg = 0.0
+
+    if trial.suggest_categorical("use_scale_reg", [True, False]):
+        cfg.scale_reg = trial.suggest_float("scale_reg", 1e-4, 1e-1, log=True)
+    else:
+        cfg.scale_reg = 0.0
+
+    if trial.suggest_categorical("use_exclusion", [True, False]):
+        cfg.lambda_exclusion = trial.suggest_float("lambda_exclusion", 0.01, 1.0, log=True)
+    else:
+        cfg.lambda_exclusion = 0.0
+
+    if trial.suggest_categorical("use_shn_reg", [True, False]):
+        cfg.lambda_shn_reg = trial.suggest_float("lambda_shn_reg", 0.1, 2.0, log=True)
+    else:
+        cfg.lambda_shn_reg = 0.0
+
+    if trial.suggest_categorical("use_illum_smoothness", [True, False]):
+        cfg.lambda_illum_smoothness = trial.suggest_float("lambda_illum_smoothness", 0.01, 2.0, log=True)
+    else:
+        cfg.lambda_illum_smoothness = 0.0
+
+    if trial.suggest_categorical("use_tv_loss", [True, False]):
+        cfg.lambda_tv_loss = trial.suggest_float("lambda_tv_loss", 0.01, 2.0, log=True)
+    else:
+        cfg.lambda_tv_loss = 0.0
 
     weighting_strategy = trial.suggest_categorical("weighting_strategy", ["uncertainty", "learnt", "manual"])
-    if weighting_strategy == "uncertainty":
-        cfg.uncertainty_weighting = True
-        cfg.learnt_weighting = False
-    elif weighting_strategy == "learnt":
-        cfg.uncertainty_weighting = False
-        cfg.learnt_weighting = True
-    else:
-        cfg.uncertainty_weighting = False
-        cfg.learnt_weighting = False
-
-    cfg.loss_perceptual_color = trial.suggest_categorical("loss_perceptual_color", [True, False])
-    if cfg.loss_perceptual_color:
-        cfg.lambda_perceptual_color = trial.suggest_float("lambda_perceptual_color", 0.1, 10.0, log=True)
-
-    cfg.loss_smooth_edge_aware = trial.suggest_categorical("loss_smooth_edge_aware", [True, False])
-    if cfg.loss_smooth_edge_aware:
-        cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 5.0, 50.0, log=True)
+    cfg.uncertainty_weighting = (weighting_strategy == "uncertainty")
+    cfg.learnt_weighting = (weighting_strategy == "learnt")
 
     cfg.loss_adaptive_curve = trial.suggest_categorical("loss_adaptive_curve", [True, False])
     if cfg.loss_adaptive_curve:
-        cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 0.5, 10.0, log=True)
+        cfg.learn_adaptive_curve_lambdas = trial.suggest_categorical("learn_adaptive_curve_lambdas", [True, False])
+        if weighting_strategy == "manual":
+            cfg.lambda_illum_curve = trial.suggest_float("lambda_illum_curve", 0.1, 10.0, log=True)
 
-    cfg.loss_exposure = trial.suggest_categorical("loss_exposure", [True, False])
-    if cfg.loss_exposure:
-        cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.1, 10.0, log=True)
-        cfg.exposure_loss_patch_size = trial.suggest_categorical("exposure_loss_patch_size", [32, 64, 128])
+    cfg.loss_smooth_edge_aware = trial.suggest_categorical("loss_smooth_edge_aware", [True, False])
+    if cfg.loss_smooth_edge_aware and weighting_strategy == "manual":
+        cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1.0, 50.0, log=True)
 
     cfg.loss_white_preservation = trial.suggest_categorical("loss_white_preservation", [True, False])
     if cfg.loss_white_preservation:
-        cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 1.0, 20.0, log=True)
-        cfg.chroma_tolerance = trial.suggest_float("chroma_tolerance", 1.0, 10.0, log=True)
-        cfg.gain = trial.suggest_float("gain", 0.5, 10.0, log=True)
+        cfg.luminance_threshold = trial.suggest_float("luminance_threshold", 50.0, 120.0)
+        cfg.chroma_tolerance = trial.suggest_float("chroma_tolerance", 0.5, 5.0)
+        cfg.gain = trial.suggest_float("gain", 1.0, 20.0, log=True)
+        if weighting_strategy == "manual":
+            cfg.lambda_white_preservation = trial.suggest_float("lambda_white_preservation", 0.5, 15.0, log=True)
 
-    cfg.loss_histogram = trial.suggest_categorical("loss_histogram", [True, False])
-    if cfg.loss_histogram:
-        cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 0.5, 5.0, log=True)
+    cfg.loss_exposure = trial.suggest_categorical("loss_exposure", [True, False])
+    if cfg.loss_exposure:
+        cfg.exposure_loss_patch_size = trial.suggest_categorical("exposure_loss_patch_size", [16, 32, 64, 128])
+        cfg.exposure_mean_val = trial.suggest_float("exposure_mean_val", 0.3, 0.7)
+        if weighting_strategy == "manual":
+            cfg.lambda_illum_exposure = trial.suggest_float("lambda_illum_exposure", 0.05, 5.0, log=True)
 
-    cfg.loss_reflectance_spa = trial.suggest_categorical("loss_reflectance_spa", [True, False])
-    if cfg.loss_reflectance_spa:
-        cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.1, 5.0, log=True)
-
-    cfg.loss_chroma = trial.suggest_categorical("loss_chroma", [True, False])
-    if cfg.loss_chroma:
-        cfg.lambda_chroma = trial.suggest_float("lambda_chroma", 0.001, 0.5, log=True)
+    cfg.loss_perceptual_color = trial.suggest_categorical("loss_perceptual_color", [True, False])
+    if cfg.loss_perceptual_color and weighting_strategy == "manual":
+        cfg.lambda_perceptual_color = trial.suggest_float("lambda_perceptual_color", 1.0, 20.0, log=True)
 
     cfg.loss_variance = trial.suggest_categorical("loss_variance", [True, False])
-    if cfg.loss_variance:
-        cfg.lambda_illum_variance = trial.suggest_float("lambda_illum_variance", 0.1, 5.0, log=True)
+    if cfg.loss_variance and weighting_strategy == "manual":
+        cfg.lambda_illum_variance = trial.suggest_float("lambda_illum_variance", 0.1, 10.0, log=True)
 
-    cfg.max_steps = 4000
-    cfg.eval_steps = [4000]
-    cfg.postfix = "_org"
-    cfg.data_dir = Path("/workspace/ceiling")
+    cfg.loss_histogram = trial.suggest_categorical("loss_histogram", [True, False])
+    if cfg.loss_histogram and weighting_strategy == "manual":
+        cfg.lambda_histogram = trial.suggest_float("lambda_histogram", 0.1, 5.0, log=True)
 
-    total_psnr = 0
-    total_ssim = 0
-    total_lpips = 0
+    cfg.loss_reflectance_spa = trial.suggest_categorical("loss_reflectance_spa", [True, False])
+    if cfg.loss_reflectance_spa and weighting_strategy == "manual":
+        cfg.lambda_reflect = trial.suggest_float("lambda_reflect", 0.05, 2.0, log=True)
+
+    cfg.loss_chroma = trial.suggest_categorical("loss_chroma", [True, False])
+    if cfg.loss_chroma and weighting_strategy == "manual":
+        cfg.lambda_chroma = trial.suggest_float("lambda_chroma", 0.001, 1.0, log=True)
 
     try:
         runner = Runner(0, 0, 1, cfg)
 
-        runner.train()
+        runner.train(trial=trial)
 
         with open(f"{runner.stats_dir}/val_step{cfg.max_steps-1:04d}.json") as f:
             stats = json.load(f)
 
-        psnr = stats.get("psnr", 0)
-        ssim = stats.get("ssim", 0)
-        lpips = stats.get("lpips", 0)
+        return stats.get("ssim", 0)
 
-        total_psnr += psnr
-        total_ssim += ssim
-        total_lpips += lpips
-
+    except optuna.exceptions.TrialPruned:
+        raise
     except Exception as e:
         print(f"Trial failed with error: {e}")
-        return 0.0, 0.0, 1.0
-
+        return 0.0
     finally:
         if 'runner' in locals():
             del runner
         torch.cuda.empty_cache()
-
-    return total_psnr, total_ssim, total_lpips
 
 if __name__ == "__main__":
     configs = {
@@ -1512,27 +1530,34 @@ if __name__ == "__main__":
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
 
-    cli(main, config, verbose=True)
+    if config.optimise:
+        storage = optuna.storages.JournalStorage(
+            optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
+        )
 
-    # storage = optuna.storages.JournalStorage(
-    #     optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
-    # )
-    #
-    # study = optuna.create_study(
-    #     directions=["maximize", "maximize", "minimize"],
-    #     study_name="retinex_optuna_study",
-    #     storage=storage,
-    #     load_if_exists=True,
-    # )
-    #
-    # study.optimize(objective, n_trials=200, gc_after_trial=True, catch=(RuntimeError, ValueError),
-    #                show_progress_bar=True)
-    #
-    # print("Number of finished trials: ", len(study.trials))
-    # print("Best trials (Pareto front):")
-    # for t in study.best_trials:
-    #     print(f"  Value: {t.values}")
-    #     print("  Params: ")
-    #     for key, value in t.params.items():
-    #         print(f"    {key}: {value}")
-    #
+        study = optuna.create_study(
+            direction="maximize",
+            study_name="retinex_optuna_study",
+            storage=storage,
+            load_if_exists=True,
+            sampler=optuna.samplers.TPESampler(multivariate=True),
+            pruner=optuna.pruners.HyperbandPruner(min_resource=1000, max_resource=4000, reduction_factor=3)
+        )
+
+        study.optimize(lambda trial: objective(trial, config),
+                       n_trials=200,
+                       gc_after_trial=True,
+                       catch=(RuntimeError, ValueError),
+                       show_progress_bar=True)
+
+        print("Number of finished trials: ", len(study.trials))
+        print("Best trials (Pareto front):")
+        for t in study.best_trials:
+            print(f"  Value: {t.values}")
+            print("  Params: ")
+            for key, value in t.params.items():
+                print(f"    {key}: {value}")
+
+    else:
+        cli(main, config, verbose=True)
+
