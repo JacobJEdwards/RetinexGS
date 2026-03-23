@@ -1541,7 +1541,7 @@ if __name__ == "__main__":
             study_name="retinex_optuna_study",
             storage=storage,
             load_if_exists=True,
-            sampler=optuna.samplers.TPESampler(multivariate=True),
+            sampler=optuna.samplers.TPESampler(multivariate=True, group=True),
             pruner=optuna.pruners.HyperbandPruner(min_resource=1000, max_resource=4000, reduction_factor=3)
         )
 
