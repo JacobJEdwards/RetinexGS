@@ -1378,6 +1378,7 @@ def objective(trial: optuna.Trial, cfg: Config) -> float:
     cfg.save_ply = False
     cfg.save_images = False
     cfg.tb_save_image = False
+    cfg.disable_video = True
     cfg.tb_every = 10000
 
     cfg.max_steps = 4000
