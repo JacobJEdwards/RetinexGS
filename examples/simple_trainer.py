@@ -1542,7 +1542,7 @@ if __name__ == "__main__":
             storage=storage,
             load_if_exists=True,
             sampler=optuna.samplers.TPESampler(multivariate=True, group=True),
-            pruner=optuna.pruners.HyperbandPruner(min_resource=1000, max_resource=4000, reduction_factor=3)
+            pruner=optuna.pruners.SuccessiveHalvingPruner(min_resource=1000, reduction_factor=3)
         )
 
         study.optimize(lambda trial: objective(trial, config),
