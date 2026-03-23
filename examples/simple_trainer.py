@@ -1382,7 +1382,7 @@ def objective(trial: optuna.Trial, cfg: Config) -> float:
     cfg.tb_every = 10000
 
     cfg.max_steps = 4000
-    cfg.eval_steps = [999, 1999, 2999, 3999]
+    cfg.eval_steps = [1000, 2000, 3000, 4000]
 
     cfg.means_lr = trial.suggest_float("means_lr", 1e-5, 1e-3, log=True)
     cfg.scales_lr = trial.suggest_float("scales_lr", 1e-4, 5e-2, log=True)
