@@ -1532,15 +1532,15 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     if config.optimise:
-        storage = optuna.storages.JournalStorage(
-            optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
-        )
+        # storage = optuna.storages.JournalStorage(
+        #     optuna.storages.journal.JournalFileBackend(file_path="./retinex_optuna_study.log")
+        # )
 
         study = optuna.create_study(
             direction="maximize",
             study_name="retinex_optuna_study",
-            storage=storage,
-            load_if_exists=True,
+            # storage=storage,
+            # load_if_exists=True,
             sampler=optuna.samplers.TPESampler(multivariate=True, group=True),
             pruner=optuna.pruners.SuccessiveHalvingPruner(min_resource=1000, reduction_factor=3)
         )
