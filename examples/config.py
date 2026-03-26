@@ -33,20 +33,20 @@ class Config:
     ply_steps: list[int] = field(default_factory=lambda: [10_000])
     disable_video: bool = False
 
-    init_opa: float=0.5
-    init_scale: float=0.1
-    opacity_reg: float=0.01
-    scale_reg: float=0.01
+    # init_opa: float=0.5
+    # init_scale: float=0.1
+    # opacity_reg: float=0.01
+    # scale_reg: float=0.01
 
     init_type: str = "sfm"
     init_num_pts: int = 100_000
     init_extent: float = 3.0
     sh_degree: int = 3
     sh_degree_interval: int = 1000
-    # init_opa: float = 0.1
-    # init_scale: float = 1.0
-    # opacity_reg: float = 0.0
-    # scale_reg: float = 0.0
+    init_opa: float = 0.1
+    init_scale: float = 1.0
+    opacity_reg: float = 0.0
+    scale_reg: float = 0.0
     ssim_lambda: float = 0.45
 
     near_plane: float = 0.01

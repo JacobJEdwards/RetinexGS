@@ -1501,10 +1501,6 @@ def objective(trial: optuna.Trial, cfg: Config) -> float:
     except Exception as e:
         print(f"Trial failed with error: {e}")
         return 0.0
-    finally:
-        if 'runner' in locals():
-            del runner
-        torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     configs = {
