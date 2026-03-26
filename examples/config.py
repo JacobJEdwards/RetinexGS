@@ -33,19 +33,26 @@ class Config:
     ply_steps: list[int] = field(default_factory=lambda: [10_000])
     disable_video: bool = False
 
+    init_opa=0.5,
+    init_scale=0.1,
+    opacity_reg=0.01,
+    scale_reg=0.01,
+
     init_type: str = "sfm"
     init_num_pts: int = 100_000
     init_extent: float = 3.0
     sh_degree: int = 3
     sh_degree_interval: int = 1000
-    init_opa: float = 0.1
-    init_scale: float = 1.0
+    # init_opa: float = 0.1
+    # init_scale: float = 1.0
+    # opacity_reg: float = 0.0
+    # scale_reg: float = 0.0
     ssim_lambda: float = 0.45
 
     near_plane: float = 0.01
     far_plane: float = 1e10
 
-    strategy: DefaultStrategy | MCMCStrategy = field(default_factory=MCMCStrategy)
+    strategy: DefaultStrategy | MCMCStrategy = field(default_factory=lambda: MCMCStrategy(verbose=True))
 
     means_lr: float = 1.6e-4
     scales_lr: float = 0.014
@@ -53,9 +60,6 @@ class Config:
     quats_lr: float = 1e-3
     sh0_lr: float = 2.5e-3
     shN_lr: float = 2.5e-3 / 20
-
-    opacity_reg: float = 0.0
-    scale_reg: float = 0.0
 
     tb_every: int = 1000
     tb_save_image: bool = False
