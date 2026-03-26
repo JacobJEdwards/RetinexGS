@@ -15,6 +15,7 @@ import tqdm
 import tyro
 import yaml
 from scipy import stats
+from sympy import true
 from torch import Tensor, nn, GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import (
@@ -1385,6 +1386,19 @@ def objective(trial: optuna.Trial, cfg: Config) -> float:
 
     cfg.max_steps = 10000
     cfg.eval_steps = [2000, 5000, 8000, 10_000]
+
+    strategy_type = trial.suggest_categorical("strategy_type", ["default", "mcmc"])
+
+    if strategy_type == "default":
+        absgrad = trial.suggest_categorical("default_absgrad", [True, False])
+
+        cfg.strategy = DefaultStrategy(
+            verbose=False,
+            absgrad=absgrad,
+            refine_stop_iter=8000
+        )
+    else:
+        cfg.strategy = MCMCStrategy(verbose=False)
 
     cfg.means_lr = trial.suggest_float("means_lr", 1e-5, 1e-3, log=True)
     cfg.scales_lr = trial.suggest_float("scales_lr", 1e-4, 5e-2, log=True)
