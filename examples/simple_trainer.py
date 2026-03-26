@@ -432,8 +432,9 @@ class Runner:
             retinex_embedding,
             use_reentrant=False,
         )
+        log_illumination_map = torch.clamp(log_illumination_map, min=-20.0, max=10.0)
         illumination_map = torch.exp(log_illumination_map)
-        illumination_map = torch.clamp(illumination_map, min=1e-5)
+        illumination_map = torch.clamp(illumination_map, min=1e-5, max=1e4) # optional upper bound
         illumination_map = illumination_map.nan_to_num()
 
         if not self.cfg.allow_chromatic_illumination:
@@ -931,6 +932,16 @@ class Runner:
                 # optimizer.step()
                 self.scaler.step(optimizer)
 
+            self.scaler.unscale_(self.retinex_optimiser)
+            self.scaler.unscale_(self.illum_field_optimizer)
+
+            # 2. Clip the gradient norm of your neural networks
+            torch.nn.utils.clip_grad_norm_(self.retinex_net.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(self.illumination_field.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(self.camera_response_net.parameters(), max_norm=1.0)
+            if cfg.learnt_weighting:
+                torch.nn.utils.clip_grad_norm_(self.lambda_predictor.parameters(), max_norm=1.0)
+
             self.scaler.step(self.retinex_optimiser)
             self.scaler.step(self.illum_field_optimizer)
             self.scaler.step(self.appearance_embeds_optimizer)
@@ -1407,7 +1418,7 @@ def objective(trial: optuna.Trial, cfg: Config) -> float:
     cfg.sh0_lr = trial.suggest_float("sh0_lr", 1e-4, 1e-2, log=True)
     cfg.shN_lr = trial.suggest_float("shN_lr", 1e-5, 1e-3, log=True)
 
-    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-2, log=True)
+    cfg.retinex_opt_lr = trial.suggest_float("retinex_opt_lr", 1e-5, 1e-3, log=True)
     cfg.retinex_embedding_lr = trial.suggest_float("retinex_embedding_lr", 1e-6, 1e-3, log=True)
     cfg.appearance_embedding_lr = trial.suggest_float("appearance_embedding_lr", 1e-5, 5e-2, log=True)
     cfg.camera_net_lr = trial.suggest_float("camera_net_lr", 1e-5, 5e-3, log=True)
@@ -1465,7 +1476,7 @@ def objective(trial: optuna.Trial, cfg: Config) -> float:
 
     cfg.loss_smooth_edge_aware = trial.suggest_categorical("loss_smooth_edge_aware", [True, False])
     if cfg.loss_smooth_edge_aware and weighting_strategy == "manual":
-        cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1.0, 50.0, log=True)
+        cfg.lambda_edge_aware_smooth = trial.suggest_float("lambda_edge_aware_smooth", 1.0, 15.0, log=True)
 
     cfg.loss_white_preservation = trial.suggest_categorical("loss_white_preservation", [True, False])
     if cfg.loss_white_preservation:

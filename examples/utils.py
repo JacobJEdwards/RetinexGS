@@ -407,7 +407,8 @@ class AutomaticWeightedLoss(nn.Module):
         self.params = torch.nn.Parameter(params)
 
     def forward(self, *x: Tensor) -> Tensor:
-        raw_weights = [0.5 / (self.params[i] ** 2) for i in range(len(x))]
+        eps = 1e-6
+        raw_weights = [0.5 / (self.params[i] ** 2 + eps) for i in range(len(x))]
         total_weight = sum(raw_weights)
 
         loss_sum = 0
