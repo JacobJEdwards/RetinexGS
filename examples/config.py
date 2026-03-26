@@ -45,7 +45,7 @@ class Config:
     near_plane: float = 0.01
     far_plane: float = 1e10
 
-    strategy: DefaultStrategy | MCMCStrategy = field(default_factory=DefaultStrategy)
+    strategy: DefaultStrategy | MCMCStrategy = field(default_factory=MCMCStrategy)
 
     means_lr: float = 1.6e-4
     scales_lr: float = 0.014
