@@ -1510,7 +1510,7 @@ if __name__ == "__main__":
     configs = {
         "default": (
             "Gaussian splatting training using densification heuristics from the original paper.",
-            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000)),
+            Config(strategy=DefaultStrategy(verbose=True, refine_stop_iter=8000, absgrad=True)),
         ),
         "mcmc": (
             "Gaussian splatting training using MCMC.",
@@ -1523,7 +1523,7 @@ if __name__ == "__main__":
             ),
         ),
     }
-    # config = tyro.extras.overridable_config_cli(configs)
+    config = tyro.extras.overridable_config_cli(configs)
     config = tyro.cli(
         Config,
     )
