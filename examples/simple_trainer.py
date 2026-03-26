@@ -1524,9 +1524,9 @@ if __name__ == "__main__":
         ),
     }
     config = tyro.extras.overridable_config_cli(configs)
-    config = tyro.cli(
-        Config,
-    )
+    # config = tyro.cli(
+    #     Config,
+    # )
 
     config.adjust_steps(config.steps_scaler)
     torch.set_float32_matmul_precision("high")
