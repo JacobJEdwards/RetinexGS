@@ -33,10 +33,10 @@ class Config:
     ply_steps: list[int] = field(default_factory=lambda: [10_000])
     disable_video: bool = False
 
-    init_opa: float=0.5,
-    init_scale: float=0.1,
-    opacity_reg: float=0.01,
-    scale_reg: float=0.01,
+    init_opa: float=0.5
+    init_scale: float=0.1
+    opacity_reg: float=0.01
+    scale_reg: float=0.01
 
     init_type: str = "sfm"
     init_num_pts: int = 100_000
