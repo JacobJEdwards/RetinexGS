@@ -649,7 +649,7 @@ class Runner:
             batch_size=cfg.batch_size,
             shuffle=True,
             num_workers=4,
-            persistent_workers=True,
+            persistent_workers=False,
             pin_memory=False,
         )
         trainloader_iter = iter(trainloader)
@@ -994,7 +994,7 @@ class Runner:
             dataset = self.valset
 
         dataloader = torch.utils.data.DataLoader(
-            dataset, shuffle=False, num_workers=1
+            dataset, shuffle=False, num_workers=1, persistent_workers=False
         )
 
 
@@ -1269,6 +1269,7 @@ class Runner:
             shuffle=False,
             num_workers=1,
             pin_memory=False,
+            persistent_workers=False,
         )
 
         trainloader_groundtruth = torch.utils.data.DataLoader(
@@ -1277,6 +1278,7 @@ class Runner:
             shuffle=False,
             num_workers=1,
             pin_memory=False,
+            persistent_workers=False,
         )
 
         metrics = defaultdict(list)
