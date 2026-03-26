@@ -133,6 +133,7 @@ class Config:
     freeze_step: int = 10_000
 
     optimise: bool = False
+    num_trials: int = 200
 
     def adjust_steps(self, factor: float) -> None:
         self.eval_steps = [int(i * factor) for i in self.eval_steps]

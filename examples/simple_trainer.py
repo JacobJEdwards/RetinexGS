@@ -1546,7 +1546,7 @@ if __name__ == "__main__":
         )
 
         study.optimize(lambda trial: objective(trial, config),
-                       n_trials=200,
+                       n_trials=config.num_trials,
                        gc_after_trial=True,
                        catch=(RuntimeError, ValueError),
                        show_progress_bar=True)
