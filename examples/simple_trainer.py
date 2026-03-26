@@ -1560,7 +1560,7 @@ if __name__ == "__main__":
         study.optimize(lambda trial: objective(trial, config),
                        n_trials=config.num_trials,
                        gc_after_trial=True,
-                       catch=(RuntimeError, ValueError),
+                       catch=(RuntimeError, ValueError, Exception),
                        show_progress_bar=True)
 
         print("Number of finished trials: ", len(study.trials))
