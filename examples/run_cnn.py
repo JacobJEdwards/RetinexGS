@@ -140,4 +140,5 @@ def main(cfg: Config):
         imageio.imwrite(os.path.join(cfg.result_dir, "reflectance.png"), (ref_out_vis * 255).astype(np.uint8))
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    config = tyro.cli(Config)
+    main(config)
