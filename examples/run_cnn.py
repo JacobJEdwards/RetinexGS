@@ -40,7 +40,7 @@ def load_image(image_path: str, device: torch.device, max_size: int = 1024) -> t
     return img_resized.permute(0, 2, 3, 1)
 
 @torch.no_grad()
-def output(cfg: Config, illumination_map: torch.Tensor, reflectance_map: torch.Tensor, step: int, img_name: string) -> \
+def output(cfg: Config, illumination_map: torch.Tensor, reflectance_map: torch.Tensor, step: int, img_name: str) -> \
         None:
     print(f"Saving outputs for step {step}")
     ill_out = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
