@@ -11,7 +11,7 @@ from scipy import stats
 import torch.nn.functional as F
 
 from config import Config
-from retinex_temp import MultiScaleRetinexNet
+from retinex import MultiScaleRetinexNet
 from losses import (
     AdaptiveCurveLoss,
     EdgeAwareSmoothingLoss,
@@ -118,9 +118,12 @@ def main(cfg: Config):
             if not cfg.allow_chromatic_illumination:
                 illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-            illumination_map = torch.maximum(illumination_map, input_image_for_net + 1e-6)
+            max_rgb_channel, _ = torch.max(input_image_for_net, dim=1, keepdim=True)
+
+            illumination_map = torch.maximum(illumination_map, max_rgb_channel + 1e-6)
 
             reflectance_map = input_image_for_net / illumination_map
+
             reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0).nan_to_num()
 
             total_loss = 0.0
