@@ -69,7 +69,7 @@ class Config:
     lambda_low: float = 0.80
     lambda_illumination: float = 0.45
 
-    lambda_edge_aware_smooth: float = 21.0
+    lambda_edge_aware_smooth: float = 1.0
     lambda_illum_curve: float = 1.85
     lambda_illum_exposure: float = 0.12
     lambda_white_preservation: float = 3.6
@@ -92,7 +92,7 @@ class Config:
 
     allow_chromatic_illumination: bool = False
 
-    loss_adaptive_curve: bool = False
+    loss_adaptive_curve: bool = True
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
 
@@ -100,7 +100,7 @@ class Config:
     loss_perceptual_color: bool = False
     loss_variance: bool = False
     loss_histogram: bool = False
-    loss_reflectance_spa: bool = False
+    loss_reflectance_spa: bool = True
     loss_chroma: bool = False
 
     uncertainty_weighting: bool = False
