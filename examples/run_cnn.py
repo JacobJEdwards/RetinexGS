@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import imageio.v2 as imageio
 import tyro
+from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 from scipy import stats
 
@@ -56,7 +57,8 @@ def main(cfg: Config):
     if cfg.learn_adaptive_curve_lambdas:
         param_groups.append({"params": loss_adaptive_curve.parameters(), "lr": 1e-3})
 
-    optimizer = torch.optim.Adam(param_groups, fused=True if torch.cuda.is_available() else False)
+    optimizer = torch.optim.AdamW(param_groups, fused=True)
+    scaler = torch.cuda.amp.GradScaler(enabled=True)
 
     loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(device)
     loss_white_preservation = WhitePreservationLoss(
@@ -76,54 +78,60 @@ def main(cfg: Config):
     for step in pbar:
         optimizer.zero_grad()
 
-        embed_ids = torch.zeros(1, dtype=torch.long, device=device)
-        retinex_embedding = appearance_embeds(embed_ids)
+        with (torch.cuda.amp.autocast(enabled=True)):
+            embed_ids = torch.zeros(1, dtype=torch.long, device=device)
+            retinex_embedding = appearance_embeds(embed_ids)
 
-        log_illumination_map = retinex_net(input_image_for_net, retinex_embedding)
-        log_illumination_map = torch.clamp(log_illumination_map, min=-20.0, max=10.0)
+            log_illumination_map = checkpoint(
+                retinex_net,
+                input_image_for_net,
+                retinex_embedding,
+                use_reentrant=False
+            )
 
-        illumination_map = torch.exp(log_illumination_map)
-        illumination_map = torch.clamp(illumination_map, min=1e-5, max=1e4).nan_to_num()
+            illumination_map = torch.exp(log_illumination_map)
+            illumination_map = torch.clamp(illumination_map, min=1e-5)
+            illumination_map = illumination_map.nan_to_num()
 
-        if not cfg.allow_chromatic_illumination:
-            illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
+            if not cfg.allow_chromatic_illumination:
+                illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-        reflectance_map = input_image_for_net / (illumination_map + 1e-6)
-        reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0).nan_to_num()
+            reflectance_map = input_image_for_net / (illumination_map + 1e-6)
+            reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0).nan_to_num()
 
-        total_loss = 0.0
+            total_loss = 0.0
 
-        if cfg.loss_adaptive_curve:
-            total_loss += cfg.lambda_illum_curve * loss_adaptive_curve(reflectance_map)
+            if cfg.loss_adaptive_curve:
+                total_loss += cfg.lambda_illum_curve * loss_adaptive_curve(reflectance_map)
 
-        if cfg.loss_exposure:
-            total_loss += cfg.lambda_illum_exposure * loss_exposure(reflectance_map)
+            if cfg.loss_exposure:
+                total_loss += cfg.lambda_illum_exposure * loss_exposure(reflectance_map)
 
-        if cfg.loss_reflectance_spa:
-            total_loss += cfg.lambda_reflect * loss_spatial(input_image_for_net, reflectance_map, contrast=0.5)
+            if cfg.loss_reflectance_spa:
+                total_loss += cfg.lambda_reflect * loss_spatial(input_image_for_net, reflectance_map, contrast=0.5)
 
-        if cfg.loss_smooth_edge_aware:
-            total_loss += cfg.lambda_edge_aware_smooth * loss_edge_aware_smooth(illumination_map, input_image_for_net)
+            if cfg.loss_smooth_edge_aware:
+                total_loss += cfg.lambda_edge_aware_smooth * loss_edge_aware_smooth(illumination_map, input_image_for_net)
 
-        if cfg.loss_white_preservation:
-            total_loss += cfg.lambda_white_preservation * loss_white_preservation(pixels, reflectance_map.permute(0, 2, 3, 1))
+            if cfg.loss_white_preservation:
+                total_loss += cfg.lambda_white_preservation * loss_white_preservation(pixels, reflectance_map.permute(0, 2, 3, 1))
 
-        if cfg.loss_histogram:
-            total_loss += cfg.lambda_histogram * histogram_loss(reflectance_map, target_histogram_dist)
+            if cfg.loss_histogram:
+                total_loss += cfg.lambda_histogram * histogram_loss(reflectance_map, target_histogram_dist)
 
-        if cfg.loss_perceptual_color:
-            total_loss += cfg.lambda_perceptual_color * loss_perceptual_colour(reflectance_map.permute(0, 2, 3, 1), pixels)
+            if cfg.loss_perceptual_color:
+                total_loss += cfg.lambda_perceptual_color * loss_perceptual_colour(reflectance_map.permute(0, 2, 3, 1), pixels)
 
-        if cfg.loss_variance:
-            illum_std = torch.std(illumination_map, dim=[2, 3])
-            total_loss += cfg.lambda_illum_variance * (-torch.mean(illum_std) + 1e-6)
+            if cfg.loss_variance:
+                illum_std = torch.std(illumination_map, dim=[2, 3])
+                total_loss += cfg.lambda_illum_variance * (-torch.mean(illum_std) + 1e-6)
 
-        if cfg.loss_chroma:
-            total_loss += cfg.lambda_chroma * loss_chroma(illumination_map)
+            if cfg.loss_chroma:
+                total_loss += cfg.lambda_chroma * loss_chroma(illumination_map)
 
-        total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(retinex_net.parameters(), max_norm=1.0)
-        optimizer.step()
+        scaler.scale(total_loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         if step % 100 == 0:
             pbar.set_description(f"Loss: {total_loss.item():.4f}")
