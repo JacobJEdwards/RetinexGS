@@ -38,6 +38,19 @@ def load_image(image_path: str, device: torch.device, max_size: int = 1024) -> t
 
     return img_resized.permute(0, 2, 3, 1)
 
+@torch.no_grad()
+def output(cfg: Config, illumination_map: torch.Tensor, reflectance_map: torch.Tensor, step: int) -> None:
+    print(f"Saving outputs for step {step}")
+    ill_out = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
+    ref_out = reflectance_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
+
+    ill_out_vis = np.clip(ill_out, 0, 1)
+    ref_out_vis = np.clip(ref_out, 0, 1)
+
+    imageio.imwrite(os.path.join(cfg.result_dir, f"illumination_{step}.png"), (ill_out_vis * 255).astype(np.uint8))
+    imageio.imwrite(os.path.join(cfg.result_dir, f"reflectance_{step}.png"), (ref_out_vis * 255).astype(np.uint8))
+
+
 def main(cfg: Config):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(cfg.result_dir, exist_ok=True)
@@ -148,16 +161,10 @@ def main(cfg: Config):
         if step % 100 == 0:
             pbar.set_description(f"Loss: {total_loss.item():.4f}")
 
-    print("Saving outputs")
-    with torch.no_grad():
-        ill_out = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
-        ref_out = reflectance_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
+        if step % 1000 == 0:
+            output(cfg, illumination_map, reflectance_map, step)
 
-        ill_out_vis = np.clip(ill_out, 0, 1)
-        ref_out_vis = np.clip(ref_out, 0, 1)
-
-        imageio.imwrite(os.path.join(cfg.result_dir, "illumination.png"), (ill_out_vis * 255).astype(np.uint8))
-        imageio.imwrite(os.path.join(cfg.result_dir, "reflectance.png"), (ref_out_vis * 255).astype(np.uint8))
+    output(cfg, illumination_map, reflectance_map, cfg.max_steps)
 
 if __name__ == "__main__":
     config = tyro.cli(Config)
