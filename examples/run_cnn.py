@@ -40,8 +40,7 @@ def load_image(image_path: str, device: torch.device, max_size: int = 1024) -> t
     return img_resized.permute(0, 2, 3, 1)
 
 @torch.no_grad()
-def output(cfg: Config, illumination_map: torch.Tensor, reflectance_map: torch.Tensor, step: int, img_name: str) -> \
-        None:
+def output(cfg: Config, illumination_map: torch.Tensor, reflectance_map: torch.Tensor, step: int, img_name: str) -> None:
     print(f"Saving outputs for step {step}")
     ill_out = illumination_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
     ref_out = reflectance_map.squeeze(0).permute(1, 2, 0).cpu().numpy()
@@ -49,8 +48,7 @@ def output(cfg: Config, illumination_map: torch.Tensor, reflectance_map: torch.T
     ill_out_vis = np.clip(ill_out, 0, 1)
     ref_out_vis = np.clip(ref_out, 0, 1)
 
-    imageio.imwrite(os.path.join(cfg.result_dir, f"{img_name}_illumination_{step}.png"), (ill_out_vis * 255).astype(
-        np.uint8))
+    imageio.imwrite(os.path.join(cfg.result_dir, f"{img_name}_illumination_{step}.png"), (ill_out_vis * 255).astype(np.uint8))
     imageio.imwrite(os.path.join(cfg.result_dir, f"{img_name}_reflectance_{step}.png"), (ref_out_vis * 255).astype(np.uint8))
 
 
@@ -170,9 +168,9 @@ def main(cfg: Config):
                 pbar.set_description(f"Loss: {total_loss.item():.4f}")
 
             if step % 500 == 0:
-                output(cfg, illumination_map, reflectance_map, step, str(img))
+                output(cfg, illumination_map, reflectance_map, step, img.stem)
 
-        output(cfg, illumination_map, reflectance_map, cfg.max_steps, str(img))
+        output(cfg, illumination_map, reflectance_map, cfg.max_steps, img.stem)
 
 if __name__ == "__main__":
     config = tyro.cli(Config)
