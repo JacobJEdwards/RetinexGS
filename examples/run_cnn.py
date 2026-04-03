@@ -59,7 +59,7 @@ def main(cfg: Config):
     os.makedirs(cfg.result_dir, exist_ok=True)
 
     for img in Path(cfg.data_dir).iterdir():
-        print(f"Loading image from {cfg.data_dir}")
+        print(f"Loading image from {img}")
         pixels = load_image(str(img), device)  # [B=1, H, W, 3]
         input_image_for_net = pixels.permute(0, 3, 1, 2)  # [B=1, 3, H, W]
 
