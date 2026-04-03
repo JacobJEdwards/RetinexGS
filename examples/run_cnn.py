@@ -1,4 +1,6 @@
 import os
+
+import cv2
 import torch
 import numpy as np
 import imageio.v2 as imageio
@@ -22,6 +24,7 @@ from losses import (
 
 def load_image(image_path: str, device: torch.device) -> torch.Tensor:
     img = imageio.imread(image_path)[..., :3]
+    img = cv2.resize(img, (512, 512))
     img = img.astype(np.float32) / 255.0
     img_tensor = torch.from_numpy(img).unsqueeze(0).to(device)
     return img_tensor
