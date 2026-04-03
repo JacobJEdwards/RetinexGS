@@ -69,8 +69,8 @@ class Config:
     lambda_low: float = 0.80
     lambda_illumination: float = 0.45
 
-    lambda_edge_aware_smooth: float = 10.0
-    lambda_illum_curve: float = 0.5
+    lambda_edge_aware_smooth: float = 3.0
+    lambda_illum_curve: float = 1.0
     lambda_illum_exposure: float = 0.12
     lambda_white_preservation: float = 3.6
     lambda_perceptual_color: float = 0.1
