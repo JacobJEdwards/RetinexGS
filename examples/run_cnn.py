@@ -118,9 +118,11 @@ def main(cfg: Config):
             if not cfg.allow_chromatic_illumination:
                 illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-            max_rgb_channel, _ = torch.max(input_image_for_net, dim=1, keepdim=True)
+            # max_rgb_channel, _ = torch.max(input_image_for_net, dim=1, keepdim=True)
+            #
+            # illumination_map = torch.maximum(illumination_map, max_rgb_channel + 1e-6)
 
-            illumination_map = torch.maximum(illumination_map, max_rgb_channel + 1e-6)
+            illumination_map = torch.maximum(illumination_map, input_image_for_net + 1e-6)
 
             reflectance_map = input_image_for_net / illumination_map
 
