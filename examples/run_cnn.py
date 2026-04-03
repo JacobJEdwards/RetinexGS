@@ -8,6 +8,7 @@ import tyro
 from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 from scipy import stats
+import torch.nn.functional as F
 
 from config import Config
 from retinex_temp import MultiScaleRetinexNet
@@ -22,12 +23,20 @@ from losses import (
     ChromaLoss
 )
 
-def load_image(image_path: str, device: torch.device) -> torch.Tensor:
+def load_image(image_path: str, device: torch.device, max_size: int = 1024) -> torch.Tensor:
     img = imageio.imread(image_path)[..., :3]
-    img = cv2.resize(img, (512, 512))
+    h, w = img.shape[:2]
+    if h > w:
+        new_h, new_w = max_size, int(max_size / (w / h))
+    else:
+        new_h, new_w = max_size, int(max_size / (h / w))
+
     img = img.astype(np.float32) / 255.0
-    img_tensor = torch.from_numpy(img).unsqueeze(0).to(device)
-    return img_tensor
+    img_tensor = torch.from_numpy(img).unsqueeze(0).permute(0, 3, 1, 2).to(device)
+
+    img_resized = F.interpolate(img_tensor, size=(new_h, new_w), mode='bilinear', align_corners=False)
+
+    return img_resized.permute(0, 2, 3, 1)
 
 def main(cfg: Config):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
