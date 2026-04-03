@@ -90,18 +90,18 @@ class Config:
     learn_adaptive_curve_lambdas: bool = False
     learn_adaptive_curve_use_embedding: bool = False
 
-    allow_chromatic_illumination: bool = True
+    allow_chromatic_illumination: bool = False
 
     loss_adaptive_curve: bool = True
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
 
-    loss_exposure: bool = False
+    loss_exposure: bool = True
     loss_perceptual_color: bool = False
     loss_variance: bool = False
     loss_histogram: bool = False
     loss_reflectance_spa: bool = True
-    loss_chroma: bool = True
+    loss_chroma: bool = False
 
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
