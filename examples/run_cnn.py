@@ -113,15 +113,12 @@ def main(cfg: Config):
                 retinex_embedding,
                 use_reentrant=False
             )
-
-            illumination_map = torch.exp(log_illumination_map)
-            illumination_map = torch.clamp(illumination_map, min=1e-5)
-            illumination_map = illumination_map.nan_to_num()
+            illumination_map = torch.sigmoid(log_illumination_map)
 
             if not cfg.allow_chromatic_illumination:
                 illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-            reflectance_map = input_image_for_net / (illumination_map + 1e-6)
+            reflectance_map = input_image_for_net / illumination_map
             reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0).nan_to_num()
 
             total_loss = 0.0
@@ -149,7 +146,7 @@ def main(cfg: Config):
 
             if cfg.loss_variance:
                 illum_std = torch.std(illumination_map, dim=[2, 3])
-                total_loss += cfg.lambda_illum_variance * (-torch.mean(illum_std) + 1e-6)
+                total_loss += cfg.lambda_illum_variance * (torch.mean(illum_std) + 1e-6)
 
             if cfg.loss_chroma:
                 total_loss += cfg.lambda_chroma * loss_chroma(illumination_map)
@@ -161,7 +158,7 @@ def main(cfg: Config):
         if step % 100 == 0:
             pbar.set_description(f"Loss: {total_loss.item():.4f}")
 
-        if step % 1000 == 0:
+        if step % 500 == 0:
             output(cfg, illumination_map, reflectance_map, step)
 
     output(cfg, illumination_map, reflectance_map, cfg.max_steps)
