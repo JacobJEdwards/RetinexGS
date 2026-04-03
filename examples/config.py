@@ -69,20 +69,20 @@ class Config:
     lambda_low: float = 0.80
     lambda_illumination: float = 0.45
 
-    lambda_edge_aware_smooth: float = 5.16
-    lambda_illum_curve: float = 0.5
-    lambda_illum_exposure: float = 2.12
-    lambda_white_preservation: float = 1.3
-    lambda_perceptual_color: float = 2.17
+    lambda_edge_aware_smooth: float = 21.0
+    lambda_illum_curve: float = 1.85
+    lambda_illum_exposure: float = 0.12
+    lambda_white_preservation: float = 3.6
+    lambda_perceptual_color: float = 8.0
 
     lambda_chroma: float = 0.01
     lambda_illum_variance: float = 1.0
-    lambda_reflect: float = 0.17
+    lambda_reflect: float = 1.0
     lambda_histogram: float = 1
 
     luminance_threshold: float = 95.0
-    chroma_tolerance: float = 1.0
-    gain: float = 3.64
+    chroma_tolerance: float = 2.4
+    gain: float = 9.8
 
     exposure_loss_patch_size: int = 128
     exposure_mean_val: float = 0.48
@@ -90,18 +90,18 @@ class Config:
     learn_adaptive_curve_lambdas: bool = False
     learn_adaptive_curve_use_embedding: bool = False
 
-    allow_chromatic_illumination: bool = True
+    allow_chromatic_illumination: bool = False
 
     loss_adaptive_curve: bool = False
     loss_smooth_edge_aware: bool = True
     loss_white_preservation: bool = True
 
     loss_exposure: bool = False
-    loss_perceptual_color: bool = True
+    loss_perceptual_color: bool = False
     loss_variance: bool = False
     loss_histogram: bool = False
-    loss_reflectance_spa: bool = True
-    loss_chroma: bool = True
+    loss_reflectance_spa: bool = False
+    loss_chroma: bool = False
 
     uncertainty_weighting: bool = False
     learnt_weighting: bool = False
@@ -124,15 +124,15 @@ class Config:
 
     postfix: str = ""
 
-    retinex_opt_lr: float = 0.0001
-    retinex_embedding_lr: float = 0.004
+    retinex_opt_lr: float = 2e-3
+    retinex_embedding_lr: float = 5e-3
     loss_opt_lr: float = 1e-4
 
     appearance_embedding_lr: float = 6e-3
     camera_net_lr: float = 3e-4
     illumination_field_lr: float = 6e-5
 
-    retinex_embedding_dim: int = 64
+    retinex_embedding_dim: int = 128
 
     freeze_step: int = 10_000
 
