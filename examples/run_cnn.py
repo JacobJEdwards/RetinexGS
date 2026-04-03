@@ -58,7 +58,7 @@ def main(cfg: Config):
         param_groups.append({"params": loss_adaptive_curve.parameters(), "lr": 1e-3})
 
     optimizer = torch.optim.AdamW(param_groups, fused=True)
-    scaler = torch.cuda.amp.GradScaler(enabled=True)
+    scaler = torch.amp.GradScaler(enabled=True)
 
     loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(device)
     loss_white_preservation = WhitePreservationLoss(
@@ -78,7 +78,7 @@ def main(cfg: Config):
     for step in pbar:
         optimizer.zero_grad()
 
-        with (torch.cuda.amp.autocast(enabled=True)):
+        with (torch.amp.autocast(device_type="cuda", enabled=True)):
             embed_ids = torch.zeros(1, dtype=torch.long, device=device)
             retinex_embedding = appearance_embeds(embed_ids)
 
