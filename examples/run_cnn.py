@@ -147,7 +147,7 @@ def main(cfg: Config):
                 total_loss += cfg.lambda_histogram * histogram_loss(reflectance_map, target_histogram_dist)
 
             if cfg.loss_perceptual_color:
-                total_loss += cfg.lambda_perceptual_color * loss_perceptual_colour(reflectance_map.permute(0, 2, 3, 1), pixels)
+                total_loss += cfg.lambda_perceptual_color * loss_perceptual_colour(reflectance_map, pixels)
 
             if cfg.loss_variance:
                 illum_std = torch.std(illumination_map, dim=[2, 3])
