@@ -8,7 +8,7 @@ from tqdm import tqdm
 from scipy import stats
 
 from config import Config
-from retinex import MultiScaleRetinexNet
+from retinex_temp import MultiScaleRetinexNet
 from losses import (
     AdaptiveCurveLoss,
     EdgeAwareSmoothingLoss,
