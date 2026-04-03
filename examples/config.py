@@ -73,7 +73,7 @@ class Config:
     lambda_illum_curve: float = 1.85
     lambda_illum_exposure: float = 0.12
     lambda_white_preservation: float = 3.6
-    lambda_perceptual_color: float = 1.0
+    lambda_perceptual_color: float = 0.1
 
     lambda_chroma: float = 0.01
     lambda_illum_variance: float = 1.0
