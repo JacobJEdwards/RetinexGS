@@ -28,7 +28,7 @@ def load_image(image_path: str, device: torch.device, max_size: int = 1024) -> t
     img = imageio.imread(image_path)[..., :3]
     h, w = img.shape[:2]
     if h > w:
-        new_h, new_w = max_size, int(max_size / (w / h))
+        new_h, new_w = max_size, int(max_size / (w / h)) # this is the most important bit
     else:
         new_h, new_w = max_size, int(max_size / (h / w))
 
@@ -85,7 +85,7 @@ def main(cfg: Config):
             param_groups.append({"params": loss_adaptive_curve.parameters(), "lr": 1e-3})
 
         optimizer = torch.optim.AdamW(param_groups, fused=True)
-        scaler = torch.amp.GradScaler(enabled=True)
+        scaler = torch.amp.GradScaler(enabled=False)
 
         loss_edge_aware_smooth = EdgeAwareSmoothingLoss().to(device)
         loss_white_preservation = WhitePreservationLoss(
@@ -105,7 +105,7 @@ def main(cfg: Config):
         for step in pbar:
             optimizer.zero_grad()
 
-            with (torch.amp.autocast(device_type="cuda", enabled=True)):
+            with (torch.amp.autocast(device_type="cuda", enabled=False)):
                 embed_ids = torch.zeros(1, dtype=torch.long, device=device)
                 retinex_embedding = appearance_embeds(embed_ids)
 
