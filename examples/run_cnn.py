@@ -28,10 +28,9 @@ def load_image(image_path: str, device: torch.device, max_size: int = 1024) -> t
     img = imageio.imread(image_path)[..., :3]
     h, w = img.shape[:2]
     if h > w:
-        new_h, new_w = max_size, int(max_size / (w / h)) # this is the most important bit
+        new_h, new_w = max_size, int(max_size * (w / h))
     else:
-        new_h, new_w = max_size, int(max_size / (h / w))
-
+        new_h, new_w = int(max_size * (h / w)), max_size
     img = img.astype(np.float32) / 255.0
     img_tensor = torch.from_numpy(img).unsqueeze(0).permute(0, 3, 1, 2).to(device)
 
