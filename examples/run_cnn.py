@@ -47,7 +47,7 @@ def output(cfg: Config, illumination_map: torch.Tensor, reflectance_map: torch.T
     ill_out_vis = np.clip(ill_out, 0, 1)
     ref_out_vis = np.clip(ref_out, 0, 1)
 
-    imageio.imwrite(os.path.join(cfg.result_dir, f"{img_name}_illumination_{step}.jpeg"), (ill_out_vis * 255).astype(np.uint8))
+    # imageio.imwrite(os.path.join(cfg.result_dir, f"{img_name}_illumination_{step}.jpeg"), (ill_out_vis * 255).astype(np.uint8))
     imageio.imwrite(os.path.join(cfg.result_dir, f"{img_name}_reflectance_{step}.jpeg"), (ref_out_vis * 255).astype(np.uint8))
 
 
