@@ -166,7 +166,7 @@ def main(cfg: Config):
             if step % 100 == 0:
                 pbar.set_description(f"Loss: {total_loss.item():.4f}")
 
-            if step % 1000 == 0:
+            if step == 2000:
                 output(cfg, illumination_map, reflectance_map, step, img.stem)
 
         output(cfg, illumination_map, reflectance_map, cfg.max_steps, img.stem)
