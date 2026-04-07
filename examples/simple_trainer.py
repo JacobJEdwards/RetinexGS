@@ -432,19 +432,22 @@ class Runner:
             retinex_embedding,
             use_reentrant=False,
         )
-        log_illumination_map = torch.clamp(log_illumination_map, min=-20.0, max=10.0)
-        illumination_map = torch.exp(log_illumination_map)
-        illumination_map = torch.clamp(illumination_map, min=1e-5, max=1e4) # optional upper bound
-        illumination_map = illumination_map.nan_to_num()
+
+        illumination_map = torch.sigmoid(log_illumination_map)
 
         if not self.cfg.allow_chromatic_illumination:
-            illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
+            max_rgb_channel, _ = torch.max(input_image_for_net, dim=1, keepdim=True)
+            illumination_map = torch.maximum(illumination_map, max_rgb_channel + 1e-6)
+        else:
+            illumination_map = torch.maximum(illumination_map, input_image_for_net + 1e-6)
+
+        # if not self.cfg.allow_chromatic_illumination:
+        #     illumination_map = torch.mean(illumination_map, dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
         reflectance_map = input_image_for_net / (illumination_map + 1e-6)
 
 
-        reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0)
-        reflectance_map = reflectance_map.nan_to_num()
+        reflectance_map = torch.clamp(reflectance_map, 0.0, 1.0).nan_to_num()
 
         return (
             input_image_for_net,
