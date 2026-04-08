@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import copy
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -1362,6 +1363,10 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         if world_rank == 0:
             print("Viewer is disabled in distributed training.")
 
+    if config.joint and not config.optimise:
+        evaluate_joint_ssim(local_rank, world_rank, world_size, cfg_param)
+        return
+
     runner = Runner(local_rank, world_rank, world_size, cfg_param)
 
     if cfg_param.ckpt is not None:
@@ -1385,6 +1390,101 @@ def main(local_rank: int, world_rank, world_size: int, cfg_param: Config):
         runner.render_traj(step=step)
     else:
         runner.train()
+
+def evaluate_joint_ssim(local_rank: int, world_rank: int, world_size: int, cfg: Config, trial: optuna.Trial | None = None) -> float:
+    print(f"Starting Joint Training")
+    print(f"Dataset 1: {cfg.data_dir}")
+    print(f"Dataset 2: {cfg.data_dir_2}")
+
+    cfg1 = copy.deepcopy(cfg)
+    cfg1.data_dir = Path(cfg.data_dir)
+    runner1 = Runner(local_rank, world_rank, world_size, cfg1)
+    runner1.train(trial=trial)
+
+    renders1 = {}
+    dataloader1 = torch.utils.data.DataLoader(runner1.trainset, batch_size=1, shuffle=False)
+    with torch.no_grad():
+        for data in dataloader1:
+            c2w = data["camtoworld"].to(runner1.device)
+            Ks = data["K"].to(runner1.device)
+            h, w = data["image"].shape[1:3]
+
+            out = runner1.rasterize_splats(
+                camtoworlds=c2w,
+                Ks=Ks,
+                width=w,
+                height=h,
+                sh_degree=cfg1.sh_degree,
+                near_plane=cfg1.near_plane,
+                far_plane=cfg1.far_plane,
+            )
+            colors = torch.clamp(out[0], 0.0, 1.0).squeeze(0).cpu()
+            renders1[data["image_name"][0]] = colors
+
+    del runner1
+    torch.cuda.empty_cache()
+
+    cfg2 = copy.deepcopy(cfg)
+    cfg2.data_dir = Path(cfg.data_dir_2)
+    runner2 = Runner(local_rank, world_rank, world_size, cfg2)
+    runner2.train(trial=trial)
+
+    ssim_metric = StructuralSimilarityIndexMeasure(data_range=1.0)
+    ssims = []
+
+    joint_render_dir = cfg.result_dir / "joint_renders"
+    joint_render_dir.mkdir(exist_ok=True, parents=True)
+
+    dataloader2 = torch.utils.data.DataLoader(runner2.trainset, batch_size=1, shuffle=False)
+    with torch.no_grad():
+        for data in dataloader2:
+            img_name = data["image_name"][0]
+            if img_name not in renders1:
+                continue
+
+            c2w = data["camtoworld"].to(runner2.device)
+            Ks = data["K"].to(runner2.device)
+            h, w = data["image"].shape[1:3]
+
+            out = runner2.rasterize_splats(
+                camtoworlds=c2w,
+                Ks=Ks,
+                width=w,
+                height=h,
+                sh_degree=cfg2.sh_degree,
+                near_plane=cfg2.near_plane,
+                far_plane=cfg2.far_plane,
+            )
+
+            colors2 = torch.clamp(out[0], 0.0, 1.0).squeeze(0).cpu()
+            colors1 = renders1[img_name]
+
+            img1_ssim = colors1.permute(2, 0, 1).unsqueeze(0)
+            img2_ssim = colors2.permute(2, 0, 1).unsqueeze(0)
+
+            score = ssim_metric(img1_ssim, img2_ssim)
+            ssims.append(score.item())
+
+            side_by_side = torch.cat([colors1, colors2], dim=1)
+
+            side_by_side_np = (side_by_side.numpy() * 255).astype(np.uint8)
+
+            clean_img_name = img_name.replace("/", "_").replace("\\", "_")
+            if not clean_img_name.endswith(".png"):
+                clean_img_name = os.path.splitext(clean_img_name)[0] + ".png"
+
+            save_path = joint_render_dir / f"joint_compare_{clean_img_name}"
+            imageio.imwrite(str(save_path), side_by_side_np)
+
+    del runner2
+    torch.cuda.empty_cache()
+
+    mean_ssim = sum(ssims) / len(ssims) if ssims else 0.0
+    if world_rank == 0:
+        print(f"Joint SSIM between {cfg.data_dir} and {cfg.data_dir_2}: {mean_ssim:.4f}")
+        print(f"Saved comparisons to: {joint_render_dir}")
+
+    return mean_ssim
 
 BilateralGrid = None
 color_correct = None
@@ -1517,6 +1617,9 @@ def objective(trial: optuna.Trial, cfg: Config) -> float:
         cfg.lambda_chroma = trial.suggest_float("lambda_chroma", 0.001, 1.0, log=True)
 
     try:
+        if cfg.joint:
+            return evaluate_joint_ssim(0, 0, 1, cfg, trial=trial)
+
         runner = Runner(0, 0, 1, cfg)
 
         runner.train(trial=trial)

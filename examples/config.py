@@ -138,6 +138,8 @@ class Config:
     freeze_step: int = 10_000
 
     optimise: bool = False
+    joint: bool = False
+    data_dir_2: str = ""
     num_trials: int = 200
 
     def adjust_steps(self, factor: float) -> None:
