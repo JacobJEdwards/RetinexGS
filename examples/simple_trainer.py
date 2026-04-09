@@ -453,6 +453,22 @@ class Runner:
                 data_save = {"step": step, "splats": self.splats.state_dict(), "illumination_field": self.illumination_field.state_dict()}
                 torch.save(data_save, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt")
 
+            if (
+                    step in [i - 1 for i in cfg.ply_steps] or step == max_steps - 1
+            ) and cfg.save_ply:
+                sh0_export = self.splats["sh0"]
+                shN_export = self.splats["shN"]
+
+                export_splats(
+                    means=self.splats["means"],
+                    scales=self.splats["scales"],
+                    quats=self.splats["quats"],
+                    opacities=self.splats["opacities"],
+                    sh0=sh0_export,
+                    shN=shN_export,
+                    save_to=f"{self.ply_dir}/point_cloud_{step}.ply",
+                )
+
             for optimizer in self.optimizers.values():
                 optimizer.step()
                 optimizer.zero_grad()
