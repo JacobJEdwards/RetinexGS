@@ -40,7 +40,7 @@ class Config:
     sh_degree_interval: int = 1000
     init_opa: float = 0.1
     init_scale: float = 1.0
-    ssim_lambda: float = 0.4
+    ssim_lambda: float = 0.2
 
     near_plane: float = 0.01
     far_plane: float = 1e10
@@ -54,8 +54,8 @@ class Config:
     sh0_lr: float = 2.5e-3
     shN_lr: float = 2.5e-3 / 20
 
-    opacity_reg: float = 0.05
-    scale_reg: float = 0.05
+    opacity_reg: float = 0.0
+    scale_reg: float = 0.0
 
     tb_every: int = 1000
     tb_save_image: bool = True
@@ -63,9 +63,9 @@ class Config:
     lpips_net: Literal["vgg", "alex"] = "alex"
 
     appearance_embeddings: bool = True
-    appearance_embedding_dim: int = 32
+    appearance_embedding_dim: int = 64
 
-    use_view_dirs: bool = False
+    use_view_dirs: bool = True
     use_normals: bool = True
     use_dual_rasterization: bool = False
     use_camera_response_network: bool = True
