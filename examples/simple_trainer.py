@@ -566,6 +566,7 @@ class Runner:
         frame_idcs: Optional[Tensor] = None,
         camera_idcs: Optional[Tensor] = None,
         exposure: Optional[Tensor] = None,
+        is_eval: bool = False,
         **kwargs,
     ) -> Tuple[Tensor, Tensor, Dict]:
         means = self.splats["means"]  # [N, 3]
@@ -632,28 +633,29 @@ class Runner:
             rgb = render_colors[..., :3]
             extra = render_colors[..., 3:] if render_colors.shape[-1] > 3 else None
 
-            if self.cfg.post_processing == "bilateral_grid":
-                if frame_idcs is not None:
-                    grid_xy = (
-                        pixel_coords / torch.tensor([width, height], device=self.device)
-                    ).unsqueeze(0)
-                    rgb = slice(
-                        self.post_processing_module,
-                        grid_xy.expand(rgb.shape[0], -1, -1, -1),
-                        rgb,
-                        frame_idcs.unsqueeze(-1),
-                    )["rgb"]
-            elif self.cfg.post_processing == "ppisp":
-                camera_idx = camera_idcs.item() if camera_idcs is not None else None
-                frame_idx = frame_idcs.item() if frame_idcs is not None else None
-                rgb = self.post_processing_module(
-                    rgb=rgb,
-                    pixel_coords=pixel_coords,
-                    resolution=(width, height),
-                    camera_idx=camera_idx,
-                    frame_idx=frame_idx,
-                    exposure_prior=exposure,
-                )
+            if not is_eval:
+                if self.cfg.post_processing == "bilateral_grid":
+                    if frame_idcs is not None:
+                        grid_xy = (
+                            pixel_coords / torch.tensor([width, height], device=self.device)
+                        ).unsqueeze(0)
+                        rgb = slice(
+                            self.post_processing_module,
+                            grid_xy.expand(rgb.shape[0], -1, -1, -1),
+                            rgb,
+                            frame_idcs.unsqueeze(-1),
+                        )["rgb"]
+                elif self.cfg.post_processing == "ppisp":
+                    camera_idx = camera_idcs.item() if camera_idcs is not None else None
+                    frame_idx = frame_idcs.item() if frame_idcs is not None else None
+                    rgb = self.post_processing_module(
+                        rgb=rgb,
+                        pixel_coords=pixel_coords,
+                        resolution=(width, height),
+                        camera_idx=camera_idx,
+                        frame_idx=frame_idx,
+                        exposure_prior=exposure,
+                    )
 
             render_colors = (
                 torch.cat([rgb, extra], dim=-1) if extra is not None else rgb
@@ -788,7 +790,6 @@ class Runner:
                 masks=masks,
                 frame_idcs=image_ids,
                 camera_idcs=data["camera_idx"].to(device),
-                exposure=exposure,
             )
             if renders.shape[-1] == 4:
                 colors, depths = renders[..., 0:3], renders[..., 3:4]
@@ -1080,7 +1081,7 @@ class Runner:
                 masks=masks,
                 frame_idcs=None,  # For novel views, pass None (no per-frame parameters available)
                 camera_idcs=data["camera_idx"].to(device),
-                exposure=exposure,
+                is_eval=True,
             )  # [1, H, W, 3]
             torch.cuda.synchronize()
             ellipse_time += max(time.time() - tic, 1e-10)
