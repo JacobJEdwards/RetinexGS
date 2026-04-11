@@ -218,10 +218,10 @@ class Config:
             strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
             strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
             strategy.refine_every = int(strategy.refine_every * factor)
-            if strategy.noise_injection_stop_iter >= 0:
-                strategy.noise_injection_stop_iter = int(
-                    strategy.noise_injection_stop_iter * factor
-                )
+            # if strategy.noise_injection_stop_iter >= 0:
+            #     strategy.noise_injection_stop_iter = int(
+            #         strategy.noise_injection_stop_iter * factor
+            #     )
         else:
             assert_never(strategy)
 
