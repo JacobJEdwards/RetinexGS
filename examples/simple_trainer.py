@@ -15,7 +15,6 @@ import tqdm
 import tyro
 import viser
 import yaml
-from gsplat.color_correct import color_correct_affine, color_correct_quadratic
 from datasets.colmap import Dataset, Parser
 from datasets.traj import (
     generate_ellipse_path_z,
@@ -1115,15 +1114,15 @@ class Runner:
                 metrics["ssim"].append(self.ssim(colors_p, pixels_p))
                 metrics["lpips"].append(self.lpips(colors_p, pixels_p))
                 # Compute color-corrected metrics for fair comparison across methods
-                if cfg.use_color_correction_metric:
-                    if cfg.color_correct_method == "affine":
-                        cc_colors = color_correct_affine(colors, pixels)
-                    else:
-                        cc_colors = color_correct_quadratic(colors, pixels)
-                    cc_colors_p = cc_colors.permute(0, 3, 1, 2)  # [1, 3, H, W]
-                    metrics["cc_psnr"].append(self.psnr(cc_colors_p, pixels_p))
-                    metrics["cc_ssim"].append(self.ssim(cc_colors_p, pixels_p))
-                    metrics["cc_lpips"].append(self.lpips(cc_colors_p, pixels_p))
+                # if cfg.use_color_correction_metric:
+                #     if cfg.color_correct_method == "affine":
+                #         cc_colors = color_correct_affine(colors, pixels)
+                #     else:
+                #         cc_colors = color_correct_quadratic(colors, pixels)
+                #     cc_colors_p = cc_colors.permute(0, 3, 1, 2)  # [1, 3, H, W]
+                #     metrics["cc_psnr"].append(self.psnr(cc_colors_p, pixels_p))
+                #     metrics["cc_ssim"].append(self.ssim(cc_colors_p, pixels_p))
+                #     metrics["cc_lpips"].append(self.lpips(cc_colors_p, pixels_p))
 
         if world_rank == 0:
             ellipse_time /= len(valloader)
